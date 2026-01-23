@@ -10,6 +10,21 @@
 !/modules/CMakeLists.txt
 !/modules/*.h
 !/modules/*.cmake
+# Custom modules - tracked as regular files (NO .git folders)
+# Git source repos live in /env/dist/modules/ (gitignored)
+# Use /env/dist/bin/update_server.sh to sync updates
+!/modules/mod-autobalance/
+!/modules/mod-eluna/
+!/modules/mod-gain-honor-guard/
+!/modules/mod-guildhouse/
+!/modules/mod-instance-reset/
+!/modules/mod-pvp-titles/
+!/modules/mod-random-enchants/
+!/modules/mod-reagent-bank/
+!/modules/mod-skip-dk-starting-area/
+!/modules/mod-solo-lfg/
+!/modules/mod-transmog/
+!/modules/mod-warlock-pet-rename/
 /build*/
 /var/*
 !/var/build/.gitkeep
