@@ -43,6 +43,39 @@
 //  see: https://github.com/azerothcore/azerothcore-wotlk/issues/9766
 #include "GridNotifiersImpl.h"
 
+/**
+ * SmartScript Recursion Protection System
+ *
+ * Prevents stack overflow from infinite loops in SmartAI scripts by tracking:
+ * - Global depth: Total nested ProcessEvent calls across all scripts
+ * - Per-event depth: Nested calls for the SAME event (detects infinite loops)
+ *
+ * Uses thread_local for thread safety in multi-threaded map updates.
+ */
+#define MAX_GLOBAL_RECURSION_DEPTH 20
+#define MAX_PER_EVENT_RECURSION 10
+
+thread_local uint32 g_smartScriptGlobalDepth = 0;
+thread_local std::map<std::tuple<int32, uint8, uint32>, uint32> g_smartScriptEventMap;
+
+struct SmartScriptProcessorGuard
+{
+    std::tuple<int32, uint8, uint32> m_key;
+
+    SmartScriptProcessorGuard(const SmartScriptHolder& e)
+    {
+        m_key = std::make_tuple(e.entryOrGuid, e.source_type, e.event_id);
+        ++g_smartScriptGlobalDepth;
+        g_smartScriptEventMap[m_key]++;
+    }
+
+    ~SmartScriptProcessorGuard()
+    {
+        g_smartScriptEventMap[m_key]--;
+        --g_smartScriptGlobalDepth;
+    }
+};
+
 SmartScript::SmartScript()
 {
     go = nullptr;
@@ -4041,6 +4074,24 @@ void SmartScript::GetWorldObjectsInDist(ObjectVector& targets, float dist) const
 
 void SmartScript::ProcessEvent(SmartScriptHolder& e, Unit* unit, uint32 var0, uint32 var1, bool bvar, SpellInfo const* spell, GameObject* gob)
 {
+    // Recursion depth protection - prevent stack overflow from infinite script loops
+    auto key = std::make_tuple(e.entryOrGuid, e.source_type, e.event_id);
+    if (g_smartScriptGlobalDepth >= MAX_GLOBAL_RECURSION_DEPTH)
+    {
+        LOG_ERROR("sql.sql", "SmartScript: Terminating script processing - Exceeded max global recursion depth of {}. Problem in script Entry/GUID: {}, SourceType: {}, Event: {}.",
+            MAX_GLOBAL_RECURSION_DEPTH, e.entryOrGuid, e.source_type, e.event_id);
+        return;
+    }
+
+    if (g_smartScriptEventMap[key] >= MAX_PER_EVENT_RECURSION)
+    {
+        LOG_ERROR("sql.sql", "SmartScript: Terminating script processing - Exceeded max per-event recursion of {}. Infinite loop detected for script Entry/GUID: {}, SourceType: {}, Event: {}.",
+            MAX_PER_EVENT_RECURSION, e.entryOrGuid, e.source_type, e.event_id);
+        return;
+    }
+
+    SmartScriptProcessorGuard guard(e);
+
     if (!e.active && e.GetEventType() != SMART_EVENT_LINK)
         return;
 

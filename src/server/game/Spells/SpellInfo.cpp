@@ -1556,6 +1556,7 @@ SpellCastResult SpellInfo::CheckLocation(uint32 map_id, uint32 zone_id, uint32 a
     }
 
     // continent limitation (virtual continent)
+    // Pascal override: skip fly check on world maps (MapId 0 and 1)
     if (HasAttribute(SPELL_ATTR4_ONLY_FLYING_AREAS) && (area_id || zone_id))
     {
         AreaTableEntry const* areaEntry = sAreaTableStore.LookupEntry(area_id);
@@ -1564,7 +1565,11 @@ SpellCastResult SpellInfo::CheckLocation(uint32 map_id, uint32 zone_id, uint32 a
             areaEntry = sAreaTableStore.LookupEntry(zone_id);
         }
 
-        if (!areaEntry || !areaEntry->IsFlyable() || (strict && (areaEntry->flags & AREA_FLAG_NO_FLY_ZONE) != 0) || !player->canFlyInZone(map_id, zone_id, this))
+        if (!areaEntry ||
+            (!player || (player->GetMapId() != 0 && player->GetMapId() != 1)) &&
+            (!areaEntry->IsFlyable() ||
+                (strict && (areaEntry->flags & AREA_FLAG_NO_FLY_ZONE) != 0) ||
+                (player && !player->canFlyInZone(map_id, zone_id, this))))
         {
             return SPELL_FAILED_INCORRECT_AREA;
         }
