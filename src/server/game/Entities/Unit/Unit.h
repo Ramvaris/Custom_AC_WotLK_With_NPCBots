@@ -738,6 +738,7 @@ public:
     // Unit mask
     [[nodiscard]] uint32 HasUnitTypeMask(uint32 mask) const { return mask & m_unitTypeMask; }
     void AddUnitTypeMask(uint32 mask) { m_unitTypeMask |= mask; }
+    void RemoveUnitTypeMask(uint32 mask) { m_unitTypeMask &= ~mask; }  // Soul Keeper: Remove guardian flags
     [[nodiscard]] uint32 GetUnitTypeMask() const { return m_unitTypeMask; }
 
     // Unit flags
