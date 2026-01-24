@@ -29,6 +29,8 @@ THOUGHTS&RANTS:
   - "SPELL_PET_AVOIDANCE is the only truly generic pet aura. The rest are entry-locked."
   - "ObjectGUIDs are MONOTONICALLY INCREASING (never recycled during runtime)!"
   - "Was paranoid about GUID recycling - Ramires made me actually check the code."
+  - "PetAI's OwnerAttackedBy() is great but brings the pet bar. UnitScript hooks are the answer!"
+  - "REACT_DEFENSIVE + UnitScript hooks = owner-assist without pulling extra mobs."
 
 PLANNED_JUTSU:
   SOUL_KEEPER_MODULE:
@@ -47,7 +49,10 @@ ACTIVE_WORK:
   - [x] Rename updates DB and memory
   - [x] Guardian death triggers 60s cooldown (UnitScript hook)
   - [x] .soul return command (same as dismiss)
-  - [x] DEFENSIVE react state
+  - [x] REACT_DEFENSIVE (won't pull extra mobs)
   - [x] Elite/boss flags removed on summon
+  - [x] Owner-assist via UnitScript hooks (OnUnitEnterCombat + OnDamage)
+  - [x] Guardian uses native AI for spells/abilities
+  - [x] RemoveUnitTypeMask() added to Unit.h (no pet bar interference)
   - STATUS: COMPLETE 🍥
 
