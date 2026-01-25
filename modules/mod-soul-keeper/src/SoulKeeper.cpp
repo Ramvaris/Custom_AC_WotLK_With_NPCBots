@@ -475,8 +475,8 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     // === Apply our custom scaling on TOP of InitStatsForLevel ===
     ScaleGuardian(guardian, player);
 
-    // === Follow Master ===
-    guardian->GetMotionMaster()->MoveFollow(player, PET_FOLLOW_DIST, guardian->GetFollowAngle());
+    // === Follow Master (RIGHT side to avoid overlapping Hunter/Warlock pets on LEFT) ===
+    guardian->GetMotionMaster()->MoveFollow(player, PET_FOLLOW_DIST, -PET_FOLLOW_ANGLE);
 
     // Track Active Guardian
     _activeGuardians[player->GetGUID().GetCounter()] = guardian->GetGUID();
