@@ -601,10 +601,22 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     // Formula: DPS = level * 2 + stat * 0.52
     // Target: 20% of owner DPS at endgame (level 80, 3500 SP, 10K owner DPS = 2000 guardian DPS)
     // Math: 80*2 + 3500*0.52 = 160 + 1820 = 1980 DPS ≈ 20%
-    // While leveling the ratio will be higher (~40%), which is acceptable.
     float baseDPS  = ownerLevel * 2.0f;
     float statDPS  = masterStat * 0.52f;
     float totalDPS = baseDPS + statDPS;
+
+    // === LOW-LEVEL BALANCE ===
+    // At low levels, players have very low DPS (e.g. 4 DPS at level 5).
+    // The formula above would make guardians do 4x+ the player's damage - way too strong!
+    // We smooth-scale from 10% at level 1 to 100% at level 80.
+    // This keeps guardians at ~40% of player DPS through leveling.
+    // Formula: scaling = 0.05 + (level/80) * 0.95
+    //   Level 5:  11% -> 15 DPS becomes 1.65 DPS (~40% of player's 4 DPS)
+    //   Level 20: 29% -> guardians feel helpful but not overpowered
+    //   Level 40: 52% -> scaling up as player gets stronger
+    //   Level 80: 100% -> full power for endgame
+    float levelScaling = std::min(1.0f, 0.05f + (ownerLevel / 80.0f) * 0.95f);
+    totalDPS *= levelScaling;
 
     // === MELEE DAMAGE ===
     // Use ACTUAL creature attack speed (not hardcoded 2.0s)
@@ -1103,6 +1115,11 @@ public:
         float statDPS = info.baseMultiplier * 0.52f;
         float totalDPS = baseDPS + statDPS;
         
+        // Low-level balance: Scale from 10% at level 1 to 100% at level 80
+        // Same scaling as melee to keep all damage consistent
+        float levelScaling = std::min(1.0f, 0.05f + (info.ownerLevel / 80.0f) * 0.95f);
+        totalDPS *= levelScaling;
+        
         // Spell damage = DPS * cast time
         // Instant spells (0ms cast) count as 1.0s matching GCD
         float castTimeSeconds = 1.0f;
@@ -1141,6 +1158,11 @@ public:
         float baseDPS = info.ownerLevel * 2.0f;
         float statDPS = info.baseMultiplier * 0.52f;
         float totalDPS = baseDPS + statDPS;
+        
+        // Low-level balance: Scale from 10% at level 1 to 100% at level 80
+        // Same scaling as melee/spells to keep all damage consistent
+        float levelScaling = std::min(1.0f, 0.05f + (info.ownerLevel / 80.0f) * 0.95f);
+        totalDPS *= levelScaling;
         
         // DoT tick = 30% of DPS (reduced because it stacks with autos)
         // Typical 3s tick DoT with 5 ticks = 1.5x DPS total = ~6% extra on top of 20% autos
