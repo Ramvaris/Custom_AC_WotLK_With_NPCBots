@@ -1,5 +1,8 @@
 /*
  * Soul Keeper Module - Header
+ * Author: Ramvaris
+ * License: Free to use, modify, distribute as long as you mention the original author
+ * 
  * Allows any class to capture creature souls and summon them as guardians
  * 
  * Architecture:

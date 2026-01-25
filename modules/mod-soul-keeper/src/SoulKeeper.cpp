@@ -1,5 +1,8 @@
 /*
  * Soul Keeper Module - Implementation
+ * Author: Ramvaris
+ * License: Free to use, modify, distribute as long as you mention the original author
+ * 
  * Capture creature souls and summon them as guardians
  * Pure C++ - No Lua dependency
  * 
