@@ -7,13 +7,23 @@
 # Passive life and mana leech based on damage dealt.
 # Uses MAX(AP, RAP, SP) to determine player's primary role.
 # All values are percentages (0.10 = 10% of damage dealt).
+#
+# COMBAT LOG VISIBILITY:
+# Healing shows as "Vampiric Embrace" (spell 15290)
+# Mana shows as "Replenishment" (spell 57669)
+# These are standard client spells - works with any WoW 3.3.5a client!
+# Compatible with Recount, Details!, MSBT, and other combat log addons.
 ########################################
 
 # Enable/Disable the module
 SoloSustain.Enable = 1
 
-# Debug mode - prints leech info to console
+# Debug mode - prints leech info to server console
 SoloSustain.Debug = 0
+
+# Show leech in combat log (for Recount/MSBT/Details! visibility)
+# Uses standard client spells: Vampiric Embrace (heal) and Replenishment (mana)
+SoloSustain.ShowCombatLog = 1
 
 ########################################
 # LIFE LEECH PER CLASS
@@ -66,13 +76,3 @@ SoloSustain.ManaLeech.Paladin = 0.08
 
 SoloSustain.LifeLeech.Cap = 0.15
 SoloSustain.ManaLeech.Cap = 0.25
-
-########################################
-# VISUAL SPELLS
-# Spell IDs for the heal/mana restore visual.
-# These should be dummy spells that show a visual effect.
-# Set to 0 to disable visual entirely (silent leech).
-########################################
-
-SoloSustain.HealSpellId = 0
-SoloSustain.ManaSpellId = 0

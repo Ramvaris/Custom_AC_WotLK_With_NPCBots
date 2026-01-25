@@ -1,7 +1,7 @@
 /*
  * Solo Sustain Module
  * Author: Ramvaris
- * License: Free to use, modify, distribute
+ * License: Free to use, modify, distribute as long as you mention the original author
  * 
  * Passive life and mana leech based on damage dealt.
  * Designed for solo play against scaled content (raids, dungeons, bots).
@@ -20,6 +20,13 @@
  *   - OnDamage (player deals damage to victim)
  *   - Both melee and spell damage trigger leech
  *   - Caps prevent burst healing from big crits
+ * 
+ * COMBAT LOG VISIBILITY (Recount/MSBT):
+ *   - Sends SMSG_SPELLHEALLOG for life leech (shows as "X heals Y for Z")
+ *   - Sends SMSG_SPELLENERGIZELOG for mana leech (shows mana gain)
+ *   - Uses standard client spells for compatibility:
+ *     - 15290 (Vampiric Embrace) for life leech visual
+ *     - 57669 (Replenishment) for mana leech visual
  */
 
 #include "ScriptMgr.h"
@@ -29,7 +36,13 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Log.h"
+#include "WorldPacket.h"
+#include "Opcodes.h"
 #include <algorithm>
+
+// Standard client spell IDs for combat log visibility (no custom spells needed)
+constexpr uint32 SPELL_VAMPIRIC_EMBRACE_HEAL = 15290;  // Shows as lifesteal in combat log
+constexpr uint32 SPELL_REPLENISHMENT_MANA    = 57669;  // Shows as mana gain in combat log
 
 // =============================================================================
 // Configuration Cache (loaded once at startup)
@@ -38,6 +51,7 @@ struct SoloSustainConfig
 {
     bool enabled = false;
     bool debug = false;
+    bool showCombatLog = true;  // Send packets to combat log (Recount/MSBT)
     
     // Life leech per class (index = CLASS_*)
     float lifeLeech[MAX_CLASSES] = {};
@@ -48,10 +62,6 @@ struct SoloSustainConfig
     // Caps
     float lifeLeechCap = 0.15f;
     float manaLeechCap = 0.25f;
-    
-    // Visual spell IDs
-    uint32 healSpellId = 81009;
-    uint32 manaSpellId = 81012;
 };
 
 static SoloSustainConfig _config;
@@ -158,31 +168,65 @@ public:
             manaAmount = std::min(manaAmount, maxMana);
         }
         
-        // Apply healing
+        // Apply healing and send combat log packet (Recount/MSBT visibility)
         if (healAmount > 0)
         {
-            // Direct heal (no spell visual overhead for performance)
-            player->SetHealth(std::min(player->GetHealth() + healAmount, player->GetMaxHealth()));
+            // Calculate actual heal (prevent overheal in log)
+            uint32 currentHealth = player->GetHealth();
+            uint32 maxHealth = player->GetMaxHealth();
+            uint32 actualHeal = std::min(healAmount, maxHealth - currentHealth);
+            uint32 overheal = healAmount - actualHeal;
+            
+            // Apply the heal
+            player->SetHealth(currentHealth + actualHeal);
+            
+            // Send SMSG_SPELLHEALLOG for combat log visibility
+            // This makes the heal show up in Recount, Details!, MSBT, etc.
+            if (_config.showCombatLog && actualHeal > 0)
+            {
+                WorldPacket data(SMSG_SPELLHEALLOG, 8 + 8 + 4 + 4 + 4 + 1);
+                data << player->GetPackGUID();           // Target
+                data << player->GetPackGUID();           // Caster (self)
+                data << uint32(SPELL_VAMPIRIC_EMBRACE_HEAL);  // Spell ID (Vampiric Embrace - thematic!)
+                data << uint32(actualHeal);              // Heal amount
+                data << uint32(overheal);                // Overheal amount
+                data << uint8(0);                        // Critical flag (0 = no crit)
+                player->SendMessageToSet(&data, true);
+            }
             
             if (_config.debug)
             {
                 LOG_INFO("module.solo_sustain", "SoloSustain: {} healed {} HP from {} damage ({}%)",
-                    player->GetName(), healAmount, damage, lifeLeechPct * 100.0f);
+                    player->GetName(), actualHeal, damage, lifeLeechPct * 100.0f);
             }
         }
         
-        // Apply mana restore
+        // Apply mana restore and send combat log packet
         if (manaAmount > 0)
         {
             int32 currentMana = player->GetPower(POWER_MANA);
             int32 maxMana = static_cast<int32>(player->GetMaxPower(POWER_MANA));
-            int32 newMana = std::min(currentMana + static_cast<int32>(manaAmount), maxMana);
-            player->SetPower(POWER_MANA, newMana);
+            int32 actualMana = std::min(static_cast<int32>(manaAmount), maxMana - currentMana);
+            
+            // Apply the mana
+            player->SetPower(POWER_MANA, currentMana + actualMana);
+            
+            // Send SMSG_SPELLENERGIZELOG for combat log visibility
+            if (_config.showCombatLog && actualMana > 0)
+            {
+                WorldPacket data(SMSG_SPELLENERGIZELOG, 8 + 8 + 4 + 4 + 4);
+                data << player->GetPackGUID();           // Target
+                data << player->GetPackGUID();           // Caster (self)
+                data << uint32(SPELL_REPLENISHMENT_MANA);     // Spell ID (Replenishment - standard)
+                data << uint32(POWER_MANA);              // Power type
+                data << uint32(actualMana);              // Amount
+                player->SendMessageToSet(&data, true);
+            }
             
             if (_config.debug)
             {
                 LOG_INFO("module.solo_sustain", "SoloSustain: {} restored {} mana from {} damage ({}%)",
-                    player->GetName(), manaAmount, damage, manaLeechPct * 100.0f);
+                    player->GetName(), actualMana, damage, manaLeechPct * 100.0f);
             }
         }
     }
@@ -200,6 +244,7 @@ public:
     {
         _config.enabled = sConfigMgr->GetOption<bool>("SoloSustain.Enable", true);
         _config.debug = sConfigMgr->GetOption<bool>("SoloSustain.Debug", false);
+        _config.showCombatLog = sConfigMgr->GetOption<bool>("SoloSustain.ShowCombatLog", true);
         
         // Life leech per class
         _config.lifeLeech[CLASS_WARRIOR]      = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Warrior", 0.08f);
@@ -228,10 +273,6 @@ public:
         // Caps
         _config.lifeLeechCap = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Cap", 0.15f);
         _config.manaLeechCap = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Cap", 0.25f);
-        
-        // Visual spells
-        _config.healSpellId = sConfigMgr->GetOption<uint32>("SoloSustain.HealSpellId", 81009);
-        _config.manaSpellId = sConfigMgr->GetOption<uint32>("SoloSustain.ManaSpellId", 81012);
         
         if (_config.enabled)
         {
