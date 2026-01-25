@@ -1,0 +1,103 @@
+/*
+ * Soul Keeper Module - Header
+ * Allows any class to capture creature souls and summon them as guardians
+ * 
+ * Architecture:
+ * - PlayerScript: Handles gossip menu interactions (no NPC required)
+ * - CommandScript: Handles .soul commands
+ * - SoulKeeper Singleton: Core logic for capture, summon, dismiss, scaling
+ */
+
+#ifndef SOUL_KEEPER_H
+#define SOUL_KEEPER_H
+
+#include "Common.h"
+#include "ScriptMgr.h"
+#include "ScriptedGossip.h"
+#include "Player.h"
+#include "Creature.h"
+#include "Pet.h"
+#include "ObjectMgr.h"
+#include "DatabaseEnv.h"
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+// Menu Constants
+constexpr uint32 SOUL_KEEPER_GOSSIP_MENU_ID = 89999;
+constexpr uint32 SOUL_KEEPER_NPC_TEXT_ID    = 0x7FFFFFFF;
+constexpr uint32 SOULS_PER_PAGE             = 12;  // Max souls per page (leaves room for nav buttons)
+
+// Gossip Actions
+enum SoulKeeperGossipAction
+{
+    SOUL_ACTION_CLOSE           = 0,
+    SOUL_ACTION_DISMISS         = 1,
+    SOUL_ACTION_ABSORB          = 2,
+    SOUL_ACTION_PREV_PAGE       = 3,
+    SOUL_ACTION_NEXT_PAGE       = 4,
+    SOUL_ACTION_SUMMON_BASE     = 100,   // Actions 100+ = Summon by index
+};
+
+// Soul Data Structure
+struct SoulData
+{
+    uint32 creatureEntry;
+    std::string customName;
+    uint32 displayId;
+    float scaleFactor;
+};
+
+// Core Singleton
+class SoulKeeper
+{
+public:
+    static SoulKeeper* instance();
+
+    // Data Storage: Map<PlayerGUIDLow, List<Souls>>
+    std::unordered_map<uint32, std::vector<SoulData>> _caughtSouls;
+    
+    // Active Guardians: Map<PlayerGUIDLow, GuardianGUID>
+    std::unordered_map<uint32, ObjectGuid> _activeGuardians;
+
+    // Guardian Scaling Data: Map<GuardianGUID, ScalingInfo>
+    // Stores base multiplier and creature level for proper damage scaling
+    // Used by UnitScript ModifySpellDamageTaken / ModifyMeleeDamage / ModifyPeriodicDamageAurasTick
+    struct GuardianScalingInfo
+    {
+        float baseMultiplier;     // Owner power-based multiplier
+        uint32 creatureLevel;     // Original creature template level (for scaling direction)
+        uint32 ownerLevel;        // Owner level at summon time
+    };
+    std::unordered_map<ObjectGuid, GuardianScalingInfo> _guardianScaling;
+
+    // Gossip Page Tracking: Map<PlayerGUIDLow, CurrentPage>
+    std::unordered_map<uint32, uint32> _currentGossipPage;
+
+    // Database Operations
+    void LoadSouls(Player* player);
+    void SaveSoul(Player* player, SoulData const& soul);
+    bool HasSoul(Player* player, uint32 entry);
+
+    // Core Logic
+    void AddGuardian(Player* player, Unit* victim);
+    void SummonGuardian(Player* player, uint32 entry);
+    void DismissGuardian(Player* player);
+    void ReturnGuardian(Player* player);  // .soul return - despawn and trigger cooldown
+    void OnGuardianDeath(Creature* guardian);  // Called when guardian dies
+    void RenameGuardian(Player* player, std::string const& newName);
+    void ScaleGuardian(Creature* guardian, Player* owner);
+    
+    // Gossip Menu System (paginated for 400+ souls)
+    void ShowSoulList(Player* player, uint32 page = 0);
+    bool HandleGossipSelect(Player* player, uint32 sender, uint32 action);
+    
+    // Utility
+    std::string GetCreatureIconString(uint32 displayId);
+    bool IsInCombat(Player* player);
+    bool HasActiveGuardian(Player* player);
+};
+
+#define sSoulKeeper SoulKeeper::instance()
+
+#endif

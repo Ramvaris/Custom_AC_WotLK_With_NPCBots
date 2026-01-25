@@ -1161,7 +1161,11 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
         if (!attacker || attacker->IsControlledByPlayer() || attacker->IsCreatedByPlayer())
         {
             uint32 unDamage = health < damage ? health : damage;
-            bool damagedByPlayer = unDamage && attacker && (attacker->IsPlayer() || attacker->m_movedByPlayer != nullptr);
+            // Pet/guardian damage counts as player damage for loot eligibility:
+            // - IsPlayer(): Direct player damage
+            // - m_movedByPlayer: Player-controlled vehicle
+            // - IsCreatedByPlayer(): TempSummons (guardians, totems, etc.) created by a player
+            bool damagedByPlayer = unDamage && attacker && (attacker->IsPlayer() || attacker->m_movedByPlayer != nullptr || attacker->IsCreatedByPlayer());
             //npcbot: npcbots' damage allways counts towards damage requirement
             damagedByPlayer |= attacker && attacker->IsNPCBotOrPet();
             //end npcbot

@@ -9,6 +9,45 @@
 [![windows-build](https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots/actions/workflows/windows_build.yml/badge.svg)](https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots/actions/workflows/windows_build.yml)
 [![dashboard-ci](https://github.com/azerothcore/azerothcore-wotlk/actions/workflows/dashboard-ci.yml/badge.svg?branch=master)](https://github.com/azerothcore/azerothcore-wotlk/actions/workflows/dashboard-ci.yml?query=branch%3Amaster)
 
+## Custom
+
+- Some modules integrated
+- Diverse 'defensive crash protectors' for the server
+- Potential Old World Flying (needs also a fitting client side spell or a lua script that allows the client to mount up)
+
+### Included Modules
+
+| Module | Description |
+|--------|-------------|
+| **mod-autobalance** | Automatically scales dungeon/raid difficulty based on group size |
+| **mod-transmog** | Transmogrification system for appearance changes |
+| **mod-solo-lfg** | Enables solo queuing for dungeons via LFG |
+| **mod-guildhouse** | Personal guild housing system |
+| **mod-instance-reset** | Extended instance reset options |
+| **mod-random-enchants** | Random enchantments on loot drops |
+| **mod-reagent-bank** | Additional storage for crafting reagents |
+| **mod-skip-dk-starting-area** | Skip the Death Knight starting zone |
+| **mod-ale** | Anti-Lag Engine for server optimization |
+| **mod-gain-honor-guard** | Honor gain adjustments |
+| **mod-pvp-titles** | PvP ranking and title system |
+| **mod-warlock-pet-rename** | Allow Warlocks to rename their pets |
+
+### 🍥 Custom Modules (Made for this fork)
+
+| Module | Description |
+|--------|-------------|
+| **mod-soul-keeper** | Capture creature souls and summon them as guardians - The WoW Pokédex! |
+
+#### Soul Keeper Commands
+```
+.soul absorb         - Capture target (DEAD creatures only)
+.soul summon [index] - Open menu or summon by index
+.soul dismiss        - Dismiss active guardian
+.soul return         - Recall guardian (same as dismiss)
+.soul rename <name>  - Rename currently summoned guardian
+.soul search <text>  - Search souls by partial name
+```
+
 ## Introduction
 
 AzerothCore is an open-source game server application and framework designed for hosting massively multiplayer online role-playing games (MMORPGs). It is based on the popular MMORPG World of Warcraft (WoW) and seeks to recreate the gameplay experience of the original game from patch 3.3.5a.
