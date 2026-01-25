@@ -26,7 +26,8 @@
 // Menu Constants
 constexpr uint32 SOUL_KEEPER_GOSSIP_MENU_ID = 89999;
 constexpr uint32 SOUL_KEEPER_NPC_TEXT_ID    = 0x7FFFFFFF;
-constexpr uint32 SOULS_PER_PAGE             = 12;  // Max souls per page (leaves room for nav buttons)
+constexpr uint32 SOUL_KEEPER_GOSSIP_SENDER  = 8999;  // Unique sender to avoid Lua gossip collisions
+constexpr uint32 SOULS_PER_PAGE             = 12;   // Max souls per page (leaves room for nav buttons)
 
 // Gossip Actions
 enum SoulKeeperGossipAction

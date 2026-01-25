@@ -197,7 +197,7 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
     {
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
             "|cff888888No souls captured yet. Target a dead enemy and use .soul absorb|r", 
-            GOSSIP_SENDER_MAIN, SOUL_ACTION_CLOSE);
+            SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_CLOSE);
     }
     else
     {
@@ -212,7 +212,7 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
         {
             std::string pageInfo = "|cff888888Page " + std::to_string(page + 1) + "/" + std::to_string(totalPages) + 
                                    " (" + std::to_string(totalSouls) + " souls)|r";
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, pageInfo, GOSSIP_SENDER_MAIN, SOUL_ACTION_CLOSE);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, pageInfo, SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_CLOSE);
         }
 
         // Soul list for current page
@@ -222,7 +222,7 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
             std::string icon = GetCreatureIconString(soul.displayId);
             // Display as 1-indexed for user, store actual array index in action
             std::string label = "|cff00ff00[" + std::to_string(i + 1) + "]|r " + icon + " " + soul.customName;
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, label, GOSSIP_SENDER_MAIN, SOUL_ACTION_SUMMON_BASE + i);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, label, SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_SUMMON_BASE + i);
         }
 
         // === NAVIGATION BUTTONS ===
@@ -230,33 +230,33 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|TInterface\\Icons\\Ability_Druid_Dash_Orange:20:20:-2:0|t << Previous Page", 
-                GOSSIP_SENDER_MAIN, SOUL_ACTION_PREV_PAGE);
+                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_PREV_PAGE);
         }
         if (page < totalPages - 1)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|TInterface\\Icons\\Ability_Druid_Dash:20:20:-2:0|t Next Page >>", 
-                GOSSIP_SENDER_MAIN, SOUL_ACTION_NEXT_PAGE);
+                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_NEXT_PAGE);
         }
     }
 
     // Absorb target option
     AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, 
         "|TInterface\\Icons\\Spell_Shadow_SoulGem:20:20:-2:0|t Capture Target's Soul", 
-        GOSSIP_SENDER_MAIN, SOUL_ACTION_ABSORB);
+        SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_ABSORB);
 
     // Dismiss option (only if guardian is active)
     if (HasActiveGuardian(player))
     {
         AddGossipItemFor(player, GOSSIP_ICON_TALK, 
             "|TInterface\\Icons\\Spell_Holy_Dispel:20:20:-2:0|t Dismiss Guardian", 
-            GOSSIP_SENDER_MAIN, SOUL_ACTION_DISMISS);
+            SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_DISMISS);
     }
 
     // Close
     AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
         "|TInterface\\Icons\\Misc_ArrowLeft:20:20:-2:0|t Close", 
-        GOSSIP_SENDER_MAIN, SOUL_ACTION_CLOSE);
+        SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_CLOSE);
 
     SendGossipMenuFor(player, SOUL_KEEPER_NPC_TEXT_ID, player->GetGUID());
 }
@@ -897,7 +897,8 @@ public:
 
     void OnPlayerGossipSelect(Player* player, uint32 menu_id, uint32 sender, uint32 action) override
     {
-        if (menu_id == SOUL_KEEPER_GOSSIP_MENU_ID || sender == GOSSIP_SENDER_MAIN)
+        // Only handle our unique sender (avoids collision with Lua gossip menus)
+        if (menu_id == SOUL_KEEPER_GOSSIP_MENU_ID || sender == SOUL_KEEPER_GOSSIP_SENDER)
         {
             // Handle ALL Soul Keeper actions (0-4 = menu actions, 100+ = summon by index)
             if (action <= SOUL_ACTION_NEXT_PAGE || action >= SOUL_ACTION_SUMMON_BASE)
