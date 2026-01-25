@@ -513,10 +513,14 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     // This allows guardians to properly aggro and be targeted by mobs.
     guardian->UpdateMoveInLineOfSightState();
 
-    // === Enable auto-attack for ALL creatures ===
-    guardian->SetAttackTime(BASE_ATTACK, 2000);
-    guardian->SetAttackTime(OFF_ATTACK, 2000);
-    guardian->SetAttackTime(RANGED_ATTACK, 2000);
+    // === Enable auto-attack ONLY if creature has no attack speed set ===
+    // Don't override natural attack speeds - only set fallback for casters/critters
+    if (guardian->GetAttackTime(BASE_ATTACK) == 0)
+        guardian->SetAttackTime(BASE_ATTACK, 2000);
+    if (guardian->GetAttackTime(OFF_ATTACK) == 0)
+        guardian->SetAttackTime(OFF_ATTACK, 2000);
+    if (guardian->GetAttackTime(RANGED_ATTACK) == 0)
+        guardian->SetAttackTime(RANGED_ATTACK, 2000);
 
     // === Apply our custom scaling on TOP of InitStatsForLevel ===
     ScaleGuardian(guardian, player);

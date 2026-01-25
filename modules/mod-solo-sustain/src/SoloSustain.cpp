@@ -19,8 +19,8 @@
 #include "Log.h"
 #include <algorithm>
 
-constexpr uint32 DEFAULT_HEAL_SPELL_ID = 20267;   // Life Steal (Lifestealing enchant)
-constexpr uint32 DEFAULT_MANA_SPELL_ID = 20268;   // Judgement of Wisdom energize
+constexpr uint32 DEFAULT_HEAL_SPELL_ID = 81009;   // Custom dummy heal spell
+constexpr uint32 DEFAULT_MANA_SPELL_ID = 81012;   // Custom dummy mana restore spell
 
 struct SoloSustainConfig
 {
@@ -32,8 +32,6 @@ struct SoloSustainConfig
     float petLeechMultiplier = 1.5f;
     float lifeLeech[MAX_CLASSES] = {};
     float manaLeech[MAX_CLASSES] = {};
-    float lifeLeechCap = 0.15f;
-    float manaLeechCap = 0.25f;
 };
 
 static SoloSustainConfig _config;
@@ -87,12 +85,10 @@ public:
         if (lifeLeechPct <= 0.0f && manaLeechPct <= 0.0f)
             return;
         
-        // Life leech
+        // Life leech (no cap - damage-based leech is self-limiting)
         if (lifeLeechPct > 0.0f)
         {
             uint32 healAmount = static_cast<uint32>(damage * lifeLeechPct);
-            uint32 maxHeal = static_cast<uint32>(healTarget->GetMaxHealth() * _config.lifeLeechCap);
-            healAmount = std::min(healAmount, maxHeal);
             
             if (healAmount > 0)
             {
@@ -114,12 +110,10 @@ public:
             }
         }
         
-        // Mana leech (players only, not pets)
+        // Mana leech (players only, not pets - no cap needed for damage-based)
         if (manaLeechPct > 0.0f && !isPet && player->GetMaxPower(POWER_MANA) > 0)
         {
             uint32 manaAmount = static_cast<uint32>(damage * manaLeechPct);
-            uint32 maxMana = static_cast<uint32>(player->GetMaxPower(POWER_MANA) * _config.manaLeechCap);
-            manaAmount = std::min(manaAmount, maxMana);
             
             if (manaAmount > 0)
             {
@@ -170,9 +164,6 @@ public:
         _config.manaLeech[CLASS_MAGE]         = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Mage", 0.10f);
         _config.manaLeech[CLASS_WARLOCK]      = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Warlock", 0.08f);
         _config.manaLeech[CLASS_DRUID]        = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Druid", 0.08f);
-        
-        _config.lifeLeechCap = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Cap", 0.15f);
-        _config.manaLeechCap = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Cap", 0.25f);
         
         if (_config.enabled)
         {

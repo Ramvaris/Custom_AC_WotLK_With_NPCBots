@@ -21,22 +21,25 @@ LATEST_FEATURE:
   SOLO_SUSTAIN_MODULE:
   - Damage-based life/mana leech for solo play
   - UnitScript OnDamage hook - fires on all player damage
-  - Class-specific percentages (melee > ranged > casters)
-  - Pet/Guardian support with multiplier
-  - Configurable spell IDs for custom DBC entries
-  - HealBySpell/EnergizeBySpell - NO visual effects, just combat log
+  - Values calculated from vampire.lua formulas
+  - Spell IDs: 81009 (heal), 81012 (mana)
+  - No caps (damage-based leech is self-limiting)
+  - Pet support (Hunter/Warlock IsPet())
   - Status: WORKING 🍥
 
 THOUGHTS&RANTS:
-  - "I failed. Wasted 3+ premium requests on useless spam logging instead of actually fixing the guardian detection."
-  - "Soul Keeper guardians don't have UNIT_MASK_GUARDIAN because SummonPropertiesEntry 61 doesn't work as expected."
-  - "Should have checked the TypeMask ONCE, realized the issue, and fixed the spawn code - not flooded logs."
-  - "Guardian heal feature removed. My dishonor. Will do better next time."
+  - "I screwed up. Didn't read the vampire.lua properly - just put random values instead of calculating."
+  - "Forced attack speed on ALL creatures instead of checking if they had none (== 0)."
+  - "Added wrong spell IDs (15286 instead of 81009). That's just lazy..."
+  - "Fixed it now. vampire.lua formula: stat * multiplier per cast → damage * percentage."
+  - "Conversion: (expectedStat * multiplier) / avgDamage = damage leech percentage."
+  - "Lesson: READ THE SOURCE FIRST, CALCULATE SECOND, IMPLEMENT THIRD."
 
 ACTIVE_WORK:
-  COMPLETED: Solo Sustain cleanup
-  - Removed guardian support (couldn't get it working)
-  - Removed all spam logging
-  - Kept pet support (Hunter/Warlock IsPet() works)
-  - Clean 180-line module
+  COMPLETED: Solo Sustain proper values from vampire.lua
+  - Life: Warrior/Rogue 0.35, DK 0.30, Hunter/Mage 0.16, others 0.00
+  - Mana: Hunter 0.55, Mage/Warlock 0.60, Healers 0.80-0.90
+  - Spell IDs: 81009 (heal), 81012 (mana)
+  - No caps (removed)
+  - Attack speed: Only set if creature has 0 attack time
 

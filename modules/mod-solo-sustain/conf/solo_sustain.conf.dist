@@ -5,23 +5,19 @@
 # Author: Ramvaris
 # 
 # Passive life and mana leech based on damage dealt.
-# All values are percentages (0.10 = 10% of damage dealt).
+# All values are percentages (0.35 = 35% of damage dealt).
+#
+# VALUES CALCULATED FROM vampire.lua:
+#   vampire.lua used: stat * multiplier per spell cast
+#   This module uses: damage * percentage per damage tick
+# 
+# Conversion formula at level 80:
+#   Life: (expectedStat * healMultiplier) / avgDamage
+#   Mana: (expectedStat * manaMultiplier) / avgDamage
 #
 # COMBAT LOG VISIBILITY (NO visual effects!):
 # We do NOT cast spells - no animations, no sounds, no visual spam!
 # Just the green/blue floating numbers and combat log entries.
-# 
-# How it works:
-#   - HealBySpell() applies health + sends SMSG_SPELLHEALLOG packet
-#   - EnergizeBySpell() applies mana + sends SMSG_SPELLENERGIZELOG packet  
-#   - Client shows floating combat text from these packets
-#   - Recount/MSBT/Details! parse these packets for their displays
-#
-# Spell IDs (for combat log TEXT only, not animations):
-#   - 20267 "Life Steal" - Lifestealing enchant
-#   - 20268 mana restore - Judgement of Wisdom
-#
-# Result: Clean green/blue numbers, no arcade game effect spam!
 ########################################
 
 # Enable/Disable the module
@@ -33,18 +29,12 @@ SoloSustain.Debug = 0
 ########################################
 # CUSTOM SPELL IDs
 # Combat log name/icon comes from the spell's DBC entry.
-# Use custom dummy spells for themed display names.
-#
-# Defaults:
-#   Heal: 20267 "Life Steal" (Lifestealing enchant)
-#   Mana: 20268 (Judgement of Wisdom energize)
-#
-# For custom spells, create a Spell.dbc entry with
-# your desired name/icon and set the ID here.
+# Default: Custom dummy spells (81009/81012)
+# Requires custom Spell.dbc entries for proper names.
 ########################################
 
-SoloSustain.SpellId.Heal = 15286
-SoloSustain.SpellId.Mana = 57669
+SoloSustain.SpellId.Heal = 81009
+SoloSustain.SpellId.Mana = 81012
 
 ########################################
 # PET SUPPORT (Hunter/Warlock only)
@@ -66,52 +56,54 @@ SoloSustain.Pet.LeechMultiplier = 1.0
 
 ########################################
 # LIFE LEECH PER CLASS
-# Percentage of damage dealt returned as HP.
-# Melee classes need more sustain (face-tank damage).
-# Ranged classes can kite/avoid damage.
-# Default values are CONSERVATIVE - tune up for solo play!
+# From vampire.lua: stat * healMultiplier per spell cast
+# Converted to: damage * percentage
+#
+# vampire.lua original values:
+#   ROGUE:   AP * 0.33 → 4500 * 0.33 / 4000 = 0.37
+#   WARRIOR: AP * 0.33 → 4500 * 0.33 / 4000 = 0.37
+#   HUNTER:  RAP * 0.14 → 4000 * 0.14 / 3500 = 0.16
+#   MAGE:    SP * 0.25 → 2800 * 0.25 / 4500 = 0.16
+#   Others:  0 (mana-only mode)
+#   DK:      Not in vampire, ~0.30 (has Death Strike)
 ########################################
 
-# Pure melee - face-tank everything, need high sustain
-SoloSustain.LifeLeech.Warrior = 0.08
-SoloSustain.LifeLeech.Rogue = 0.08
-SoloSustain.LifeLeech.DeathKnight = 0.05
+# Pure melee - face-tank everything, high sustain
+SoloSustain.LifeLeech.Warrior = 0.35
+SoloSustain.LifeLeech.Rogue = 0.35
+SoloSustain.LifeLeech.DeathKnight = 0.30
 
-# Ranged physical - can kite, moderate sustain
-SoloSustain.LifeLeech.Hunter = 0.04
+# Ranged physical + Mage (moderate sustain)
+SoloSustain.LifeLeech.Hunter = 0.16
+SoloSustain.LifeLeech.Mage = 0.16
 
-# Casters - can kite/control, low sustain
-SoloSustain.LifeLeech.Mage = 0.03
-SoloSustain.LifeLeech.Warlock = 0.02
-
-# Healers - have actual healing, minimal sustain
-SoloSustain.LifeLeech.Priest = 0.02
-SoloSustain.LifeLeech.Shaman = 0.02
-SoloSustain.LifeLeech.Druid = 0.02
-SoloSustain.LifeLeech.Paladin = 0.02
+# No life leech (mode = "MANA" in vampire.lua)
+SoloSustain.LifeLeech.Warlock = 0.00
+SoloSustain.LifeLeech.Priest = 0.00
+SoloSustain.LifeLeech.Shaman = 0.00
+SoloSustain.LifeLeech.Druid = 0.00
+SoloSustain.LifeLeech.Paladin = 0.00
 
 ########################################
 # MANA LEECH PER CLASS
-# Percentage of damage dealt returned as mana.
-# Non-mana classes (Warrior/Rogue/DK) always 0.
+# From vampire.lua: stat * manaMultiplier per spell cast
+# Converted to: damage * percentage
+#
+# vampire.lua original values:
+#   HUNTER:  RAP * 0.50 → 4000 * 0.50 / 3500 = 0.57
+#   MAGE:    SP * 1.00 → 2800 * 1.00 / 4500 = 0.62
+#   WARLOCK: SP * 1.00 → 2800 * 1.00 / 4500 = 0.62
+#   Healers: SP * 1.00 → 2800 * 1.00 / 3000 = 0.93
+#   Druid:   SP * 1.00 → 2800 * 1.00 / 3500 = 0.80
 ########################################
 
 SoloSustain.ManaLeech.Warrior = 0.00
 SoloSustain.ManaLeech.Rogue = 0.00
 SoloSustain.ManaLeech.DeathKnight = 0.00
-SoloSustain.ManaLeech.Hunter = 0.08
-SoloSustain.ManaLeech.Mage = 0.10
-SoloSustain.ManaLeech.Warlock = 0.08
-SoloSustain.ManaLeech.Priest = 0.08
-SoloSustain.ManaLeech.Shaman = 0.08
-SoloSustain.ManaLeech.Druid = 0.08
-SoloSustain.ManaLeech.Paladin = 0.08
-
-########################################
-# CAPS
-# Maximum heal/mana per tick as % of max HP/Mana.
-# Prevents insane burst healing from big crits.
-########################################
-
-SoloSustain.LifeLeech.Cap = 0.15
-SoloSustain.ManaLeech.Cap = 0.25
+SoloSustain.ManaLeech.Hunter = 0.55
+SoloSustain.ManaLeech.Mage = 0.60
+SoloSustain.ManaLeech.Warlock = 0.60
+SoloSustain.ManaLeech.Priest = 0.90
+SoloSustain.ManaLeech.Shaman = 0.90
+SoloSustain.ManaLeech.Druid = 0.80
+SoloSustain.ManaLeech.Paladin = 0.90
