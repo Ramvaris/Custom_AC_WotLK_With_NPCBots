@@ -582,41 +582,76 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     }
 
     // === DAMAGE SCALING ===
-    // Use the highest of: MeleeAP, RangedAP, SpellPower as "masterStat"
-    // This determines the guardian's damage regardless of the original creature's stats
+    // Get owner's stats: pick dominant stat type (melee AP, ranged AP, or spell power)
     float meleeAP  = owner->GetTotalAttackPowerValue(BASE_ATTACK);
     float rangedAP = owner->GetTotalAttackPowerValue(RANGED_ATTACK);
     float maxSP    = 0.0f;
-    
     for (int i = SPELL_SCHOOL_HOLY; i < MAX_SPELL_SCHOOL; ++i)
     {
         float sp = (float)owner->SpellBaseDamageBonusDone((SpellSchoolMask)(1 << i));
         if (sp > maxSP) maxSP = sp;
     }
 
-    float masterStat = std::max({meleeAP, rangedAP, maxSP});
+    // === LEVEL BRACKET DPS FORMULA ===
+    // Based on typical WotLK 3.3.5a player DPS and stats per level bracket.
+    // Target: 25% of player DPS at all levels (20-30% acceptable range).
+    // Gear matters: better stats = proportionally stronger guardian.
+    float targetDPS;
+    float expectedStat;
+    
+    if (ownerLevel <= 10)
+    {
+        // Bracket 1-10: Player ~6 DPS, typical stat ~30
+        targetDPS = 1.5f;       // 25% of 6
+        expectedStat = 30.0f;
+    }
+    else if (ownerLevel <= 20)
+    {
+        // Bracket 11-20: Player ~20 DPS, typical stat ~100
+        targetDPS = 5.0f;       // 25% of 20
+        expectedStat = 100.0f;
+    }
+    else if (ownerLevel <= 40)
+    {
+        // Bracket 21-40: Player ~80 DPS, typical stat ~350
+        targetDPS = 20.0f;      // 25% of 80
+        expectedStat = 350.0f;
+    }
+    else if (ownerLevel <= 60)
+    {
+        // Bracket 41-60: Player ~250 DPS, typical stat ~700
+        targetDPS = 62.5f;      // 25% of 250
+        expectedStat = 700.0f;
+    }
+    else if (ownerLevel <= 70)
+    {
+        // Bracket 61-70: Player ~600 DPS, typical stat ~1200
+        targetDPS = 150.0f;     // 25% of 600
+        expectedStat = 1200.0f;
+    }
+    else
+    {
+        // Bracket 71-80: Player ~3000 DPS (fresh 80), typical stat ~2500
+        // Scales up: 6000 stat (BiS) = ~1500 DPS guardian (25% of 6000 player DPS)
+        targetDPS = 750.0f;     // 25% of 3000
+        expectedStat = 2500.0f;
+    }
 
-    // === UNIFIED DPS FORMULA ===
-    // All damage uses the same BASE DPS formula, then adjusted by attack/cast time.
-    // Formula: DPS = level * 2 + stat * 0.52
-    // Target: 20% of owner DPS at endgame (level 80, 3500 SP, 10K owner DPS = 2000 guardian DPS)
-    // Math: 80*2 + 3500*0.52 = 160 + 1820 = 1980 DPS ≈ 20%
-    float baseDPS  = ownerLevel * 2.0f;
-    float statDPS  = masterStat * 0.52f;
-    float totalDPS = baseDPS + statDPS;
+    // Pick dominant stat based on what the owner actually has
+    float ownerStat;
+    if (meleeAP >= rangedAP && meleeAP >= maxSP)
+        ownerStat = meleeAP;
+    else if (rangedAP >= meleeAP && rangedAP >= maxSP)
+        ownerStat = rangedAP;
+    else
+        ownerStat = maxSP;
 
-    // === LOW-LEVEL BALANCE ===
-    // At low levels, players have very low DPS (e.g. 4 DPS at level 5).
-    // The formula above would make guardians do 4x+ the player's damage - way too strong!
-    // We smooth-scale from 10% at level 1 to 100% at level 80.
-    // This keeps guardians at ~40% of player DPS through leveling.
-    // Formula: scaling = 0.05 + (level/80) * 0.95
-    //   Level 5:  11% -> 15 DPS becomes 1.65 DPS (~40% of player's 4 DPS)
-    //   Level 20: 29% -> guardians feel helpful but not overpowered
-    //   Level 40: 52% -> scaling up as player gets stronger
-    //   Level 80: 100% -> full power for endgame
-    float levelScaling = std::min(1.0f, 0.05f + (ownerLevel / 80.0f) * 0.95f);
-    totalDPS *= levelScaling;
+    // Scale guardian DPS by gear quality (better gear = stronger guardian)
+    float gearRatio = std::max(0.5f, ownerStat / expectedStat);  // Floor at 50% (naked chars)
+    float totalDPS = targetDPS * gearRatio;
+    
+    // Store for spell hooks
+    float masterStat = ownerStat;
 
     // === MELEE DAMAGE ===
     // Use ACTUAL creature attack speed (not hardcoded 2.0s)
@@ -1091,10 +1126,9 @@ public:
     }
 
     // === SPELL DAMAGE SCALING ===
-    // Direct damage spells use the same DPS formula as melee.
-    // DPS = level * 2 + stat * 0.52
+    // Uses same level-bracket DPS formula as melee.
     // SpellDamage = DPS * castTimeSeconds (instant = 1.0s GCD equivalent)
-    // Target: 20% of owner DPS at endgame
+    // Target: 25% of owner DPS at all levels
     void ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage, SpellInfo const* spellInfo) override
     {
         if (!attacker || !target || damage <= 0)
@@ -1110,15 +1144,19 @@ public:
 
         const auto& info = scalingIt->second;
         
-        // Base DPS formula (same coefficient as melee)
-        float baseDPS = info.ownerLevel * 2.0f;
-        float statDPS = info.baseMultiplier * 0.52f;
-        float totalDPS = baseDPS + statDPS;
+        // === LEVEL BRACKET DPS (same as melee) ===
+        float targetDPS, expectedStat;
+        uint32 lvl = info.ownerLevel;
         
-        // Low-level balance: Scale from 10% at level 1 to 100% at level 80
-        // Same scaling as melee to keep all damage consistent
-        float levelScaling = std::min(1.0f, 0.05f + (info.ownerLevel / 80.0f) * 0.95f);
-        totalDPS *= levelScaling;
+        if (lvl <= 10)      { targetDPS = 1.5f;   expectedStat = 30.0f; }
+        else if (lvl <= 20) { targetDPS = 5.0f;   expectedStat = 100.0f; }
+        else if (lvl <= 40) { targetDPS = 20.0f;  expectedStat = 350.0f; }
+        else if (lvl <= 60) { targetDPS = 62.5f;  expectedStat = 700.0f; }
+        else if (lvl <= 70) { targetDPS = 150.0f; expectedStat = 1200.0f; }
+        else                { targetDPS = 750.0f; expectedStat = 2500.0f; }
+        
+        float gearRatio = std::max(0.5f, info.baseMultiplier / expectedStat);
+        float totalDPS = targetDPS * gearRatio;
         
         // Spell damage = DPS * cast time
         // Instant spells (0ms cast) count as 1.0s matching GCD
@@ -1136,9 +1174,8 @@ public:
 
     // === DOT DAMAGE SCALING ===
     // DoTs use REDUCED damage because they STACK with auto-attacks!
-    // If auto-attack = 20% and DoT = 20%, combined = 40% (too high)
-    // Solution: DoT per tick = 30% of the base DPS (adds ~6% total DPS on top of autos)
-    // This makes DoTs useful but not overpowered.
+    // If auto-attack = 25% and DoT = 25%, combined = 50% (too high)
+    // Solution: DoT per tick = 30% of the base DPS (adds ~6% total on top of autos)
     void ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage, SpellInfo const* /*spellInfo*/) override
     {
         if (!attacker || !target || damage == 0)
@@ -1154,24 +1191,26 @@ public:
 
         const auto& info = scalingIt->second;
         
-        // Same base DPS formula
-        float baseDPS = info.ownerLevel * 2.0f;
-        float statDPS = info.baseMultiplier * 0.52f;
-        float totalDPS = baseDPS + statDPS;
+        // === LEVEL BRACKET DPS (same as melee) ===
+        float targetDPS, expectedStat;
+        uint32 lvl = info.ownerLevel;
         
-        // Low-level balance: Scale from 10% at level 1 to 100% at level 80
-        // Same scaling as melee/spells to keep all damage consistent
-        float levelScaling = std::min(1.0f, 0.05f + (info.ownerLevel / 80.0f) * 0.95f);
-        totalDPS *= levelScaling;
+        if (lvl <= 10)      { targetDPS = 1.5f;   expectedStat = 30.0f; }
+        else if (lvl <= 20) { targetDPS = 5.0f;   expectedStat = 100.0f; }
+        else if (lvl <= 40) { targetDPS = 20.0f;  expectedStat = 350.0f; }
+        else if (lvl <= 60) { targetDPS = 62.5f;  expectedStat = 700.0f; }
+        else if (lvl <= 70) { targetDPS = 150.0f; expectedStat = 1200.0f; }
+        else                { targetDPS = 750.0f; expectedStat = 2500.0f; }
+        
+        float gearRatio = std::max(0.5f, info.baseMultiplier / expectedStat);
+        float totalDPS = targetDPS * gearRatio;
         
         // DoT tick = 30% of DPS (reduced because it stacks with autos)
-        // Typical 3s tick DoT with 5 ticks = 1.5x DPS total = ~6% extra on top of 20% autos
         damage = (uint32)(totalDPS * 0.30f);
     }
 
     // === MELEE DAMAGE: No hook scaling needed ===
     // Melee damage is already set correctly in ScaleGuardian via SetStatFloatValue
-    // We removed the melee hook since it was causing double-scaling issues
 
     // === DAMAGE HANDLING: Guardian defends owner ===
     // When owner takes damage, guardian attacks the attacker
