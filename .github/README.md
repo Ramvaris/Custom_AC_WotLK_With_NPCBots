@@ -13,29 +13,31 @@
 
 This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 
-- Some AC modules integrated and kept up-to-date
 - Custom Soul Collector Mod (My Own Invention, with the help of my AI Agent Ryo) [Does NOT work without some AC core file mods done here!]
 - A number of 'defensive crash protectors' for the server
 - Potential old world flying (needs also a fitting client side spell or a lua script that allows the client to mount up)
 - Some QoL stuff (The stuff from all the LUA-Scripts / MPQ Edits that I could insert in here because it belongs to the actual core)
 -> Looting of mobs that were killed by a players pet without the player doing damage to it
+- Some AC modules from other people integrated and kept up-to-date
 
 ### Included Modules
 
-| Module | Description |
-|--------|-------------|
-| **mod-autobalance** | Automatically scales dungeon/raid difficulty based on group size |
-| **mod-transmog** | Transmogrification system for appearance changes |
-| **mod-solo-lfg** | Enables solo queuing for dungeons via LFG |
-| **mod-guildhouse** | Personal guild housing system |
-| **mod-instance-reset** | Extended instance reset options |
-| **mod-random-enchants** | Random enchantments on loot drops |
-| **mod-reagent-bank** | Additional storage for crafting reagents |
-| **mod-skip-dk-starting-area** | Skip the Death Knight starting zone |
-| **mod-ale** | Anti-Lag Engine for server optimization |
-| **mod-gain-honor-guard** | Honor gain adjustments |
-| **mod-pvp-titles** | PvP ranking and title system |
-| **mod-warlock-pet-rename** | Allow Warlocks to rename their pets |
+These modules are from the amazing AzerothCore community. Full credit to the original authors!
+
+| Module | Description | Source |
+|--------|-------------|--------|
+| **mod-autobalance** | Automatically scales dungeon/raid difficulty based on group size | [azerothcore/mod-autobalance](https://github.com/azerothcore/mod-autobalance) |
+| **mod-transmog** | Transmogrification system for appearance changes | [azerothcore/mod-transmog](https://github.com/azerothcore/mod-transmog) |
+| **mod-solo-lfg** | Enables solo queuing for dungeons via LFG | [azerothcore/mod-solo-lfg](https://github.com/azerothcore/mod-solo-lfg) |
+| **mod-guildhouse** | Personal guild housing system | [azerothcore/mod-guildhouse](https://github.com/azerothcore/mod-guildhouse) |
+| **mod-instance-reset** | Extended instance reset options | [azerothcore/mod-instance-reset](https://github.com/azerothcore/mod-instance-reset) |
+| **mod-random-enchants** | Random enchantments on loot drops | [azerothcore/mod-random-enchants](https://github.com/azerothcore/mod-random-enchants) |
+| **mod-reagent-bank** | Additional storage for crafting reagents | [azerothcore/mod-reagent-bank](https://github.com/azerothcore/mod-reagent-bank) |
+| **mod-skip-dk-starting-area** | Skip the Death Knight starting zone | [azerothcore/mod-skip-dk-starting-area](https://github.com/azerothcore/mod-skip-dk-starting-area) |
+| **mod-ale** | AzerothCore Lua Engine for scripting | [azerothcore/mod-eluna](https://github.com/azerothcore/mod-eluna) |
+| **mod-gain-honor-guard** | Honor gain adjustments | [azerothcore/mod-gain-honor-guard](https://github.com/azerothcore/mod-gain-honor-guard) |
+| **mod-pvp-titles** | PvP ranking and title system | [azerothcore/mod-pvp-titles](https://github.com/azerothcore/mod-pvp-titles) |
+| **mod-warlock-pet-rename** | Allow Warlocks to rename their pets | [azerothcore/mod-individual-progression](https://github.com/azerothcore/mod-individual-progression) |
 
 ### 🍥 Custom Modules (Made for this fork)
 
