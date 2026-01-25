@@ -55,6 +55,14 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 .soul search <text>  - Search souls by partial name
 ```
 
+### 🌿 Database Tweaks
+
+| Tweak | Description |
+|-------|-------------|
+| **Fast Resource Respawns** | Mining nodes and herbs respawn in 2 minutes instead of 45min-7days. Applied automatically on DB setup. |
+
+> **Note:** The fast respawn SQL is prefixed with `9999_99_99_` to ensure it runs LAST after all other database updates, preventing overwrites.
+
 ## Introduction
 
 AzerothCore is an open-source game server application and framework designed for hosting massively multiplayer online role-playing games (MMORPGs). It is based on the popular MMORPG World of Warcraft (WoW) and seeks to recreate the gameplay experience of the original game from patch 3.3.5a.
