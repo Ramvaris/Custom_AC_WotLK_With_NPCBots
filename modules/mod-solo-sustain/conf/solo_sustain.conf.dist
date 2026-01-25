@@ -5,19 +5,10 @@
 # Author: Ramvaris
 # 
 # Passive life and mana leech based on damage dealt.
-# All values are percentages (0.35 = 35% of damage dealt).
+# All values are percentages (0.10 = 10% of damage dealt).
 #
-# VALUES CALCULATED FROM vampire.lua:
-#   vampire.lua used: stat * multiplier per spell cast
-#   This module uses: damage * percentage per damage tick
-# 
-# Conversion formula at level 80:
-#   Life: (expectedStat * healMultiplier) / avgDamage
-#   Mana: (expectedStat * manaMultiplier) / avgDamage
-#
-# COMBAT LOG VISIBILITY (NO visual effects!):
-# We do NOT cast spells - no animations, no sounds, no visual spam!
-# Just the green/blue floating numbers and combat log entries.
+# This provides basic sustain for solo play.
+# Adjust values to fit your server's balance needs.
 ########################################
 
 # Enable/Disable the module
@@ -27,25 +18,24 @@ SoloSustain.Enable = 1
 SoloSustain.Debug = 0
 
 ########################################
-# CUSTOM SPELL IDs
+# SPELL IDs
 # Combat log name/icon comes from the spell's DBC entry.
-# Default: Custom dummy spells (81009/81012)
-# Requires custom Spell.dbc entries for proper names.
+# 
+# Default: Standard WoW spells (exist in default Spell.dbc)
+#   15286 = Vampiric Embrace (heal visual in combat log)
+#   57669 = Replenishment (mana visual in combat log)
+#
+# You can create custom dummy spells in Spell.dbc for
+# cleaner combat log names if desired.
 ########################################
 
-SoloSustain.SpellId.Heal = 81009
-SoloSustain.SpellId.Mana = 81012
+SoloSustain.SpellId.Heal = 15286
+SoloSustain.SpellId.Mana = 57669
 
 ########################################
 # PET SUPPORT (Hunter/Warlock only)
 # Permanent pets (IsPet() = true) get life leech.
 # Does NOT support guardians/temporary summons.
-# 
-# Applies to:
-#   - Hunter pets (all specs)
-#   - Warlock pets (Imp, Voidwalker, Succubus, Felhunter, Felguard)
-#
-# NOTE: Pets heal THEMSELVES - owner's mana is unaffected.
 ########################################
 
 # Enable leech for player pets
@@ -56,54 +46,35 @@ SoloSustain.Pet.LeechMultiplier = 1.0
 
 ########################################
 # LIFE LEECH PER CLASS
-# From vampire.lua: stat * healMultiplier per spell cast
-# Converted to: damage * percentage
-#
-# vampire.lua original values:
-#   ROGUE:   AP * 0.33 → 4500 * 0.33 / 4000 = 0.37
-#   WARRIOR: AP * 0.33 → 4500 * 0.33 / 4000 = 0.37
-#   HUNTER:  RAP * 0.14 → 4000 * 0.14 / 3500 = 0.16
-#   MAGE:    SP * 0.25 → 2800 * 0.25 / 4500 = 0.16
-#   Others:  0 (mana-only mode)
-#   DK:      Not in vampire, ~0.30 (has Death Strike)
+# Percentage of damage dealt that heals the player.
+# 0.10 = 10% of damage dealt becomes health.
 ########################################
 
-# Pure melee - face-tank everything, high sustain
-SoloSustain.LifeLeech.Warrior = 0.35
-SoloSustain.LifeLeech.Rogue = 0.35
-SoloSustain.LifeLeech.DeathKnight = 0.30
-
-# Ranged physical + Mage (moderate sustain)
-SoloSustain.LifeLeech.Hunter = 0.16
-SoloSustain.LifeLeech.Mage = 0.16
-
-# No life leech (mode = "MANA" in vampire.lua)
-SoloSustain.LifeLeech.Warlock = 0.00
-SoloSustain.LifeLeech.Priest = 0.00
-SoloSustain.LifeLeech.Shaman = 0.00
-SoloSustain.LifeLeech.Druid = 0.00
-SoloSustain.LifeLeech.Paladin = 0.00
+SoloSustain.LifeLeech.Warrior = 0.10
+SoloSustain.LifeLeech.Rogue = 0.10
+SoloSustain.LifeLeech.DeathKnight = 0.10
+SoloSustain.LifeLeech.Hunter = 0.10
+SoloSustain.LifeLeech.Mage = 0.10
+SoloSustain.LifeLeech.Warlock = 0.10
+SoloSustain.LifeLeech.Priest = 0.10
+SoloSustain.LifeLeech.Shaman = 0.10
+SoloSustain.LifeLeech.Druid = 0.10
+SoloSustain.LifeLeech.Paladin = 0.10
 
 ########################################
 # MANA LEECH PER CLASS
-# From vampire.lua: stat * manaMultiplier per spell cast
-# Converted to: damage * percentage
-#
-# vampire.lua original values:
-#   HUNTER:  RAP * 0.50 → 4000 * 0.50 / 3500 = 0.57
-#   MAGE:    SP * 1.00 → 2800 * 1.00 / 4500 = 0.62
-#   WARLOCK: SP * 1.00 → 2800 * 1.00 / 4500 = 0.62
-#   Healers: SP * 1.00 → 2800 * 1.00 / 3000 = 0.93
-#   Druid:   SP * 1.00 → 2800 * 1.00 / 3500 = 0.80
+# Percentage of damage dealt that restores mana.
+# 0.10 = 10% of damage dealt becomes mana.
+# Set to 0 for non-mana classes (Warrior, Rogue, DK).
 ########################################
 
 SoloSustain.ManaLeech.Warrior = 0.00
 SoloSustain.ManaLeech.Rogue = 0.00
 SoloSustain.ManaLeech.DeathKnight = 0.00
-SoloSustain.ManaLeech.Hunter = 0.55
-SoloSustain.ManaLeech.Mage = 0.60
-SoloSustain.ManaLeech.Warlock = 0.60
-SoloSustain.ManaLeech.Priest = 0.90
-SoloSustain.ManaLeech.Shaman = 0.90
-SoloSustain.ManaLeech.Druid = 0.80
-SoloSustain.ManaLeech.Paladin = 0.90
+SoloSustain.ManaLeech.Hunter = 0.10
+SoloSustain.ManaLeech.Mage = 0.10
+SoloSustain.ManaLeech.Warlock = 0.10
+SoloSustain.ManaLeech.Priest = 0.10
+SoloSustain.ManaLeech.Shaman = 0.10
+SoloSustain.ManaLeech.Druid = 0.10
+SoloSustain.ManaLeech.Paladin = 0.10
