@@ -54,6 +54,10 @@ struct SoloSustainConfig
     bool debug = false;
     bool showCombatLog = true;  // Send packets to combat log (Recount/MSBT)
     
+    // Pet/Guardian support
+    bool petEnabled = true;           // Enable leech for player pets/guardians
+    float petLeechMultiplier = 1.5f;  // Pets get MORE leech (squishier than players)
+    
     // Life leech per class (index = CLASS_*)
     float lifeLeech[MAX_CLASSES] = {};
     
@@ -109,7 +113,7 @@ static int GetDominantStatType(Player* player)
 // =============================================================================
 // UnitScript: OnDamage Hook
 // Fires when ANY unit deals/receives damage.
-// We filter to only process player-dealt damage.
+// Handles: Players directly, Pets/Guardians (heal themselves based on owner's class).
 // CRITICAL: Must register UNITHOOK_ON_DAMAGE or the hook won't be called!
 // =============================================================================
 class SoloSustain_UnitScript : public UnitScript
@@ -123,26 +127,52 @@ public:
         if (!_config.enabled)
             return;
         
-        // Only process player attackers
-        Player* player = attacker->ToPlayer();
-        if (!player)
-            return;
-        
         // Don't process self-damage or friendly-fire
         if (!victim || victim == attacker || !attacker->IsHostileTo(victim))
             return;
         
-        // Don't process if dead
-        if (!player->IsAlive())
+        // Determine if this is a player or a pet/guardian
+        Player* player = attacker->ToPlayer();
+        Unit* healTarget = attacker;  // Who gets healed (player or pet)
+        float leechMultiplier = 1.0f;
+        bool isPetOrGuardian = false;
+        
+        if (!player)
+        {
+            // Not a player - check if it's a pet or guardian owned by a player
+            if (!_config.petEnabled)
+                return;
+            
+            // IsPet() = permanent pets (Hunter, Warlock)
+            // IsGuardian() = temporary summons (DK ghoul, Shaman wolves, etc.)
+            if (!attacker->IsPet() && !attacker->IsGuardian())
+                return;
+            
+            // Get the player owner
+            Unit* owner = attacker->GetOwner();
+            if (!owner)
+                return;
+            
+            player = owner->ToPlayer();
+            if (!player)
+                return;
+            
+            isPetOrGuardian = true;
+            leechMultiplier = _config.petLeechMultiplier;
+            // healTarget stays as 'attacker' (the pet/guardian heals itself)
+        }
+        
+        // Don't process if the healer is dead
+        if (!healTarget->IsAlive())
             return;
         
-        // Get class-specific leech values
+        // Get class-specific leech values from the player (owner for pets)
         uint8 playerClass = player->GetClass();
         if (playerClass >= MAX_CLASSES)
             return;
         
-        float lifeLeechPct = _config.lifeLeech[playerClass];
-        float manaLeechPct = _config.manaLeech[playerClass];
+        float lifeLeechPct = _config.lifeLeech[playerClass] * leechMultiplier;
+        float manaLeechPct = _config.manaLeech[playerClass] * leechMultiplier;
         
         // No leech configured for this class
         if (lifeLeechPct <= 0.0f && manaLeechPct <= 0.0f)
@@ -156,12 +186,15 @@ public:
         {
             healAmount = static_cast<uint32>(damage * lifeLeechPct);
             
-            // Apply cap
-            uint32 maxHeal = static_cast<uint32>(player->GetMaxHealth() * _config.lifeLeechCap);
+            // Apply cap based on heal target's max health
+            uint32 maxHeal = static_cast<uint32>(healTarget->GetMaxHealth() * _config.lifeLeechCap);
             healAmount = std::min(healAmount, maxHeal);
         }
         
-        if (manaLeechPct > 0.0f && player->GetPowerType() == POWER_MANA)
+        // Mana leech only for mana users (skip for most pets, they use focus/energy)
+        // Players always get mana leech if they use mana
+        // For pets: only if they actually use mana (Warlock Imp/Succubus/Felhunter)
+        if (manaLeechPct > 0.0f && !isPetOrGuardian && player->GetPowerType() == POWER_MANA)
         {
             manaAmount = static_cast<uint32>(damage * manaLeechPct);
             
@@ -174,36 +207,44 @@ public:
         if (healAmount > 0)
         {
             // Calculate actual heal (prevent overheal in log)
-            uint32 currentHealth = player->GetHealth();
-            uint32 maxHealth = player->GetMaxHealth();
+            uint32 currentHealth = healTarget->GetHealth();
+            uint32 maxHealth = healTarget->GetMaxHealth();
             uint32 actualHeal = std::min(healAmount, maxHealth - currentHealth);
             uint32 overheal = healAmount - actualHeal;
             
-            // Apply the heal
-            player->SetHealth(currentHealth + actualHeal);
+            // Apply the heal to the correct target (player OR pet/guardian)
+            healTarget->SetHealth(currentHealth + actualHeal);
             
             // Send SMSG_SPELLHEALLOG for combat log visibility
             // This makes the heal show up in Recount, Details!, MSBT, etc.
             if (_config.showCombatLog && actualHeal > 0)
             {
                 WorldPacket data(SMSG_SPELLHEALLOG, 8 + 8 + 4 + 4 + 4 + 1);
-                data << player->GetPackGUID();           // Target
-                data << player->GetPackGUID();           // Caster (self)
+                data << healTarget->GetPackGUID();       // Target (player or pet)
+                data << healTarget->GetPackGUID();       // Caster (self-heal)
                 data << uint32(SPELL_VAMPIRIC_EMBRACE_HEAL);  // Spell ID (Vampiric Embrace - thematic!)
                 data << uint32(actualHeal);              // Heal amount
                 data << uint32(overheal);                // Overheal amount
                 data << uint8(0);                        // Critical flag (0 = no crit)
-                player->SendMessageToSet(&data, true);
+                player->SendMessageToSet(&data, true);   // Send to player's network set
             }
             
             if (_config.debug)
             {
-                LOG_INFO("module.solo_sustain", "SoloSustain: {} healed {} HP from {} damage ({}%)",
-                    player->GetName(), actualHeal, damage, lifeLeechPct * 100.0f);
+                if (isPetOrGuardian)
+                {
+                    LOG_INFO("module.solo_sustain", "SoloSustain: {}'s pet healed {} HP from {} damage ({}% x {}x)",
+                        player->GetName(), actualHeal, damage, _config.lifeLeech[playerClass] * 100.0f, leechMultiplier);
+                }
+                else
+                {
+                    LOG_INFO("module.solo_sustain", "SoloSustain: {} healed {} HP from {} damage ({}%)",
+                        player->GetName(), actualHeal, damage, lifeLeechPct * 100.0f);
+                }
             }
         }
         
-        // Apply mana restore and send combat log packet
+        // Apply mana restore and send combat log packet (players only, pets don't get mana)
         if (manaAmount > 0)
         {
             int32 currentMana = player->GetPower(POWER_MANA);
@@ -247,6 +288,10 @@ public:
         _config.enabled = sConfigMgr->GetOption<bool>("SoloSustain.Enable", true);
         _config.debug = sConfigMgr->GetOption<bool>("SoloSustain.Debug", false);
         _config.showCombatLog = sConfigMgr->GetOption<bool>("SoloSustain.ShowCombatLog", true);
+        
+        // Pet/Guardian support
+        _config.petEnabled = sConfigMgr->GetOption<bool>("SoloSustain.Pet.Enable", true);
+        _config.petLeechMultiplier = sConfigMgr->GetOption<float>("SoloSustain.Pet.LeechMultiplier", 1.5f);
         
         // Life leech per class
         _config.lifeLeech[CLASS_WARRIOR]      = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Warrior", 0.08f);
