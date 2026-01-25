@@ -7,12 +7,21 @@
 # Passive life and mana leech based on damage dealt.
 # All values are percentages (0.10 = 10% of damage dealt).
 #
-# COMBAT LOG VISIBILITY (AUTOMATIC):
-# Uses proper AC HealBySpell/EnergizeBySpell functions
-# Healing shows as "Life Steal" (spell 20267) - Lifestealing enchant
-# Mana shows as mana gain (spell 20268) - Judgement of Wisdom
-# 100% compatible with Recount, Details!, MSBT, and all combat log addons!
-# No client patches needed - these spells exist in every 3.3.5a client!
+# COMBAT LOG VISIBILITY (NO visual effects!):
+# We do NOT cast spells - no animations, no sounds, no visual spam!
+# Just the green/blue floating numbers and combat log entries.
+# 
+# How it works:
+#   - HealBySpell() applies health + sends SMSG_SPELLHEALLOG packet
+#   - EnergizeBySpell() applies mana + sends SMSG_SPELLENERGIZELOG packet  
+#   - Client shows floating combat text from these packets
+#   - Recount/MSBT/Details! parse these packets for their displays
+#
+# Spell IDs (for combat log TEXT only, not animations):
+#   - 20267 "Life Steal" - Lifestealing enchant
+#   - 20268 mana restore - Judgement of Wisdom
+#
+# Result: Clean green/blue numbers, no arcade game effect spam!
 ########################################
 
 # Enable/Disable the module

@@ -164,21 +164,25 @@ public:
             manaAmount = std::min(manaAmount, maxMana);
         }
         
-        // Apply healing using proper HealBySpell (triggers combat log events!)
+        // =================================================================
+        // Apply healing - NO spell casting, NO visual effects!
+        // We use HealBySpell which:
+        //   1. Applies health via DealHeal() 
+        //   2. Sends SMSG_SPELLHEALLOG for combat log (Recount/MSBT sees it)
+        //   3. Client shows green floating number from the log packet
+        // The spell ID is ONLY for the combat log text - no animations!
+        // =================================================================
         if (healAmount > 0)
         {
-            // Get SpellInfo for Life Steal (20267) - thematic vampire heal!
+            // Get SpellInfo for Life Steal (20267) - just for combat log name!
             SpellInfo const* healSpellInfo = sSpellMgr->GetSpellInfo(SPELL_LIFE_STEAL_HEAL);
             if (healSpellInfo)
             {
-                // Create HealInfo with healer = target (self-heal)
+                // Create HealInfo (healer = target = self-heal)
                 HealInfo hinfo(healTarget, healTarget, healAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
                 
-                // HealBySpell handles:
-                // - Heal absorbs
-                // - DealHeal (actual health modification)
-                // - SendHealSpellLog (combat log packet - Recount/MSBT visibility!)
-                // Shows as "Life Steal" in combat log - perfect for vampire theme!
+                // HealBySpell does NOT cast - no visual effects!
+                // Just: DealHeal() + SendHealSpellLog()
                 int32 actualHeal = healTarget->HealBySpell(hinfo);
                 
                 if (_config.debug && actualHeal > 0)
@@ -197,13 +201,15 @@ public:
             }
         }
         
-        // Apply mana restore using proper EnergizeBySpell (triggers combat log events!)
+        // =================================================================
+        // Apply mana - NO spell casting, NO visual effects!
+        // EnergizeBySpell does NOT cast - just:
+        //   1. ModifyPower() to add mana
+        //   2. SendEnergizeSpellLog() for combat log (blue number)
+        // =================================================================
         if (manaAmount > 0)
         {
-            // EnergizeBySpell handles:
-            // - ModifyPower (actual mana modification)
-            // - ThreatAssist (proper threat mechanics)
-            // - SendEnergizeSpellLog (combat log packet - Recount/MSBT visibility!)
+            // EnergizeBySpell does NOT cast - no visual effects!
             player->EnergizeBySpell(player, SPELL_MANA_RESTORE, manaAmount, POWER_MANA);
             
             if (_config.debug)
