@@ -599,42 +599,46 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     float targetDPS;
     float expectedStat;
     
+    // 10-level brackets for smooth progression
     if (ownerLevel <= 10)
     {
-        // Bracket 1-10: Player ~6 DPS, typical stat ~30
-        targetDPS = 1.5f;       // 25% of 6
+        targetDPS = 1.5f;       // Player ~6 DPS
         expectedStat = 30.0f;
     }
     else if (ownerLevel <= 20)
     {
-        // Bracket 11-20: Player ~20 DPS, typical stat ~100
-        targetDPS = 5.0f;       // 25% of 20
-        expectedStat = 100.0f;
+        targetDPS = 5.0f;       // Player ~20 DPS
+        expectedStat = 80.0f;
+    }
+    else if (ownerLevel <= 30)
+    {
+        targetDPS = 12.0f;      // Player ~50 DPS
+        expectedStat = 150.0f;
     }
     else if (ownerLevel <= 40)
     {
-        // Bracket 21-40: Player ~80 DPS, typical stat ~350
-        targetDPS = 20.0f;      // 25% of 80
-        expectedStat = 350.0f;
+        targetDPS = 25.0f;      // Player ~100 DPS
+        expectedStat = 280.0f;
+    }
+    else if (ownerLevel <= 50)
+    {
+        targetDPS = 45.0f;      // Player ~180 DPS
+        expectedStat = 450.0f;
     }
     else if (ownerLevel <= 60)
     {
-        // Bracket 41-60: Player ~250 DPS, typical stat ~700
-        targetDPS = 62.5f;      // 25% of 250
+        targetDPS = 85.0f;      // Player ~350 DPS (vanilla endgame)
         expectedStat = 700.0f;
     }
     else if (ownerLevel <= 70)
     {
-        // Bracket 61-70: Player ~600 DPS, typical stat ~1200
-        targetDPS = 150.0f;     // 25% of 600
+        targetDPS = 175.0f;     // Player ~700 DPS (TBC endgame)
         expectedStat = 1200.0f;
     }
     else
     {
-        // Bracket 71-80: Player ~3000 DPS (fresh 80), typical stat ~2500
-        // Scales up: 6000 stat (BiS) = ~1500 DPS guardian (25% of 6000 player DPS)
-        targetDPS = 750.0f;     // 25% of 3000
-        expectedStat = 2500.0f;
+        targetDPS = 750.0f;     // Player ~3000 DPS (WotLK fresh 80)
+        expectedStat = 2500.0f; // Scales: 5000 stat BiS = 1500 DPS guardian
     }
 
     // Pick dominant stat based on what the owner actually has
@@ -1149,10 +1153,12 @@ public:
         uint32 lvl = info.ownerLevel;
         
         if (lvl <= 10)      { targetDPS = 1.5f;   expectedStat = 30.0f; }
-        else if (lvl <= 20) { targetDPS = 5.0f;   expectedStat = 100.0f; }
-        else if (lvl <= 40) { targetDPS = 20.0f;  expectedStat = 350.0f; }
-        else if (lvl <= 60) { targetDPS = 62.5f;  expectedStat = 700.0f; }
-        else if (lvl <= 70) { targetDPS = 150.0f; expectedStat = 1200.0f; }
+        else if (lvl <= 20) { targetDPS = 5.0f;   expectedStat = 80.0f; }
+        else if (lvl <= 30) { targetDPS = 12.0f;  expectedStat = 150.0f; }
+        else if (lvl <= 40) { targetDPS = 25.0f;  expectedStat = 280.0f; }
+        else if (lvl <= 50) { targetDPS = 45.0f;  expectedStat = 450.0f; }
+        else if (lvl <= 60) { targetDPS = 85.0f;  expectedStat = 700.0f; }
+        else if (lvl <= 70) { targetDPS = 175.0f; expectedStat = 1200.0f; }
         else                { targetDPS = 750.0f; expectedStat = 2500.0f; }
         
         float gearRatio = std::max(0.5f, info.baseMultiplier / expectedStat);
@@ -1196,10 +1202,12 @@ public:
         uint32 lvl = info.ownerLevel;
         
         if (lvl <= 10)      { targetDPS = 1.5f;   expectedStat = 30.0f; }
-        else if (lvl <= 20) { targetDPS = 5.0f;   expectedStat = 100.0f; }
-        else if (lvl <= 40) { targetDPS = 20.0f;  expectedStat = 350.0f; }
-        else if (lvl <= 60) { targetDPS = 62.5f;  expectedStat = 700.0f; }
-        else if (lvl <= 70) { targetDPS = 150.0f; expectedStat = 1200.0f; }
+        else if (lvl <= 20) { targetDPS = 5.0f;   expectedStat = 80.0f; }
+        else if (lvl <= 30) { targetDPS = 12.0f;  expectedStat = 150.0f; }
+        else if (lvl <= 40) { targetDPS = 25.0f;  expectedStat = 280.0f; }
+        else if (lvl <= 50) { targetDPS = 45.0f;  expectedStat = 450.0f; }
+        else if (lvl <= 60) { targetDPS = 85.0f;  expectedStat = 700.0f; }
+        else if (lvl <= 70) { targetDPS = 175.0f; expectedStat = 1200.0f; }
         else                { targetDPS = 750.0f; expectedStat = 2500.0f; }
         
         float gearRatio = std::max(0.5f, info.baseMultiplier / expectedStat);
