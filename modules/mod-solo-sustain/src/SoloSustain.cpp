@@ -30,6 +30,7 @@
  */
 
 #include "ScriptMgr.h"
+#include "ScriptDefines/UnitScript.h"
 #include "Player.h"
 #include "Unit.h"
 #include "Config.h"
@@ -109,11 +110,12 @@ static int GetDominantStatType(Player* player)
 // UnitScript: OnDamage Hook
 // Fires when ANY unit deals/receives damage.
 // We filter to only process player-dealt damage.
+// CRITICAL: Must register UNITHOOK_ON_DAMAGE or the hook won't be called!
 // =============================================================================
 class SoloSustain_UnitScript : public UnitScript
 {
 public:
-    SoloSustain_UnitScript() : UnitScript("SoloSustain_UnitScript") {}
+    SoloSustain_UnitScript() : UnitScript("SoloSustain_UnitScript", true, { UNITHOOK_ON_DAMAGE }) {}
 
     // Called when attacker deals damage to victim
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
