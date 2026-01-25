@@ -1,5 +1,15 @@
 # List of AUTHORS who contributed over time to the AzerothCore project
 
+## Fork Maintainer
+
+This fork is maintained by **Ramvaris** (https://github.com/Ramvaris).
+
+Custom work includes:
+- Integration of various AC modules
+- Custom Soul Keeper module (creature collection system)
+- Server stability improvements
+- Core modifications for custom module support
+
 ## Point of current development
 The project is currently hosted at https://www.azerothcore.org/ and developed under https://github.com/azerothcore
 

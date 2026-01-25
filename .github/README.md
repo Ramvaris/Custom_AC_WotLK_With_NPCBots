@@ -11,9 +11,14 @@
 
 ## Custom
 
-- Some modules integrated
-- Diverse 'defensive crash protectors' for the server
-- Potential Old World Flying (needs also a fitting client side spell or a lua script that allows the client to mount up)
+This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
+
+- Some AC modules integrated and kept up-to-date
+- Custom Soul Collector Mod (My Own Invention, with the help of my AI Agent Ryo) [Does NOT work without some AC core file mods done here!]
+- A number of 'defensive crash protectors' for the server
+- Potential old world flying (needs also a fitting client side spell or a lua script that allows the client to mount up)
+- Some QoL stuff 
+- Not included stuff: MPQ File patching and LUA scripts that I didn't include here contain 'QoL' for a
 
 ### Included Modules
 

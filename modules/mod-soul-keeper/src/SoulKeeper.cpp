@@ -436,6 +436,13 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     guardian->SetControlledByPlayer(true);
     guardian->SetUnitFlag(UNIT_FLAG_PLAYER_CONTROLLED);
 
+    // === LOOT ELIGIBILITY FIX ===
+    // CRITICAL: Ensure m_CreatedByPlayer is TRUE so guardian damage counts as player damage.
+    // Without this, LowerPlayerDamageReq won't mark the mob as "damaged by player" and
+    // IsDamageEnoughForLootingAndReward() returns false = no loot for player!
+    // This is normally set in TempSummon::InitStats but we explicitly ensure it here.
+    guardian->m_CreatedByPlayer = true;
+
     // === GUARDIAN FLAGS - NOT a controllable pet! ===
     // Remove NPC interaction flags - this is a combat guardian
     guardian->ReplaceAllNpcFlags(UNIT_NPC_FLAG_NONE);
