@@ -5,7 +5,7 @@
  * 
  * COMMANDS:
  *   .soul absorb         - Capture target (DEAD creatures only)
- *   .soul dismiss        - Dismiss active guardian (60s cooldown)
+ *   .soul dismiss        - Dismiss active guardian (combat-only restriction)
  *   .soul return         - Same as dismiss (for when guardian chases too far)
  *   .soul summon         - No arg: Open soul menu | With arg: Summon by index
  *   .soul rename <name>  - Rename currently summoned guardian
@@ -17,13 +17,18 @@
  *   - REAL guardian summoning via SummonPropertiesEntry (proper Guardian class)
  *   - Player-based stat scaling: 80% HP, 70% mana, 35% armor, 40% resists
  *   - Does NOT interfere with Hunter/Warlock pet system (no pet bar)
- *   - Guardian death triggers 60s cooldown
  * 
- * OWNER-ASSIST BEHAVIOR (via UnitScript hooks):
- *   - OnUnitEnterCombat: Guardian attacks when owner attacks something
- *   - OnDamage: Guardian defends when owner takes damage
+ * OWNER-ASSIST BEHAVIOR (via OnDamage hook):
+ *   - Owner ATTACKS something → Guardian assists (works for ranged/melee)
+ *   - Owner TAKES damage → Guardian defends (attacks the attacker)
  *   - Guardian uses its native AI for spells/abilities during combat
  *   - REACT_DEFENSIVE prevents guardian from pulling extra mobs
+ * 
+ * HEAL LIMITATION:
+ *   - Guardians use their native creature AI (spells, heals, buffs)
+ *   - However, most creature AI only heals SELF or random friendly targets
+ *   - Guardian will NOT specifically prioritize healing the OWNER
+ *   - This would require custom AI per creature type (not implemented)
  */
 
 #include "SoulKeeper.h"
@@ -1220,35 +1225,51 @@ public:
     // === MELEE DAMAGE: No hook scaling needed ===
     // Melee damage is already set correctly in ScaleGuardian via SetStatFloatValue
 
-    // === DAMAGE HANDLING: Guardian defends owner ===
-    // When owner takes damage, guardian attacks the attacker
+    // === DAMAGE HANDLING: Guardian assists/defends owner ===
+    // 1. When owner DEALS damage → guardian attacks the same target (ranged initiation)
+    // 2. When owner TAKES damage → guardian attacks the attacker (defense)
     void OnDamage(Unit* attacker, Unit* victim, uint32& /*damage*/) override
     {
         if (!attacker || !victim)
             return;
 
-        // Only care about player victims
-        Player* player = victim->ToPlayer();
-        if (!player)
-            return;
-
-        // Check if player has an active guardian
-        uint32 playerGuidLow = player->GetGUID().GetCounter();
-        auto it = sSoulKeeper->_activeGuardians.find(playerGuidLow);
-        if (it == sSoulKeeper->_activeGuardians.end())
-            return;
-
-        Creature* guardian = ObjectAccessor::GetCreature(*player, it->second);
-        if (!guardian || !guardian->IsAlive())
-            return;
-
-        // Guardian defends: attack whoever hit the owner
-        if (guardian->CanCreatureAttack(attacker) && !guardian->IsInCombatWith(attacker))
+        // === CASE 1: Owner ATTACKS something → Guardian assists ===
+        Player* attackingPlayer = attacker->ToPlayer();
+        if (attackingPlayer)
         {
-            // Stop current target if switching to defend owner
-            if (guardian->GetVictim() != attacker)
+            uint32 playerGuidLow = attackingPlayer->GetGUID().GetCounter();
+            auto it = sSoulKeeper->_activeGuardians.find(playerGuidLow);
+            if (it != sSoulKeeper->_activeGuardians.end())
             {
-                guardian->AI()->AttackStart(attacker);
+                Creature* guardian = ObjectAccessor::GetCreature(*attackingPlayer, it->second);
+                if (guardian && guardian->IsAlive())
+                {
+                    // Guardian assists: attack owner's target
+                    if (guardian->CanCreatureAttack(victim) && !guardian->IsInCombatWith(victim))
+                    {
+                        guardian->AI()->AttackStart(victim);
+                    }
+                }
+            }
+        }
+
+        // === CASE 2: Owner TAKES damage → Guardian defends ===
+        Player* victimPlayer = victim->ToPlayer();
+        if (victimPlayer)
+        {
+            uint32 playerGuidLow = victimPlayer->GetGUID().GetCounter();
+            auto it = sSoulKeeper->_activeGuardians.find(playerGuidLow);
+            if (it != sSoulKeeper->_activeGuardians.end())
+            {
+                Creature* guardian = ObjectAccessor::GetCreature(*victimPlayer, it->second);
+                if (guardian && guardian->IsAlive())
+                {
+                    // Guardian defends: attack whoever hit the owner
+                    if (guardian->CanCreatureAttack(attacker) && !guardian->IsInCombatWith(attacker))
+                    {
+                        guardian->AI()->AttackStart(attacker);
+                    }
+                }
             }
         }
     }
