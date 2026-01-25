@@ -31,6 +31,22 @@ SoloSustain.Enable = 1
 SoloSustain.Debug = 0
 
 ########################################
+# CUSTOM SPELL IDs
+# Combat log name/icon comes from the spell's DBC entry.
+# Use custom dummy spells for themed display names.
+#
+# Defaults:
+#   Heal: 20267 "Life Steal" (Lifestealing enchant)
+#   Mana: 20268 (Judgement of Wisdom energize)
+#
+# For custom spells, create a Spell.dbc entry with
+# your desired name/icon and set the ID here.
+########################################
+
+SoloSustain.SpellId.Heal = 20267
+SoloSustain.SpellId.Mana = 20268
+
+########################################
 # PET & GUARDIAN SUPPORT
 # Player pets and guardians also get life leech.
 # Pets are squishier than players and can't self-heal,

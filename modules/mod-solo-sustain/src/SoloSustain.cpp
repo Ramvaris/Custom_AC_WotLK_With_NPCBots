@@ -35,15 +35,10 @@
 #include <algorithm>
 
 // =============================================================================
-// Real WoW 3.3.5a Spell IDs (exist in DBC, used by AC internally)
-// These trigger proper combat log events that Recount/MSBT can see!
+// Default Spell IDs (can be overridden in config for custom dummy spells)
 // =============================================================================
-// Life Steal heal - used by Lifestealing enchant and Judgement of Light
-// Shows as "Life Steal" in combat log - PERFECT for vampire theme!
-constexpr uint32 SPELL_LIFE_STEAL_HEAL = 20267;
-
-// Mana restore - using the same spell for energize (shows as generic mana gain)
-constexpr uint32 SPELL_MANA_RESTORE = 20268;  // Judgement of Wisdom energize
+constexpr uint32 DEFAULT_HEAL_SPELL_ID = 20267;   // Life Steal (Lifestealing enchant)
+constexpr uint32 DEFAULT_MANA_SPELL_ID = 20268;   // Judgement of Wisdom energize
 
 // =============================================================================
 // Configuration Cache (loaded once at startup)
@@ -52,7 +47,10 @@ struct SoloSustainConfig
 {
     bool enabled = false;
     bool debug = false;
-    // NOTE: Combat log visibility is ALWAYS on - HealBySpell/EnergizeBySpell handle it
+    
+    // Spell IDs for combat log display (name/icon from client DBC)
+    uint32 healSpellId = DEFAULT_HEAL_SPELL_ID;
+    uint32 manaSpellId = DEFAULT_MANA_SPELL_ID;
     
     // Pet/Guardian support
     bool petEnabled = true;           // Enable leech for player pets/guardians
@@ -152,10 +150,10 @@ public:
             healAmount = std::min(healAmount, maxHeal);
         }
         
-        // Mana leech only for mana users (skip for most pets, they use focus/energy)
-        // Players always get mana leech if they use mana
-        // For pets: only if they actually use mana (Warlock Imp/Succubus/Felhunter)
-        if (manaLeechPct > 0.0f && !isPetOrGuardian && player->GetPowerType() == POWER_MANA)
+        // Mana leech for players with a mana pool (even if shapeshifted)
+        // Druids in cat/bear form have POWER_ENERGY/RAGE but still have mana bar!
+        // Check GetMaxPower(POWER_MANA) > 0 instead of GetPowerType() == POWER_MANA
+        if (manaLeechPct > 0.0f && !isPetOrGuardian && player->GetMaxPower(POWER_MANA) > 0)
         {
             manaAmount = static_cast<uint32>(damage * manaLeechPct);
             
@@ -174,8 +172,14 @@ public:
         // =================================================================
         if (healAmount > 0)
         {
-            // Get SpellInfo for Life Steal (20267) - just for combat log name!
-            SpellInfo const* healSpellInfo = sSpellMgr->GetSpellInfo(SPELL_LIFE_STEAL_HEAL);
+            // Get SpellInfo for configured spell ID - just for combat log name!
+            SpellInfo const* healSpellInfo = sSpellMgr->GetSpellInfo(_config.healSpellId);
+            if (!healSpellInfo)
+            {
+                // Fallback to default if custom spell doesn't exist
+                healSpellInfo = sSpellMgr->GetSpellInfo(DEFAULT_HEAL_SPELL_ID);
+            }
+            
             if (healSpellInfo)
             {
                 // Create HealInfo (healer = target = self-heal)
@@ -210,7 +214,7 @@ public:
         if (manaAmount > 0)
         {
             // EnergizeBySpell does NOT cast - no visual effects!
-            player->EnergizeBySpell(player, SPELL_MANA_RESTORE, manaAmount, POWER_MANA);
+            player->EnergizeBySpell(player, _config.manaSpellId, manaAmount, POWER_MANA);
             
             if (_config.debug)
             {
@@ -233,7 +237,10 @@ public:
     {
         _config.enabled = sConfigMgr->GetOption<bool>("SoloSustain.Enable", true);
         _config.debug = sConfigMgr->GetOption<bool>("SoloSustain.Debug", false);
-        // NOTE: ShowCombatLog removed - HealBySpell/EnergizeBySpell ALWAYS trigger combat log
+        
+        // Custom spell IDs for combat log display (use dummy spells with custom names/icons)
+        _config.healSpellId = sConfigMgr->GetOption<uint32>("SoloSustain.SpellId.Heal", DEFAULT_HEAL_SPELL_ID);
+        _config.manaSpellId = sConfigMgr->GetOption<uint32>("SoloSustain.SpellId.Mana", DEFAULT_MANA_SPELL_ID);
         
         // Pet/Guardian support
         _config.petEnabled = sConfigMgr->GetOption<bool>("SoloSustain.Pet.Enable", true);
