@@ -477,6 +477,16 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
         summon->RemoveUnitTypeMask(UNIT_MASK_CONTROLLABLE_GUARDIAN);
     }
     
+    // === CRITICAL: Ensure UNIT_MASK_GUARDIAN is set ===
+    // SummonPropertiesEntry 61 should create a Guardian class, but the type mask
+    // might not be set correctly for all creature types. Critters especially
+    // need this flag or they'll be treated as passive non-combatants.
+    // This bypasses the critter checks in UpdateMoveInLineOfSightState().
+    if (!summon->HasUnitTypeMask(UNIT_MASK_GUARDIAN))
+    {
+        summon->AddUnitTypeMask(UNIT_MASK_GUARDIAN);
+    }
+    
     // === INIT STATS FOR LEVEL (Proper health/damage scaling) ===
     // If it's a Guardian class, use InitStatsForLevel for proper stats
     if (summon->HasUnitTypeMask(UNIT_MASK_GUARDIAN))
@@ -496,6 +506,12 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     //   - OnDamage: Guardian defends when owner is hit
     // The guardian's native AI handles spells/abilities in combat
     guardian->SetReactState(REACT_DEFENSIVE);
+    
+    // === CRITICAL: Recalculate line-of-sight movement state ===
+    // Critters/passive creatures have m_moveInLineOfSightDisabled=true by default.
+    // Now that we've added UNIT_MASK_GUARDIAN, recalculating will enable LOS.
+    // This allows guardians to properly aggro and be targeted by mobs.
+    guardian->UpdateMoveInLineOfSightState();
 
     // === Enable auto-attack for ALL creatures ===
     guardian->SetAttackTime(BASE_ATTACK, 2000);
@@ -881,6 +897,11 @@ void SoulKeeper::RenameGuardian(Player* player, std::string const& newName)
             CharacterDatabase.Execute(
                 "UPDATE character_soul_keeper SET custom_name = '{}' WHERE owner_guid = {} AND creature_entry = {}",
                 newName, guid, creatureEntry);
+
+            // Apply name to currently summoned guardian IMMEDIATELY (not just on resummon)
+            guardian->SetName(newName);
+            // Force client to re-query the pet name by updating the timestamp
+            guardian->SetUInt32Value(UNIT_FIELD_PET_NAME_TIMESTAMP, uint32(GameTime::GetGameTime().count()));
 
             ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Renamed '{}' to '{}'!|r", oldName, newName);
             return;

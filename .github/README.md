@@ -63,7 +63,7 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 #### Solo Sustain Features
 - **Passive leech** - No need to cast spells, just deal damage!
 - **Class-specific** - Melee gets more sustain (face-tanking), ranged less (can kite)
-- **Pet & Guardian support** - Hunter pets, Warlock demons, DK ghouls, etc. all leech too!
+- **Pet support** - Hunter pets and Warlock demons leech too!
 - **Combat log visible** - Shows as "Vampiric Embrace" (heal) and "Replenishment" (mana)
 - **Fully configurable** - Tune percentages per class in `solo_sustain.conf`
 - **Standard client compatible** - No custom spells needed, works with any 3.3.5a client

@@ -43,33 +43,26 @@ SoloSustain.Debug = 0
 # your desired name/icon and set the ID here.
 ########################################
 
-SoloSustain.SpellId.Heal = 20267
-SoloSustain.SpellId.Mana = 20268
+SoloSustain.SpellId.Heal = 15286
+SoloSustain.SpellId.Mana = 57669
 
 ########################################
-# PET & GUARDIAN SUPPORT
-# Player pets and guardians also get life leech.
-# Pets are squishier than players and can't self-heal,
-# so they get a multiplier on top of owner's class values.
+# PET SUPPORT (Hunter/Warlock only)
+# Permanent pets (IsPet() = true) get life leech.
+# Does NOT support guardians/temporary summons.
 # 
 # Applies to:
 #   - Hunter pets (all specs)
 #   - Warlock pets (Imp, Voidwalker, Succubus, Felhunter, Felguard)
-#   - DK Ghoul (permanent and Army)
-#   - Shaman Wolves (Feral Spirit)
-#   - Mage Water Elemental
-#   - Any other player-owned guardian
 #
 # NOTE: Pets heal THEMSELVES - owner's mana is unaffected.
 ########################################
 
-# Enable leech for player pets and guardians
+# Enable leech for player pets
 SoloSustain.Pet.Enable = 1
 
-# Leech multiplier for pets (1.5 = 150% of owner's class value)
-# Pets take more damage (no armor/resilience), so they need more sustain.
-# Set higher for solo play where pets face-tank raid bosses.
-SoloSustain.Pet.LeechMultiplier = 1.5
+# Leech multiplier for pets (1.0 = same as owner's class value)
+SoloSustain.Pet.LeechMultiplier = 1.0
 
 ########################################
 # LIFE LEECH PER CLASS

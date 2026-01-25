@@ -1,27 +1,12 @@
 /*
  * Solo Sustain Module
  * Author: Ramvaris
- * License: Free to use, modify, distribute as long as you mention the original author
  * 
  * Passive life and mana leech based on damage dealt.
  * Designed for solo play against scaled content (raids, dungeons, bots).
  * 
- * DESIGN PHILOSOPHY:
- *   - Melee classes FACE-TANK damage → need high life leech
- *   - Ranged classes can KITE → need less life leech
- *   - Healers have REAL HEALS → need minimal passive sustain
- *   - All values configurable per-class in .conf
- * 
- * DAMAGE HOOKS:
- *   - OnDamage (player deals damage to victim)
- *   - Both melee and spell damage trigger leech
- *   - Caps prevent burst healing from big crits
- * 
- * COMBAT LOG VISIBILITY (Recount/MSBT):
- *   - Uses Unit::HealBySpell() with proper HealInfo struct
- *   - Uses Unit::EnergizeBySpell() for mana restoration
- *   - These are the PROPER AC methods that trigger combat log events!
- *   - Standard 3.3.5a spell IDs from DBC for client compatibility
+ * Supports: Players and their permanent pets (Hunter/Warlock IsPet()).
+ * Does NOT support: Guardians (temporary summons) - they use creature AI.
  */
 
 #include "ScriptMgr.h"
@@ -34,80 +19,49 @@
 #include "Log.h"
 #include <algorithm>
 
-// =============================================================================
-// Default Spell IDs (can be overridden in config for custom dummy spells)
-// =============================================================================
 constexpr uint32 DEFAULT_HEAL_SPELL_ID = 20267;   // Life Steal (Lifestealing enchant)
 constexpr uint32 DEFAULT_MANA_SPELL_ID = 20268;   // Judgement of Wisdom energize
 
-// =============================================================================
-// Configuration Cache (loaded once at startup)
-// =============================================================================
 struct SoloSustainConfig
 {
     bool enabled = false;
     bool debug = false;
-    
-    // Spell IDs for combat log display (name/icon from client DBC)
     uint32 healSpellId = DEFAULT_HEAL_SPELL_ID;
     uint32 manaSpellId = DEFAULT_MANA_SPELL_ID;
-    
-    // Pet/Guardian support
-    bool petEnabled = true;           // Enable leech for player pets/guardians
-    float petLeechMultiplier = 1.5f;  // Pets get MORE leech (squishier than players)
-    
-    // Life leech per class (index = CLASS_*)
+    bool petEnabled = true;
+    float petLeechMultiplier = 1.5f;
     float lifeLeech[MAX_CLASSES] = {};
-    
-    // Mana leech per class
     float manaLeech[MAX_CLASSES] = {};
-    
-    // Caps
     float lifeLeechCap = 0.15f;
     float manaLeechCap = 0.25f;
 };
 
 static SoloSustainConfig _config;
 
-// =============================================================================
-// UnitScript: OnDamage Hook
-// Fires when ANY unit deals/receives damage.
-// Handles: Players directly, Pets/Guardians (heal themselves based on owner's class).
-// CRITICAL: Must register UNITHOOK_ON_DAMAGE or the hook won't be called!
-// =============================================================================
 class SoloSustain_UnitScript : public UnitScript
 {
 public:
     SoloSustain_UnitScript() : UnitScript("SoloSustain_UnitScript", true, { UNITHOOK_ON_DAMAGE }) {}
 
-    // Called when attacker deals damage to victim
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
     {
         if (!_config.enabled)
             return;
         
-        // Don't process self-damage or friendly-fire
         if (!victim || victim == attacker || !attacker->IsHostileTo(victim))
             return;
         
-        // Determine if this is a player or a pet/guardian
         Player* player = attacker->ToPlayer();
-        Unit* healTarget = attacker;  // Who gets healed (player or pet)
+        Unit* healTarget = attacker;
         float leechMultiplier = 1.0f;
-        bool isPetOrGuardian = false;
+        bool isPet = false;
         
         if (!player)
         {
-            // Not a player - check if it's a pet or guardian owned by a player
-            if (!_config.petEnabled)
+            // Only support permanent pets (Hunter/Warlock) - NOT guardians
+            if (!_config.petEnabled || !attacker->IsPet())
                 return;
             
-            // IsPet() = permanent pets (Hunter, Warlock)
-            // IsGuardian() = temporary summons (DK ghoul, Shaman wolves, etc.)
-            if (!attacker->IsPet() && !attacker->IsGuardian())
-                return;
-            
-            // Get the player owner
             Unit* owner = attacker->GetOwner();
             if (!owner)
                 return;
@@ -116,16 +70,13 @@ public:
             if (!player)
                 return;
             
-            isPetOrGuardian = true;
+            isPet = true;
             leechMultiplier = _config.petLeechMultiplier;
-            // healTarget stays as 'attacker' (the pet/guardian heals itself)
         }
         
-        // Don't process if the healer is dead
         if (!healTarget->IsAlive())
             return;
         
-        // Get class-specific leech values from the player (owner for pets)
         uint8 playerClass = player->GetClass();
         if (playerClass >= MAX_CLASSES)
             return;
@@ -133,101 +84,57 @@ public:
         float lifeLeechPct = _config.lifeLeech[playerClass] * leechMultiplier;
         float manaLeechPct = _config.manaLeech[playerClass] * leechMultiplier;
         
-        // No leech configured for this class
         if (lifeLeechPct <= 0.0f && manaLeechPct <= 0.0f)
             return;
         
-        // Calculate leech amounts
-        uint32 healAmount = 0;
-        uint32 manaAmount = 0;
-        
+        // Life leech
         if (lifeLeechPct > 0.0f)
         {
-            healAmount = static_cast<uint32>(damage * lifeLeechPct);
-            
-            // Apply cap based on heal target's max health
+            uint32 healAmount = static_cast<uint32>(damage * lifeLeechPct);
             uint32 maxHeal = static_cast<uint32>(healTarget->GetMaxHealth() * _config.lifeLeechCap);
             healAmount = std::min(healAmount, maxHeal);
-        }
-        
-        // Mana leech for players with a mana pool (even if shapeshifted)
-        // Druids in cat/bear form have POWER_ENERGY/RAGE but still have mana bar!
-        // Check GetMaxPower(POWER_MANA) > 0 instead of GetPowerType() == POWER_MANA
-        if (manaLeechPct > 0.0f && !isPetOrGuardian && player->GetMaxPower(POWER_MANA) > 0)
-        {
-            manaAmount = static_cast<uint32>(damage * manaLeechPct);
             
-            // Apply cap
-            uint32 maxMana = static_cast<uint32>(player->GetMaxPower(POWER_MANA) * _config.manaLeechCap);
-            manaAmount = std::min(manaAmount, maxMana);
-        }
-        
-        // =================================================================
-        // Apply healing - NO spell casting, NO visual effects!
-        // We use HealBySpell which:
-        //   1. Applies health via DealHeal() 
-        //   2. Sends SMSG_SPELLHEALLOG for combat log (Recount/MSBT sees it)
-        //   3. Client shows green floating number from the log packet
-        // The spell ID is ONLY for the combat log text - no animations!
-        // =================================================================
-        if (healAmount > 0)
-        {
-            // Get SpellInfo for configured spell ID - just for combat log name!
-            SpellInfo const* healSpellInfo = sSpellMgr->GetSpellInfo(_config.healSpellId);
-            if (!healSpellInfo)
+            if (healAmount > 0)
             {
-                // Fallback to default if custom spell doesn't exist
-                healSpellInfo = sSpellMgr->GetSpellInfo(DEFAULT_HEAL_SPELL_ID);
-            }
-            
-            if (healSpellInfo)
-            {
-                // Create HealInfo (healer = target = self-heal)
-                HealInfo hinfo(healTarget, healTarget, healAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
+                SpellInfo const* healSpellInfo = sSpellMgr->GetSpellInfo(_config.healSpellId);
+                if (!healSpellInfo)
+                    healSpellInfo = sSpellMgr->GetSpellInfo(DEFAULT_HEAL_SPELL_ID);
                 
-                // HealBySpell does NOT cast - no visual effects!
-                // Just: DealHeal() + SendHealSpellLog()
-                int32 actualHeal = healTarget->HealBySpell(hinfo);
-                
-                if (_config.debug && actualHeal > 0)
+                if (healSpellInfo)
                 {
-                    if (isPetOrGuardian)
+                    HealInfo hinfo(healTarget, healTarget, healAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
+                    healTarget->HealBySpell(hinfo);
+                    
+                    if (_config.debug)
                     {
-                        LOG_INFO("module.solo_sustain", "SoloSustain: {}'s pet healed {} HP from {} damage ({}% x {}x)",
-                            player->GetName(), actualHeal, damage, _config.lifeLeech[playerClass] * 100.0f, leechMultiplier);
-                    }
-                    else
-                    {
-                        LOG_INFO("module.solo_sustain", "SoloSustain: {} healed {} HP from {} damage ({}%)",
-                            player->GetName(), actualHeal, damage, lifeLeechPct * 100.0f);
+                        LOG_INFO("module.solo_sustain", "SoloSustain: {} healed {} HP ({}% of {} damage)",
+                            healTarget->GetName(), healAmount, lifeLeechPct * 100.0f, damage);
                     }
                 }
             }
         }
         
-        // =================================================================
-        // Apply mana - NO spell casting, NO visual effects!
-        // EnergizeBySpell does NOT cast - just:
-        //   1. ModifyPower() to add mana
-        //   2. SendEnergizeSpellLog() for combat log (blue number)
-        // =================================================================
-        if (manaAmount > 0)
+        // Mana leech (players only, not pets)
+        if (manaLeechPct > 0.0f && !isPet && player->GetMaxPower(POWER_MANA) > 0)
         {
-            // EnergizeBySpell does NOT cast - no visual effects!
-            player->EnergizeBySpell(player, _config.manaSpellId, manaAmount, POWER_MANA);
+            uint32 manaAmount = static_cast<uint32>(damage * manaLeechPct);
+            uint32 maxMana = static_cast<uint32>(player->GetMaxPower(POWER_MANA) * _config.manaLeechCap);
+            manaAmount = std::min(manaAmount, maxMana);
             
-            if (_config.debug)
+            if (manaAmount > 0)
             {
-                LOG_INFO("module.solo_sustain", "SoloSustain: {} restored {} mana from {} damage ({}%)",
-                    player->GetName(), manaAmount, damage, manaLeechPct * 100.0f);
+                player->EnergizeBySpell(player, _config.manaSpellId, manaAmount, POWER_MANA);
+                
+                if (_config.debug)
+                {
+                    LOG_INFO("module.solo_sustain", "SoloSustain: {} restored {} mana ({}% of {} damage)",
+                        player->GetName(), manaAmount, manaLeechPct * 100.0f, damage);
+                }
             }
         }
     }
 };
 
-// =============================================================================
-// WorldScript: Load Configuration
-// =============================================================================
 class SoloSustain_WorldScript : public WorldScript
 {
 public:
@@ -237,16 +144,11 @@ public:
     {
         _config.enabled = sConfigMgr->GetOption<bool>("SoloSustain.Enable", true);
         _config.debug = sConfigMgr->GetOption<bool>("SoloSustain.Debug", false);
-        
-        // Custom spell IDs for combat log display (use dummy spells with custom names/icons)
         _config.healSpellId = sConfigMgr->GetOption<uint32>("SoloSustain.SpellId.Heal", DEFAULT_HEAL_SPELL_ID);
         _config.manaSpellId = sConfigMgr->GetOption<uint32>("SoloSustain.SpellId.Mana", DEFAULT_MANA_SPELL_ID);
-        
-        // Pet/Guardian support
         _config.petEnabled = sConfigMgr->GetOption<bool>("SoloSustain.Pet.Enable", true);
         _config.petLeechMultiplier = sConfigMgr->GetOption<float>("SoloSustain.Pet.LeechMultiplier", 1.5f);
         
-        // Life leech per class
         _config.lifeLeech[CLASS_WARRIOR]      = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Warrior", 0.08f);
         _config.lifeLeech[CLASS_PALADIN]      = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Paladin", 0.02f);
         _config.lifeLeech[CLASS_HUNTER]       = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Hunter", 0.04f);
@@ -258,7 +160,6 @@ public:
         _config.lifeLeech[CLASS_WARLOCK]      = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Warlock", 0.02f);
         _config.lifeLeech[CLASS_DRUID]        = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Druid", 0.02f);
         
-        // Mana leech per class
         _config.manaLeech[CLASS_WARRIOR]      = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Warrior", 0.0f);
         _config.manaLeech[CLASS_PALADIN]      = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Paladin", 0.08f);
         _config.manaLeech[CLASS_HUNTER]       = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Hunter", 0.08f);
@@ -270,20 +171,17 @@ public:
         _config.manaLeech[CLASS_WARLOCK]      = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Warlock", 0.08f);
         _config.manaLeech[CLASS_DRUID]        = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Druid", 0.08f);
         
-        // Caps
         _config.lifeLeechCap = sConfigMgr->GetOption<float>("SoloSustain.LifeLeech.Cap", 0.15f);
         _config.manaLeechCap = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Cap", 0.25f);
         
         if (_config.enabled)
         {
-            LOG_INFO("module.solo_sustain", ">> Solo Sustain module loaded - damage-based life/mana leech active");
+            LOG_INFO("module.solo_sustain", ">> Solo Sustain: Active (pets: {})",
+                _config.petEnabled ? "enabled" : "disabled");
         }
     }
 };
 
-// =============================================================================
-// Script Registration
-// =============================================================================
 void Addmod_solo_sustainScripts()
 {
     new SoloSustain_WorldScript();
