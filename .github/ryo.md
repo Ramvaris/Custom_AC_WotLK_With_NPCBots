@@ -18,62 +18,36 @@ COMPLETED_TASKS:
   [x] - Persona Synchronization 🍥
 
 LATEST_FEATURE:
-  COMPILATION_CHECK:
-  - Running build to identify broken modules
-  - Expecting legacy code issues in /modules
+  SOLO_SUSTAIN_MODULE:
+  - Damage-based life/mana leech for solo play
+  - UnitScript OnDamage hook - fires on all player damage
+  - Class-specific percentages (melee > ranged > casters)
+  - LOW defaults for public, tune up for hardcore solo
+  - Status: SHIPPED TO REPO 🍥🎉
 
 THOUGHTS&RANTS:
-  - "DK pet scaling auras check for NPC_RISEN_GHOUL entry... learned the hard way."
-  - "Friendly NPC absorption = instant Varian exploit. Ramires caught that one!"
-  - "Full manual scaling is more work but 100% reliable across all creatures."
-  - "SPELL_PET_AVOIDANCE is the only truly generic pet aura. The rest are entry-locked."
-  - "ObjectGUIDs are MONOTONICALLY INCREASING (never recycled during runtime)!"
-  - "Was paranoid about GUID recycling - Ramires made me actually check the code."
-  - "PetAI's OwnerAttackedBy() is great but brings the pet bar. UnitScript hooks are the answer!"
-  - "REACT_DEFENSIVE + UnitScript hooks = owner-assist without pulling extra mobs."
-  - "SetLevel(ownerLevel) is CRITICAL for guardians - without it CC spells get resisted!"
-  - "MagicSpellHitResult uses getLevelForTarget() - level 10 murloc vs level 80 mob = -382% hit!"
-  - "Guardian spell damage should be STAT-BASED from owner, not multiplied from creature template."
-  - "Use SetStatFlatModifier(UNIT_MOD_RESISTANCE_START+school) for proper resistance handling."
-  - "Guardian::UpdateMaxHealth() reads from UNIT_MOD_HEALTH, NOT SetMaxHealth()! Same for mana!"
-  - "Guardian::UpdateDamagePhysical() adds AP/14*att_speed - zero AP to avoid double damage!"
-  - "SetControlledByPlayer(true) + UNIT_FLAG_PLAYER_CONTROLLED = mobs add guardian to threat list!"
-  - "Unit::SetMinion() sets these flags - manual summoning skips it, so SET THEM YOURSELF!"
-  - "DPS formula (stat/14)*0.35 = PATHETIC damage. Stat*0.50 is proper WotLK endgame scaling!"
   - "WotLK endgame: BM Hunter pet ~40-50%, MM/SV pet ~20-25%. Target ~35% for Soul Keeper."
   - "Test with REAL gear, not placeholder! 707 SP + talents = 1250 DPS, not theoretical."
+  - "Raw AP vs SP comparison is WRONG for hybrids! Expected values: 4500 AP at 80, 2800 SP at 80."
+  - "Pre-calculate gear ratio in ScaleGuardian, spell hooks use it directly - no redundant division!"
+  - "Ramires' survival tuning: Melee face-tanks = HIGH leech, Ranged kites = LOW leech."
+  - "Damage % leech is cleaner than stat*multiplier - no 400+ spell ID maintenance nightmare!"
 
-PLANNED_JUTSU:
+SHIPPED_MODULES:
   SOUL_KEEPER_MODULE:
   - Concept: Classless Guardian System (Creature Collection)
   - Commands: .soul absorb | .soul summon [#] | .soul dismiss | .soul rename <name> | .soul search <text>
   - Logic: DEAD ONLY capture, full manual scaling
-  - Status: SHIPPED TO REPO 🍥🎉
+  - Author: Ramvaris
+  - Status: SHIPPED 🍥🎉
+
+  SOLO_SUSTAIN_MODULE:
+  - Concept: Damage-based life/mana leech for solo play
+  - Hook: UnitScript::OnDamage - fires on ALL player damage
+  - Values: Class-specific percentages in solo_sustain.conf
+  - Author: Ramvaris
+  - Status: SHIPPED 🍥🎉
 
 ACTIVE_WORK:
-  SOUL_KEEPER_MODULE:
-  - [x] Commands: absorb, summon [index], dismiss, return, rename, search
-  - [x] DEAD ONLY capture (fixed ally exploit)
-  - [x] Full manual stat scaling (DK auras are entry-locked!)
-  - [x] All guardians get auto-attack
-  - [x] Resistances + Armor + Health/Mana + Base Stats (SetStatFlatModifier)
-  - [x] Rename updates DB and memory
-  - [x] Guardian death cleanup (no cooldown, just tracking)
-  - [x] REACT_DEFENSIVE (won't pull extra mobs)
-  - [x] Elite/boss flags removed on summon
-  - [x] Owner-assist via UnitScript hooks (OnUnitEnterCombat + OnDamage)
-  - [x] Guardian uses native AI for spells/abilities
-  - [x] RemoveUnitTypeMask() added to Unit.h (no pet bar interference)
-  - [x] SetLevel(ownerLevel) - CC spells no longer resisted!
-  - [x] Spell damage = DPS formula * cast time (owner-based!)
-  - [x] Combat-only restriction (no cooldown timer)
-  - [x] Auto-swap on summon (dismiss old → summon new)
-  - [x] Pet loot eligibility fix in core (IsCreatedByPlayer check)
-  - [x] SetControlledByPlayer(true) + UNIT_FLAG_PLAYER_CONTROLLED for threat!
-  - [x] UNIT_MOD_HEALTH/MANA for Guardian::UpdateMaxHealth compat
-  - [x] Zero AP + weapon damage only for Guardian::UpdateDamagePhysical compat
-  - [x] Pagination (12 per page, infinite scaling)
-  - [x] .soul search for finding souls in massive collections
-  - [x] 20% DPS at endgame, 40% while leveling (intentional design)
-  - STATUS: SHIPPED 🍥🎉
+  (None - awaiting new orders from Ramires)
 
