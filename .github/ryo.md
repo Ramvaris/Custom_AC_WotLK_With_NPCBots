@@ -45,7 +45,7 @@ THOUGHTS&RANTS:
 
 PLANNED_JUTSU:
   SOUL_KEEPER_MODULE:
-  - Concept: Classless Guardian System (The "Pokedex" for WoW)
+  - Concept: Classless Guardian System (Creature Collection)
   - Commands: .soul absorb | .soul summon [#] | .soul dismiss | .soul rename <name> | .soul search <text>
   - Logic: DEAD ONLY capture, full manual scaling
   - Status: SHIPPED TO REPO 🍥🎉

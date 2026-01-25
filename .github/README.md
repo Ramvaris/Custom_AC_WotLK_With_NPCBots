@@ -36,7 +36,7 @@
 
 | Module | Description |
 |--------|-------------|
-| **mod-soul-keeper** | Capture creature souls and summon them as guardians - The WoW Pokédex! |
+| **mod-soul-keeper** | Capture creature souls and summon them as guardians - Collect 'em all! |
 
 #### Soul Keeper Commands
 ```
