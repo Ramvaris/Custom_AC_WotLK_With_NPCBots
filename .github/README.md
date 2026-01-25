@@ -16,9 +16,12 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 - Custom Soul Collector Mod (My Own Invention, with the help of my AI Agent Ryo) [Does NOT work without some AC core file mods done here!]
 - A number of 'defensive crash protectors' for the server
 - Potential old world flying (needs also a fitting client side spell or a lua script that allows the client to mount up)
-- Some QoL stuff (The stuff from all the LUA-Scripts / MPQ Edits that I could insert in here because it belongs to the actual core)
+- Some QoL stuff
 -> Looting of mobs that were killed by a players pet without the player doing damage to it
+-> All Ore- and Flower-Nodes respawn in 120 seconds instead of 24 hours to 7 days.
 - Some AC modules from other people integrated and kept up-to-date
+
+Notice: I also have some LUA-Script / MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' for massive amounts of gold, QoL Spells for any race/class on login (Aspect of the Uber Cheetah / 40% / No Dazzle, Levitation over water and mounted that does not dispel, Detect Invisibility (To see all the easter eggs) with endless duration, Stealth without Movement Speed Reduction, the Druid waterform), Human Reputation Bonus for everyone on Login, 70% of the time bad weather (Weather Effects on all parts of the world, like in Stormwind, etc., Storms, Snow, Desert Wind, etc.), a Vampire Script that heals weaker solo classes on skill use for a set amount of their AP/RAP/SP and heals Mana of mana classes to prevent MMORPG downtimes (does not work for Rage, Energy, etc), an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
 
 ### Included Modules
 
