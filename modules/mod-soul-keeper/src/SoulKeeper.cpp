@@ -19,6 +19,13 @@
  *   - Does NOT interfere with Hunter/Warlock pet system (no pet bar)
  *   - Stats auto-refresh on combat end (equipment changes apply without resummon!)
  * 
+ * STAT SELECTION (for hybrid classes):
+ *   - Compares melee AP, ranged AP, and spell power using PROPER expected values
+ *   - Level 80 expected: 4500 melee AP, 4000 ranged AP, 2800 spell power
+ *   - Picks whichever stat produces the HIGHEST effective damage (normalized)
+ *   - Example: Ret Paladin 2000 AP / 800 SP → melee wins (0.44 vs 0.29 ratio)
+ *   - Example: Holy Paladin 500 AP / 2000 SP → spell wins (0.11 vs 0.71 ratio)
+ * 
  * OWNER-ASSIST BEHAVIOR (via OnDamage hook):
  *   - Owner ATTACKS something → Guardian assists (works for ranged/melee)
  *   - Owner TAKES damage → Guardian defends (attacks the attacker)
@@ -29,6 +36,7 @@
  *   - On combat end, guardian stats refresh from current owner gear
  *   - HP/Mana PERCENTAGE is preserved (not full heal on evade)
  *   - Player-cast buffs (Blessings, etc.) are preserved (core fix)
+ *   - Buff contributions to HP/Mana are included in percentage calculation
  * 
  * HEAL LIMITATION:
  *   - Guardians use their native creature AI (spells, heals, buffs)
@@ -593,7 +601,7 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     }
 
     // === DAMAGE SCALING ===
-    // Get owner's stats: pick dominant stat type (melee AP, ranged AP, or spell power)
+    // Get owner's stats for each damage type
     float meleeAP  = owner->GetTotalAttackPowerValue(BASE_ATTACK);
     float rangedAP = owner->GetTotalAttackPowerValue(RANGED_ATTACK);
     float maxSP    = 0.0f;
@@ -606,67 +614,79 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     // === LEVEL BRACKET DPS FORMULA ===
     // Based on typical WotLK 3.3.5a player DPS and stats per level bracket.
     // Target: 25% of player DPS at all levels (20-30% acceptable range).
-    // Gear matters: better stats = proportionally stronger guardian.
+    // Now with PROPER expected values per stat type!
     float targetDPS;
-    float expectedStat;
+    float expectedMelee;   // Expected melee AP at this level
+    float expectedRanged;  // Expected ranged AP at this level
+    float expectedSpell;   // Expected spell power at this level
     
-    // 10-level brackets for smooth progression
+    // 10-level brackets with separate expected values per stat type
+    // At level 80: melee ~4500 AP, ranged ~4000 RAP, caster ~2800 SP
+    // Other brackets scale proportionally (melee/spell ratio ~1.6:1)
     if (ownerLevel <= 10)
     {
-        targetDPS = 1.5f;       // Player ~6 DPS
-        expectedStat = 30.0f;
+        targetDPS = 1.5f;
+        expectedMelee = 50.0f;   expectedRanged = 45.0f;   expectedSpell = 30.0f;
     }
     else if (ownerLevel <= 20)
     {
-        targetDPS = 5.0f;       // Player ~20 DPS
-        expectedStat = 80.0f;
+        targetDPS = 5.0f;
+        expectedMelee = 130.0f;  expectedRanged = 115.0f;  expectedSpell = 80.0f;
     }
     else if (ownerLevel <= 30)
     {
-        targetDPS = 12.0f;      // Player ~50 DPS
-        expectedStat = 150.0f;
+        targetDPS = 12.0f;
+        expectedMelee = 240.0f;  expectedRanged = 215.0f;  expectedSpell = 150.0f;
     }
     else if (ownerLevel <= 40)
     {
-        targetDPS = 25.0f;      // Player ~100 DPS
-        expectedStat = 280.0f;
+        targetDPS = 25.0f;
+        expectedMelee = 450.0f;  expectedRanged = 400.0f;  expectedSpell = 280.0f;
     }
     else if (ownerLevel <= 50)
     {
-        targetDPS = 45.0f;      // Player ~180 DPS
-        expectedStat = 450.0f;
+        targetDPS = 45.0f;
+        expectedMelee = 720.0f;  expectedRanged = 640.0f;  expectedSpell = 450.0f;
     }
     else if (ownerLevel <= 60)
     {
-        targetDPS = 85.0f;      // Player ~350 DPS (vanilla endgame)
-        expectedStat = 700.0f;
+        targetDPS = 85.0f;
+        expectedMelee = 1120.0f; expectedRanged = 1000.0f; expectedSpell = 700.0f;
     }
     else if (ownerLevel <= 70)
     {
-        targetDPS = 175.0f;     // Player ~700 DPS (TBC endgame)
-        expectedStat = 1200.0f;
+        targetDPS = 175.0f;
+        expectedMelee = 1920.0f; expectedRanged = 1700.0f; expectedSpell = 1200.0f;
     }
     else
     {
-        targetDPS = 750.0f;     // Player ~3000 DPS (WotLK fresh 80)
-        expectedStat = 2500.0f; // Scales: 5000 stat BiS = 1500 DPS guardian
+        targetDPS = 750.0f;
+        expectedMelee = 4500.0f; expectedRanged = 4000.0f; expectedSpell = 2800.0f;
     }
 
-    // Pick dominant stat based on what the owner actually has
-    float ownerStat;
-    if (meleeAP >= rangedAP && meleeAP >= maxSP)
-        ownerStat = meleeAP;
-    else if (rangedAP >= meleeAP && rangedAP >= maxSP)
-        ownerStat = rangedAP;
-    else
-        ownerStat = maxSP;
+    // === EFFECTIVE CONTRIBUTION: Which stat produces the most DPS? ===
+    // Compare normalized ratios (stat / expectedForType), not raw values!
+    // A Paladin with 2000 AP and 800 SP: melee = 2000/4500 = 0.44, spell = 800/2800 = 0.29
+    // → Melee wins. But a Holy Pally with 500 AP and 2000 SP: melee = 0.11, spell = 0.71
+    // → Spell wins. This is the CORRECT behavior for hybrid classes!
+    float meleeRatio  = meleeAP / expectedMelee;
+    float rangedRatio = rangedAP / expectedRanged;
+    float spellRatio  = maxSP / expectedSpell;
 
-    // Scale guardian DPS by gear quality (better gear = stronger guardian)
-    float gearRatio = std::max(0.5f, ownerStat / expectedStat);  // Floor at 50% (naked chars)
+    // Pick the winner (whichever normalized ratio is highest)
+    float gearRatio;
+    if (meleeRatio >= rangedRatio && meleeRatio >= spellRatio)
+        gearRatio = meleeRatio;
+    else if (rangedRatio >= meleeRatio && rangedRatio >= spellRatio)
+        gearRatio = rangedRatio;
+    else
+        gearRatio = spellRatio;
+
+    // Floor at 50% (naked characters still get reasonable guardian)
+    gearRatio = std::max(0.5f, gearRatio);
+
+    // Scale guardian DPS by gear quality
     float totalDPS = targetDPS * gearRatio;
-    
-    // Store for spell hooks
-    float masterStat = ownerStat;
 
     // === MELEE DAMAGE ===
     // Use ACTUAL creature attack speed (not hardcoded 2.0s)
@@ -701,10 +721,10 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     guardian->SetHealth(finalHealth);
 
     // === SPELL DAMAGE SCALING INFO ===
-    // Store owner's masterStat for spell damage scaling in hooks
-    // Guardian spells will scale directly from owner's stats using same DPS formula
+    // Store pre-calculated gear ratio for spell damage scaling in hooks.
+    // Spell hooks use gearRatio directly (already normalized, no division needed).
     GuardianScalingInfo scalingInfo;
-    scalingInfo.baseMultiplier = masterStat;  // Owner's power stat (highest of AP/SP)
+    scalingInfo.gearRatio = gearRatio;  // Pre-calculated, ready to use
     scalingInfo.creatureLevel = guardian->GetCreatureTemplate()->maxlevel;
     scalingInfo.ownerLevel = ownerLevel;
     _guardianScaling[guardian->GetGUID()] = scalingInfo;
@@ -1205,21 +1225,23 @@ public:
 
         const auto& info = scalingIt->second;
         
-        // === LEVEL BRACKET DPS (same as melee) ===
-        float targetDPS, expectedStat;
+        // === LEVEL BRACKET TARGET DPS ===
+        // gearRatio is already pre-calculated and normalized in ScaleGuardian.
+        // Now accounts for melee/ranged/spell expected values correctly!
+        float targetDPS;
         uint32 lvl = info.ownerLevel;
         
-        if (lvl <= 10)      { targetDPS = 1.5f;   expectedStat = 30.0f; }
-        else if (lvl <= 20) { targetDPS = 5.0f;   expectedStat = 80.0f; }
-        else if (lvl <= 30) { targetDPS = 12.0f;  expectedStat = 150.0f; }
-        else if (lvl <= 40) { targetDPS = 25.0f;  expectedStat = 280.0f; }
-        else if (lvl <= 50) { targetDPS = 45.0f;  expectedStat = 450.0f; }
-        else if (lvl <= 60) { targetDPS = 85.0f;  expectedStat = 700.0f; }
-        else if (lvl <= 70) { targetDPS = 175.0f; expectedStat = 1200.0f; }
-        else                { targetDPS = 750.0f; expectedStat = 2500.0f; }
+        if (lvl <= 10)      { targetDPS = 1.5f; }
+        else if (lvl <= 20) { targetDPS = 5.0f; }
+        else if (lvl <= 30) { targetDPS = 12.0f; }
+        else if (lvl <= 40) { targetDPS = 25.0f; }
+        else if (lvl <= 50) { targetDPS = 45.0f; }
+        else if (lvl <= 60) { targetDPS = 85.0f; }
+        else if (lvl <= 70) { targetDPS = 175.0f; }
+        else                { targetDPS = 750.0f; }
         
-        float gearRatio = std::max(0.5f, info.baseMultiplier / expectedStat);
-        float totalDPS = targetDPS * gearRatio;
+        // Use pre-calculated gear ratio directly (no more division)
+        float totalDPS = targetDPS * info.gearRatio;
         
         // Spell damage = DPS * cast time
         // Instant spells (0ms cast) count as 1.0s matching GCD
@@ -1254,21 +1276,22 @@ public:
 
         const auto& info = scalingIt->second;
         
-        // === LEVEL BRACKET DPS (same as melee) ===
-        float targetDPS, expectedStat;
+        // === LEVEL BRACKET TARGET DPS ===
+        // gearRatio is already pre-calculated and normalized in ScaleGuardian.
+        float targetDPS;
         uint32 lvl = info.ownerLevel;
         
-        if (lvl <= 10)      { targetDPS = 1.5f;   expectedStat = 30.0f; }
-        else if (lvl <= 20) { targetDPS = 5.0f;   expectedStat = 80.0f; }
-        else if (lvl <= 30) { targetDPS = 12.0f;  expectedStat = 150.0f; }
-        else if (lvl <= 40) { targetDPS = 25.0f;  expectedStat = 280.0f; }
-        else if (lvl <= 50) { targetDPS = 45.0f;  expectedStat = 450.0f; }
-        else if (lvl <= 60) { targetDPS = 85.0f;  expectedStat = 700.0f; }
-        else if (lvl <= 70) { targetDPS = 175.0f; expectedStat = 1200.0f; }
-        else                { targetDPS = 750.0f; expectedStat = 2500.0f; }
+        if (lvl <= 10)      { targetDPS = 1.5f; }
+        else if (lvl <= 20) { targetDPS = 5.0f; }
+        else if (lvl <= 30) { targetDPS = 12.0f; }
+        else if (lvl <= 40) { targetDPS = 25.0f; }
+        else if (lvl <= 50) { targetDPS = 45.0f; }
+        else if (lvl <= 60) { targetDPS = 85.0f; }
+        else if (lvl <= 70) { targetDPS = 175.0f; }
+        else                { targetDPS = 750.0f; }
         
-        float gearRatio = std::max(0.5f, info.baseMultiplier / expectedStat);
-        float totalDPS = targetDPS * gearRatio;
+        // Use pre-calculated gear ratio directly
+        float totalDPS = targetDPS * info.gearRatio;
         
         // DoT tick = 30% of DPS (reduced because it stacks with autos)
         damage = (uint32)(totalDPS * 0.30f);

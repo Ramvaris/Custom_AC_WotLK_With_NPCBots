@@ -61,11 +61,12 @@ public:
     std::unordered_map<uint32, ObjectGuid> _activeGuardians;
 
     // Guardian Scaling Data: Map<GuardianGUID, ScalingInfo>
-    // Stores base multiplier and creature level for proper damage scaling
-    // Used by UnitScript ModifySpellDamageTaken / ModifyMeleeDamage / ModifyPeriodicDamageAurasTick
+    // Stores pre-calculated gear ratio and owner level for proper damage scaling.
+    // Used by UnitScript ModifySpellDamageTaken / ModifyPeriodicDamageAurasTick.
+    // gearRatio is ALREADY NORMALIZED - spell hooks use it directly (no division).
     struct GuardianScalingInfo
     {
-        float baseMultiplier;     // Owner power-based multiplier
+        float gearRatio;          // Pre-calculated gear quality ratio (0.5 minimum, scales up)
         uint32 creatureLevel;     // Original creature template level (for scaling direction)
         uint32 ownerLevel;        // Owner level at summon time
     };
