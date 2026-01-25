@@ -88,8 +88,9 @@ void SoulKeeper::LoadSouls(Player* player)
     uint32 guid = player->GetGUID().GetCounter();
     _caughtSouls[guid].clear();
 
+    // ORDER BY caught_at ensures consistent soul ordering across server restarts
     QueryResult result = CharacterDatabase.Query(
-        "SELECT creature_entry, custom_name, display_id, scale_factor FROM character_soul_keeper WHERE owner_guid = {}",
+        "SELECT creature_entry, custom_name, display_id, scale_factor FROM character_soul_keeper WHERE owner_guid = {} ORDER BY caught_at ASC",
         guid);
 
     if (!result)
