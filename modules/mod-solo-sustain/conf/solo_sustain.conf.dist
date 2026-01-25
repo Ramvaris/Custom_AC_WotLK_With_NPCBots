@@ -9,9 +9,10 @@
 #
 # COMBAT LOG VISIBILITY (AUTOMATIC):
 # Uses proper AC HealBySpell/EnergizeBySpell functions
-# Healing shows as "Fel Synergy" (spell 54181) - standard Warlock talent heal
-# Mana shows as "Life Tap" energize (spell 32553) - standard mana restore
+# Healing shows as "Life Steal" (spell 20267) - Lifestealing enchant
+# Mana shows as mana gain (spell 20268) - Judgement of Wisdom
 # 100% compatible with Recount, Details!, MSBT, and all combat log addons!
+# No client patches needed - these spells exist in every 3.3.5a client!
 ########################################
 
 # Enable/Disable the module

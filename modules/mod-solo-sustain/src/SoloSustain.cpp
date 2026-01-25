@@ -38,8 +38,12 @@
 // Real WoW 3.3.5a Spell IDs (exist in DBC, used by AC internally)
 // These trigger proper combat log events that Recount/MSBT can see!
 // =============================================================================
-constexpr uint32 SPELL_FEL_SYNERGY_HEAL = 54181;   // Warlock Fel Synergy heal (works for any unit)
-constexpr uint32 SPELL_LIFE_TAP_ENERGIZE = 32553;  // Life Tap mana energize (works for any unit)
+// Life Steal heal - used by Lifestealing enchant and Judgement of Light
+// Shows as "Life Steal" in combat log - PERFECT for vampire theme!
+constexpr uint32 SPELL_LIFE_STEAL_HEAL = 20267;
+
+// Mana restore - using the same spell for energize (shows as generic mana gain)
+constexpr uint32 SPELL_MANA_RESTORE = 20268;  // Judgement of Wisdom energize
 
 // =============================================================================
 // Configuration Cache (loaded once at startup)
@@ -163,8 +167,8 @@ public:
         // Apply healing using proper HealBySpell (triggers combat log events!)
         if (healAmount > 0)
         {
-            // Get SpellInfo for the heal spell (required for HealInfo)
-            SpellInfo const* healSpellInfo = sSpellMgr->GetSpellInfo(SPELL_FEL_SYNERGY_HEAL);
+            // Get SpellInfo for Life Steal (20267) - thematic vampire heal!
+            SpellInfo const* healSpellInfo = sSpellMgr->GetSpellInfo(SPELL_LIFE_STEAL_HEAL);
             if (healSpellInfo)
             {
                 // Create HealInfo with healer = target (self-heal)
@@ -174,6 +178,7 @@ public:
                 // - Heal absorbs
                 // - DealHeal (actual health modification)
                 // - SendHealSpellLog (combat log packet - Recount/MSBT visibility!)
+                // Shows as "Life Steal" in combat log - perfect for vampire theme!
                 int32 actualHeal = healTarget->HealBySpell(hinfo);
                 
                 if (_config.debug && actualHeal > 0)
@@ -199,7 +204,7 @@ public:
             // - ModifyPower (actual mana modification)
             // - ThreatAssist (proper threat mechanics)
             // - SendEnergizeSpellLog (combat log packet - Recount/MSBT visibility!)
-            player->EnergizeBySpell(player, SPELL_LIFE_TAP_ENERGIZE, manaAmount, POWER_MANA);
+            player->EnergizeBySpell(player, SPELL_MANA_RESTORE, manaAmount, POWER_MANA);
             
             if (_config.debug)
             {
