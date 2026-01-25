@@ -24,6 +24,8 @@
 !/modules/mod-reagent-bank/
 !/modules/mod-skip-dk-starting-area/
 !/modules/mod-solo-lfg/
+!/modules/mod-solo-sustain/
+!/modules/mod-soul-keeper/
 !/modules/mod-transmog/
 !/modules/mod-warlock-pet-rename/
 /build*/

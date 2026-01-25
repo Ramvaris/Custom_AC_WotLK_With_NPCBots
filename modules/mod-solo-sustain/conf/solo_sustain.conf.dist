@@ -1,0 +1,78 @@
+[worldserver]
+
+########################################
+# Solo Sustain Module Configuration
+# Author: Ramvaris
+# 
+# Passive life and mana leech based on damage dealt.
+# Uses MAX(AP, RAP, SP) to determine player's primary role.
+# All values are percentages (0.10 = 10% of damage dealt).
+########################################
+
+# Enable/Disable the module
+SoloSustain.Enable = 1
+
+# Debug mode - prints leech info to console
+SoloSustain.Debug = 0
+
+########################################
+# LIFE LEECH PER CLASS
+# Percentage of damage dealt returned as HP.
+# Melee classes need more sustain (face-tank damage).
+# Ranged classes can kite/avoid damage.
+# Default values are CONSERVATIVE - tune up for solo play!
+########################################
+
+# Pure melee - face-tank everything, need high sustain
+SoloSustain.LifeLeech.Warrior = 0.08
+SoloSustain.LifeLeech.Rogue = 0.08
+SoloSustain.LifeLeech.DeathKnight = 0.05
+
+# Ranged physical - can kite, moderate sustain
+SoloSustain.LifeLeech.Hunter = 0.04
+
+# Casters - can kite/control, low sustain
+SoloSustain.LifeLeech.Mage = 0.03
+SoloSustain.LifeLeech.Warlock = 0.02
+
+# Healers - have actual healing, minimal sustain
+SoloSustain.LifeLeech.Priest = 0.02
+SoloSustain.LifeLeech.Shaman = 0.02
+SoloSustain.LifeLeech.Druid = 0.02
+SoloSustain.LifeLeech.Paladin = 0.02
+
+########################################
+# MANA LEECH PER CLASS
+# Percentage of damage dealt returned as mana.
+# Non-mana classes (Warrior/Rogue/DK) always 0.
+########################################
+
+SoloSustain.ManaLeech.Warrior = 0.00
+SoloSustain.ManaLeech.Rogue = 0.00
+SoloSustain.ManaLeech.DeathKnight = 0.00
+SoloSustain.ManaLeech.Hunter = 0.08
+SoloSustain.ManaLeech.Mage = 0.10
+SoloSustain.ManaLeech.Warlock = 0.08
+SoloSustain.ManaLeech.Priest = 0.08
+SoloSustain.ManaLeech.Shaman = 0.08
+SoloSustain.ManaLeech.Druid = 0.08
+SoloSustain.ManaLeech.Paladin = 0.08
+
+########################################
+# CAPS
+# Maximum heal/mana per tick as % of max HP/Mana.
+# Prevents insane burst healing from big crits.
+########################################
+
+SoloSustain.LifeLeech.Cap = 0.15
+SoloSustain.ManaLeech.Cap = 0.25
+
+########################################
+# VISUAL SPELLS
+# Spell IDs for the heal/mana restore visual.
+# These should be dummy spells that show a visual effect.
+# Set to 0 to disable visual entirely (silent leech).
+########################################
+
+SoloSustain.HealSpellId = 0
+SoloSustain.ManaSpellId = 0
