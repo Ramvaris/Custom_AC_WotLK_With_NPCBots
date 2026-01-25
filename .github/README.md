@@ -17,8 +17,8 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 - Custom Soul Collector Mod (My Own Invention, with the help of my AI Agent Ryo) [Does NOT work without some AC core file mods done here!]
 - A number of 'defensive crash protectors' for the server
 - Potential old world flying (needs also a fitting client side spell or a lua script that allows the client to mount up)
-- Some QoL stuff 
-- Not included stuff: MPQ File patching and LUA scripts that I didn't include here contain 'QoL' for a
+- Some QoL stuff (The stuff from all the LUA-Scripts / MPQ Edits that I could insert in here because it belongs to the actual core)
+-> Looting of mobs that were killed by a players pet without the player doing damage to it
 
 ### Included Modules
 
