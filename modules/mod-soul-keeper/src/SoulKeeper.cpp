@@ -483,6 +483,13 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     ScaleGuardian(guardian, player);
 
     // === Follow Master (RIGHT side to avoid overlapping Hunter/Warlock pets on LEFT) ===
+    // CRITICAL: Must also set m_followAngle via SetFollowAngle(), otherwise when AI or
+    // other code calls MoveFollow(owner, dist, GetFollowAngle()), it uses the default LEFT!
+    // Guardian inherits from Minion, so we can cast directly.
+    if (summon->HasUnitTypeMask(UNIT_MASK_GUARDIAN))
+    {
+        ((Minion*)summon)->SetFollowAngle(-PET_FOLLOW_ANGLE);
+    }
     guardian->GetMotionMaster()->MoveFollow(player, PET_FOLLOW_DIST, -PET_FOLLOW_ANGLE);
 
     // Track Active Guardian
