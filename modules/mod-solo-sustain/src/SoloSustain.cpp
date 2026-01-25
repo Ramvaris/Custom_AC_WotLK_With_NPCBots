@@ -12,21 +12,16 @@
  *   - Healers have REAL HEALS → need minimal passive sustain
  *   - All values configurable per-class in .conf
  * 
- * STAT DETECTION:
- *   Uses MAX(melee AP, ranged AP, spell power) to determine player's role.
- *   This ensures hybrids (Ret Paladin, Feral Druid) get proper leech.
- * 
  * DAMAGE HOOKS:
  *   - OnDamage (player deals damage to victim)
  *   - Both melee and spell damage trigger leech
  *   - Caps prevent burst healing from big crits
  * 
  * COMBAT LOG VISIBILITY (Recount/MSBT):
- *   - Sends SMSG_SPELLHEALLOG for life leech (shows as "X heals Y for Z")
- *   - Sends SMSG_SPELLENERGIZELOG for mana leech (shows mana gain)
- *   - Uses standard client spells for compatibility:
- *     - 15290 (Vampiric Embrace) for life leech visual
- *     - 57669 (Replenishment) for mana leech visual
+ *   - Uses Unit::HealBySpell() with proper HealInfo struct
+ *   - Uses Unit::EnergizeBySpell() for mana restoration
+ *   - These are the PROPER AC methods that trigger combat log events!
+ *   - Standard 3.3.5a spell IDs from DBC for client compatibility
  */
 
 #include "ScriptMgr.h"
@@ -37,13 +32,14 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Log.h"
-#include "WorldPacket.h"
-#include "Opcodes.h"
 #include <algorithm>
 
-// Standard client spell IDs for combat log visibility (no custom spells needed)
-constexpr uint32 SPELL_VAMPIRIC_EMBRACE_HEAL = 15290;  // Shows as lifesteal in combat log
-constexpr uint32 SPELL_REPLENISHMENT_MANA    = 57669;  // Shows as mana gain in combat log
+// =============================================================================
+// Real WoW 3.3.5a Spell IDs (exist in DBC, used by AC internally)
+// These trigger proper combat log events that Recount/MSBT can see!
+// =============================================================================
+constexpr uint32 SPELL_FEL_SYNERGY_HEAL = 54181;   // Warlock Fel Synergy heal (works for any unit)
+constexpr uint32 SPELL_LIFE_TAP_ENERGIZE = 32553;  // Life Tap mana energize (works for any unit)
 
 // =============================================================================
 // Configuration Cache (loaded once at startup)
@@ -52,7 +48,7 @@ struct SoloSustainConfig
 {
     bool enabled = false;
     bool debug = false;
-    bool showCombatLog = true;  // Send packets to combat log (Recount/MSBT)
+    // NOTE: Combat log visibility is ALWAYS on - HealBySpell/EnergizeBySpell handle it
     
     // Pet/Guardian support
     bool petEnabled = true;           // Enable leech for player pets/guardians
@@ -70,45 +66,6 @@ struct SoloSustainConfig
 };
 
 static SoloSustainConfig _config;
-
-// =============================================================================
-// Helper: Get player's highest stat (for hybrid detection)
-// Returns: 0 = melee, 1 = ranged, 2 = spell
-// =============================================================================
-static int GetDominantStatType(Player* player)
-{
-    // Get melee attack power
-    float meleeAP = player->GetTotalAttackPowerValue(BASE_ATTACK);
-    
-    // Get ranged attack power
-    float rangedAP = player->GetTotalAttackPowerValue(RANGED_ATTACK);
-    
-    // Get highest spell power across all schools
-    float spellPower = 0.0f;
-    for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
-    {
-        float sp = player->GetUInt32Value(PLAYER_FIELD_MOD_DAMAGE_DONE_POS + school);
-        if (sp > spellPower)
-            spellPower = sp;
-    }
-    
-    // Normalize to expected endgame values (level 80)
-    // This prevents raw AP always winning over SP
-    constexpr float EXPECTED_MELEE_AP = 4500.0f;
-    constexpr float EXPECTED_RANGED_AP = 4000.0f;
-    constexpr float EXPECTED_SPELL_POWER = 2800.0f;
-    
-    float meleeRatio = meleeAP / EXPECTED_MELEE_AP;
-    float rangedRatio = rangedAP / EXPECTED_RANGED_AP;
-    float spellRatio = spellPower / EXPECTED_SPELL_POWER;
-    
-    if (meleeRatio >= rangedRatio && meleeRatio >= spellRatio)
-        return 0; // Melee dominant
-    else if (rangedRatio >= spellRatio)
-        return 1; // Ranged dominant
-    else
-        return 2; // Spell dominant
-}
 
 // =============================================================================
 // UnitScript: OnDamage Hook
@@ -203,73 +160,51 @@ public:
             manaAmount = std::min(manaAmount, maxMana);
         }
         
-        // Apply healing and send combat log packet (Recount/MSBT visibility)
+        // Apply healing using proper HealBySpell (triggers combat log events!)
         if (healAmount > 0)
         {
-            // Calculate actual heal (prevent overheal in log)
-            uint32 currentHealth = healTarget->GetHealth();
-            uint32 maxHealth = healTarget->GetMaxHealth();
-            uint32 actualHeal = std::min(healAmount, maxHealth - currentHealth);
-            uint32 overheal = healAmount - actualHeal;
-            
-            // Apply the heal to the correct target (player OR pet/guardian)
-            healTarget->SetHealth(currentHealth + actualHeal);
-            
-            // Send SMSG_SPELLHEALLOG for combat log visibility
-            // This makes the heal show up in Recount, Details!, MSBT, etc.
-            if (_config.showCombatLog && actualHeal > 0)
+            // Get SpellInfo for the heal spell (required for HealInfo)
+            SpellInfo const* healSpellInfo = sSpellMgr->GetSpellInfo(SPELL_FEL_SYNERGY_HEAL);
+            if (healSpellInfo)
             {
-                WorldPacket data(SMSG_SPELLHEALLOG, 8 + 8 + 4 + 4 + 4 + 1);
-                data << healTarget->GetPackGUID();       // Target (player or pet)
-                data << healTarget->GetPackGUID();       // Caster (self-heal)
-                data << uint32(SPELL_VAMPIRIC_EMBRACE_HEAL);  // Spell ID (Vampiric Embrace - thematic!)
-                data << uint32(actualHeal);              // Heal amount
-                data << uint32(overheal);                // Overheal amount
-                data << uint8(0);                        // Critical flag (0 = no crit)
-                player->SendMessageToSet(&data, true);   // Send to player's network set
-            }
-            
-            if (_config.debug)
-            {
-                if (isPetOrGuardian)
+                // Create HealInfo with healer = target (self-heal)
+                HealInfo hinfo(healTarget, healTarget, healAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
+                
+                // HealBySpell handles:
+                // - Heal absorbs
+                // - DealHeal (actual health modification)
+                // - SendHealSpellLog (combat log packet - Recount/MSBT visibility!)
+                int32 actualHeal = healTarget->HealBySpell(hinfo);
+                
+                if (_config.debug && actualHeal > 0)
                 {
-                    LOG_INFO("module.solo_sustain", "SoloSustain: {}'s pet healed {} HP from {} damage ({}% x {}x)",
-                        player->GetName(), actualHeal, damage, _config.lifeLeech[playerClass] * 100.0f, leechMultiplier);
-                }
-                else
-                {
-                    LOG_INFO("module.solo_sustain", "SoloSustain: {} healed {} HP from {} damage ({}%)",
-                        player->GetName(), actualHeal, damage, lifeLeechPct * 100.0f);
+                    if (isPetOrGuardian)
+                    {
+                        LOG_INFO("module.solo_sustain", "SoloSustain: {}'s pet healed {} HP from {} damage ({}% x {}x)",
+                            player->GetName(), actualHeal, damage, _config.lifeLeech[playerClass] * 100.0f, leechMultiplier);
+                    }
+                    else
+                    {
+                        LOG_INFO("module.solo_sustain", "SoloSustain: {} healed {} HP from {} damage ({}%)",
+                            player->GetName(), actualHeal, damage, lifeLeechPct * 100.0f);
+                    }
                 }
             }
         }
         
-        // Apply mana restore and send combat log packet (players only, pets don't get mana)
+        // Apply mana restore using proper EnergizeBySpell (triggers combat log events!)
         if (manaAmount > 0)
         {
-            int32 currentMana = player->GetPower(POWER_MANA);
-            int32 maxMana = static_cast<int32>(player->GetMaxPower(POWER_MANA));
-            int32 actualMana = std::min(static_cast<int32>(manaAmount), maxMana - currentMana);
-            
-            // Apply the mana
-            player->SetPower(POWER_MANA, currentMana + actualMana);
-            
-            // Send SMSG_SPELLENERGIZELOG for combat log visibility
-            if (_config.showCombatLog && actualMana > 0)
-            {
-                WorldPacket data(SMSG_SPELLENERGIZELOG, 8 + 8 + 4 + 4 + 4);
-                data << player->GetPackGUID();           // Target
-                data << player->GetPackGUID();           // Caster (self)
-                data << uint32(SPELL_REPLENISHMENT_MANA);     // Spell ID (Replenishment - standard)
-                data << uint32(POWER_MANA);              // Power type
-                data << uint32(actualMana);              // Amount
-                player->SendMessageToSet(&data, true);
-            }
+            // EnergizeBySpell handles:
+            // - ModifyPower (actual mana modification)
+            // - ThreatAssist (proper threat mechanics)
+            // - SendEnergizeSpellLog (combat log packet - Recount/MSBT visibility!)
+            player->EnergizeBySpell(player, SPELL_LIFE_TAP_ENERGIZE, manaAmount, POWER_MANA);
             
             if (_config.debug)
             {
                 LOG_INFO("module.solo_sustain", "SoloSustain: {} restored {} mana from {} damage ({}%)",
-                    player->GetName(), actualMana, damage, manaLeechPct * 100.0f);
+                    player->GetName(), manaAmount, damage, manaLeechPct * 100.0f);
             }
         }
     }
@@ -287,7 +222,7 @@ public:
     {
         _config.enabled = sConfigMgr->GetOption<bool>("SoloSustain.Enable", true);
         _config.debug = sConfigMgr->GetOption<bool>("SoloSustain.Debug", false);
-        _config.showCombatLog = sConfigMgr->GetOption<bool>("SoloSustain.ShowCombatLog", true);
+        // NOTE: ShowCombatLog removed - HealBySpell/EnergizeBySpell ALWAYS trigger combat log
         
         // Pet/Guardian support
         _config.petEnabled = sConfigMgr->GetOption<bool>("SoloSustain.Pet.Enable", true);
