@@ -17,12 +17,18 @@
  *   - REAL guardian summoning via SummonPropertiesEntry (proper Guardian class)
  *   - Player-based stat scaling: 80% HP, 70% mana, 35% armor, 40% resists
  *   - Does NOT interfere with Hunter/Warlock pet system (no pet bar)
+ *   - Stats auto-refresh on combat end (equipment changes apply without resummon!)
  * 
  * OWNER-ASSIST BEHAVIOR (via OnDamage hook):
  *   - Owner ATTACKS something → Guardian assists (works for ranged/melee)
  *   - Owner TAKES damage → Guardian defends (attacks the attacker)
  *   - Guardian uses its native AI for spells/abilities during combat
  *   - REACT_DEFENSIVE prevents guardian from pulling extra mobs
+ * 
+ * EVADE BEHAVIOR:
+ *   - On combat end, guardian stats refresh from current owner gear
+ *   - HP/Mana PERCENTAGE is preserved (not full heal on evade)
+ *   - Player-cast buffs (Blessings, etc.) are preserved (core fix)
  * 
  * HEAL LIMITATION:
  *   - Guardians use their native creature AI (spells, heals, buffs)
@@ -1108,7 +1114,53 @@ class SoulKeeper_UnitScript : public UnitScript
 public:
     SoulKeeper_UnitScript() : UnitScript("SoulKeeper_UnitScript", true, 
         { UNITHOOK_ON_UNIT_ENTER_COMBAT, UNITHOOK_ON_DAMAGE, UNITHOOK_ON_UNIT_DEATH,
-          UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN, UNITHOOK_MODIFY_PERIODIC_DAMAGE_AURAS_TICK }) { }
+          UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN, UNITHOOK_MODIFY_PERIODIC_DAMAGE_AURAS_TICK,
+          UNITHOOK_ON_UNIT_ENTER_EVADE_MODE }) { }
+
+    // === GUARDIAN EVADES → Refresh stats from owner (equipment changes) ===
+    // When combat ends, re-scale guardian to current owner stats.
+    // Preserves HP/Mana percentage so guardian doesn't suddenly heal/die.
+    void OnUnitEnterEvadeMode(Unit* unit, uint8 /*evadeReason*/) override
+    {
+        Creature* creature = unit->ToCreature();
+        if (!creature)
+            return;
+
+        // Only care about player-owned creatures
+        ObjectGuid ownerGuid = creature->GetOwnerGUID();
+        if (!ownerGuid || !ownerGuid.IsPlayer())
+            return;
+
+        // Check if this is one of our tracked guardians
+        uint32 ownerLow = ownerGuid.GetCounter();
+        auto it = sSoulKeeper->_activeGuardians.find(ownerLow);
+        if (it == sSoulKeeper->_activeGuardians.end() || it->second != creature->GetGUID())
+            return;
+
+        Player* owner = ObjectAccessor::GetPlayer(*creature, ownerGuid);
+        if (!owner)
+            return;
+
+        // Save current HP/Mana percentages before rescaling
+        float hpPct = (float)creature->GetHealth() / (float)creature->GetMaxHealth();
+        float manaPct = 1.0f;
+        if (creature->GetPowerType() == POWER_MANA && creature->GetMaxPower(POWER_MANA) > 0)
+            manaPct = (float)creature->GetPower(POWER_MANA) / (float)creature->GetMaxPower(POWER_MANA);
+
+        // Rescale guardian to current owner stats (picks up equipment changes)
+        sSoulKeeper->ScaleGuardian(creature, owner);
+
+        // Restore HP/Mana to same percentage (not full heal!)
+        uint32 newHP = (uint32)(creature->GetMaxHealth() * hpPct);
+        if (newHP < 1) newHP = 1;  // Prevent 0 HP
+        creature->SetHealth(newHP);
+
+        if (creature->GetPowerType() == POWER_MANA)
+        {
+            uint32 newMana = (uint32)(creature->GetMaxPower(POWER_MANA) * manaPct);
+            creature->SetPower(POWER_MANA, newMana);
+        }
+    }
 
     // === OWNER ENTERS COMBAT → Guardian assists ===
     void OnUnitEnterCombat(Unit* unit, Unit* victim) override
