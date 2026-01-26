@@ -797,32 +797,50 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     // === MELEE DAMAGE ===
     // Use ACTUAL creature attack speed (not hardcoded 2.0s)
     // Damage per hit = DPS * attackTimeSeconds
-    float attackTime = (float)guardian->GetAttackTime(BASE_ATTACK);
-    if (attackTime <= 0.0f) attackTime = 2000.0f;  // Default if not set (0 = invalid)
+    float meleeAttackTime = (float)guardian->GetAttackTime(BASE_ATTACK);
+    if (meleeAttackTime <= 0.0f) meleeAttackTime = 2000.0f;  // Default if not set
 
-    // Damage per Hit = DPS * (attackTime / 1000)
-    float damagePerHit = totalDPS * (attackTime / 1000.0f);
+    float meleeDamagePerHit = totalDPS * (meleeAttackTime / 1000.0f);
+    
+    // === RANGED DAMAGE ===
+    // Same formula but using ranged attack speed
+    float rangedAttackTime = (float)guardian->GetAttackTime(RANGED_ATTACK);
+    if (rangedAttackTime <= 0.0f) rangedAttackTime = 2000.0f;  // Default if not set
+
+    float rangedDamagePerHit = totalDPS * (rangedAttackTime / 1000.0f);
     
     // === DAMAGE SCALING (Guardian-compatible) ===
     // Guardian::UpdateDamagePhysical calculates: (BASE_VALUE + AP/14*att_speed + weapon_damage)
     // To avoid double-counting, we:
     // 1. Set AP to 0 (eliminate AP contribution)
-    // 2. Set UNIT_MOD_DAMAGE_MAINHAND BASE_VALUE to 0
+    // 2. Set UNIT_MOD_DAMAGE_* BASE_VALUE to 0
     // 3. Set weapon damage to our target (this becomes the final damage)
     guardian->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER, BASE_VALUE, 0.0f);
     guardian->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER, TOTAL_VALUE, 0.0f);
+    guardian->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, BASE_VALUE, 0.0f);
+    guardian->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, 0.0f);
     guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_MAINHAND, BASE_VALUE, 0.0f);
     guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_VALUE, 0.0f);
+    guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_RANGED, BASE_VALUE, 0.0f);
+    guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_RANGED, TOTAL_VALUE, 0.0f);
     
-    // Weapon damage is the SOLE source of our melee damage
-    guardian->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, damagePerHit * 0.9f);
-    guardian->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, damagePerHit * 1.1f);
+    // === MELEE WEAPON DAMAGE ===
+    guardian->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, meleeDamagePerHit * 0.9f);
+    guardian->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, meleeDamagePerHit * 1.1f);
     guardian->UpdateAttackPowerAndDamage(false);
     guardian->UpdateDamagePhysical(BASE_ATTACK);
     
-    // Verify final values are set (safety net)
-    guardian->SetStatFloatValue(UNIT_FIELD_MINDAMAGE, damagePerHit * 0.9f);
-    guardian->SetStatFloatValue(UNIT_FIELD_MAXDAMAGE, damagePerHit * 1.1f);
+    // === RANGED WEAPON DAMAGE ===
+    guardian->SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, rangedDamagePerHit * 0.9f);
+    guardian->SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, rangedDamagePerHit * 1.1f);
+    guardian->UpdateAttackPowerAndDamage(true);  // true = ranged
+    guardian->UpdateDamagePhysical(RANGED_ATTACK);
+    
+    // Verify final values are set (safety net for client display)
+    guardian->SetStatFloatValue(UNIT_FIELD_MINDAMAGE, meleeDamagePerHit * 0.9f);
+    guardian->SetStatFloatValue(UNIT_FIELD_MAXDAMAGE, meleeDamagePerHit * 1.1f);
+    guardian->SetStatFloatValue(UNIT_FIELD_MINRANGEDDAMAGE, rangedDamagePerHit * 0.9f);
+    guardian->SetStatFloatValue(UNIT_FIELD_MAXRANGEDDAMAGE, rangedDamagePerHit * 1.1f);
     guardian->SetMaxHealth(finalHealth);
     guardian->SetHealth(finalHealth);
 
