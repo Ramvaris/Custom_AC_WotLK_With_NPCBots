@@ -570,6 +570,11 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
 
     // === Apply our custom scaling on TOP of InitStatsForLevel ===
     ScaleGuardian(guardian, player);
+
+    // === RESTORE VISUAL SCALE FROM CAPTURED CREATURE ===
+    // Guardians should look EXACTLY like their database counterpart.
+    // The scaleFactor was captured from GetObjectScale() when soul was caught.
+    guardian->SetObjectScale(targetSoul->scaleFactor);
     
     // === RESTORE COOLDOWNS from previous summon (prevent dismiss/summon exploit!) ===
     // If player dismissed this guardian type earlier, restored cooldowns still apply.
