@@ -21,6 +21,8 @@
 
 constexpr uint32 DEFAULT_HEAL_SPELL_ID = 81009;   // Custom dummy heal spell
 constexpr uint32 DEFAULT_MANA_SPELL_ID = 81012;   // Custom dummy mana restore spell
+constexpr uint32 FALLBACK_HEAL_SPELL_ID = 15286;  // Vampiric Embrace (exists in all clients)
+constexpr uint32 FALLBACK_MANA_SPELL_ID = 57669;  // Replenishment (exists in all clients)
 
 struct SoloSustainConfig
 {
@@ -43,10 +45,7 @@ public:
 
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
     {
-        if (!_config.enabled)
-            return;
-        
-        if (!victim || victim == attacker || !attacker->IsHostileTo(victim))
+        if (!_config.enabled || !attacker || !victim || victim == attacker || damage == 0)
             return;
         
         Player* player = attacker->ToPlayer();
@@ -94,18 +93,22 @@ public:
             {
                 SpellInfo const* healSpellInfo = sSpellMgr->GetSpellInfo(_config.healSpellId);
                 if (!healSpellInfo)
-                    healSpellInfo = sSpellMgr->GetSpellInfo(DEFAULT_HEAL_SPELL_ID);
+                {
+                    // Configured spell doesn't exist - use standard WoW fallback
+                    healSpellInfo = sSpellMgr->GetSpellInfo(FALLBACK_HEAL_SPELL_ID);
+                }
                 
                 if (healSpellInfo)
                 {
                     HealInfo hinfo(healTarget, healTarget, healAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
                     healTarget->HealBySpell(hinfo);
                     
-                    if (_config.debug)
-                    {
-                        LOG_INFO("module.solo_sustain", "SoloSustain: {} healed {} HP ({}% of {} damage)",
-                            healTarget->GetName(), healAmount, lifeLeechPct * 100.0f, damage);
-                    }
+    
+                }
+                else
+                {
+                    LOG_ERROR("module.solo_sustain", "SoloSustain: No valid heal spell found! Config: {}, Fallback: {}",
+                        _config.healSpellId, FALLBACK_HEAL_SPELL_ID);
                 }
             }
         }
@@ -119,11 +122,7 @@ public:
             {
                 player->EnergizeBySpell(player, _config.manaSpellId, manaAmount, POWER_MANA);
                 
-                if (_config.debug)
-                {
-                    LOG_INFO("module.solo_sustain", "SoloSustain: {} restored {} mana ({}% of {} damage)",
-                        player->GetName(), manaAmount, manaLeechPct * 100.0f, damage);
-                }
+
             }
         }
     }
