@@ -98,10 +98,10 @@ public:
                     uint32 petHealAmount = static_cast<uint32>(healAmount * petHealthMult);
                     uint32 petManaAmount = static_cast<uint32>(manaAmount * petManaMult);
                     
-                    // Heal pet health
+                    // Heal pet health (player is the healer, not pet - prevents scaling hooks from interfering)
                     if (petHealAmount > 0 && healSpellInfo)
                     {
-                        HealInfo petHinfo(pet, pet, petHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
+                        HealInfo petHinfo(player, pet, petHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
                         pet->HealBySpell(petHinfo);
                     }
                     
@@ -132,10 +132,10 @@ public:
                 if (!controlled->IsGuardian())
                     continue;
                 
-                // Heal guardian health
+                // Heal guardian health (player is the healer, not guardian - prevents scaling hooks from interfering)
                 if (guardHealAmount > 0 && healSpellInfo)
                 {
-                    HealInfo guardianHinfo(controlled, controlled, guardHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
+                    HealInfo guardianHinfo(player, controlled, guardHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
                     controlled->HealBySpell(guardianHinfo);
                 }
                 
