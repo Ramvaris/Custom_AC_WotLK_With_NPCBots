@@ -38,16 +38,15 @@ THOUGHTS&RANTS:
   - "Our AI injection ADDS out-of-combat behavior that even wild creatures don't have. Guardians superior."
   - "ScriptID check prevents overriding boss scripts. SmartAI creatures keep their smart behavior."
   - "Self-dispel added - guardian can remove polymorph/curse from itself now."
+  - "Immunity bug found: TryCastBuff(creature, owner) checked caster damage, cast on owner. SELF-ONLY now!"
 
 ACTIVE_WORK:
-  COMPLETED: Soul Keeper Guardian Scaling System v2
-  - Hooks verified: All 9 hooks registered match overridden methods
-  - UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN: Direct spell damage scaling
-  - UNITHOOK_MODIFY_PERIODIC_DAMAGE_AURAS_TICK: DoT scaling (skips HoTs!)
-  - UNITHOOK_MODIFY_HEAL_RECEIVED: Direct heal + HoT scaling  
-  - UNITHOOK_ON_AURA_APPLY: Shield/Thorns aura value scaling
-  - UNITHOOK_ON_DAMAGE: Track damage timestamps for immunity triggers
-  - Cooldown persistence: _persistentCooldowns map prevents dismiss/summon exploit
+  BUGFIX: Immunity buffs cast on wrong target
+  - Root cause: TryCastBuff checked if CASTER took damage but target was OWNER
+  - Guardian took damage → immunity check passed → cast on owner instead of self!
+  - Fix: Immunity buffs are now SELF-ONLY (target must equal caster)
+  - Also fixed: GetSpellCooldownDelay → GetSpellCooldown (correct API)
+  - Status: BUILT SUCCESSFULLY, READY FOR TEST 🍥
   - README updated with scaling formula table
   - Status: PUSHED TO GIT, TESTING NEEDED 🍥
 

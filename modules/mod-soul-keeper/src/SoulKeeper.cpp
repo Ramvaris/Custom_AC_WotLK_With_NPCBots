@@ -206,7 +206,7 @@ void SoulKeeper::SaveGuardianCooldowns(Creature* guardian, Player* owner)
         if (guardian->HasSpellCooldown(spellId))
         {
             // Get remaining cooldown time
-            uint32 remaining = guardian->GetSpellCooldownDelay(spellId);
+            uint32 remaining = guardian->GetSpellCooldown(spellId);
             if (remaining > 0)
             {
                 // Store absolute end time
@@ -1655,15 +1655,22 @@ private:
                 spellInfo->HasEffect(SPELL_EFFECT_DISPEL)) continue;
             if (spellInfo->GetDuration() <= 0) continue;
             
-            // IMMUNITY BUFFS: Only cast when ACTUALLY taking damage!
+            // IMMUNITY BUFFS: Only cast on SELF when ACTUALLY taking damage!
             // Don't waste the 60s cooldown just because combat started (mob still running to us).
-            // Check if guardian/owner took damage within last 5 seconds.
+            // CRITICAL: Immunity buffs should ONLY be cast on the one taking damage (self).
+            // If target != caster, skip immunity spells entirely - don't waste the guardian's
+            // defensive cooldown on someone else who isn't even being hit!
             bool isImmunity = spellInfo->HasAura(SPELL_AURA_SCHOOL_IMMUNITY) ||
                               spellInfo->HasAura(SPELL_AURA_DAMAGE_IMMUNITY) ||
                               spellInfo->HasAura(SPELL_AURA_MECHANIC_IMMUNITY) ||
                               spellInfo->HasAura(SPELL_AURA_MOD_IMMUNE_AURA_APPLY_SCHOOL);
             if (isImmunity)
             {
+                // Immunity buffs are SELF-ONLY - don't cast on others
+                if (target != caster)
+                    continue;
+                    
+                // Check if WE (the caster/target) actually took damage recently
                 auto damageIt = sSoulKeeper->_guardianLastDamage.find(caster->GetGUID());
                 if (damageIt == sSoulKeeper->_guardianLastDamage.end())
                     continue; // No damage recorded yet, skip immunity
