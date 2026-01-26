@@ -78,7 +78,25 @@ void CombatAI::JustEngagedWith(Unit* who)
     for (SpellVct::iterator i = spells.begin(); i != spells.end(); ++i)
     {
         if (AISpellInfo[*i].condition == AICOND_AGGRO)
-            me->CastSpell(who, *i, false);
+        {
+            // RAMVARIS FIX: Don't recast self-buffs that are already active at combat start
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(*i);
+            bool isSelfBuff = false;
+            if (spellInfo && spellInfo->IsPositive())
+            {
+                for (uint8 j = 0; j < MAX_SPELL_EFFECTS; ++j)
+                {
+                    if (spellInfo->Effects[j].TargetA.GetTarget() == TARGET_UNIT_CASTER)
+                    {
+                        if (me->HasAura(*i))
+                            isSelfBuff = true;
+                        break;
+                    }
+                }
+            }
+            if (!isSelfBuff)
+                me->CastSpell(who, *i, false);
+        }
         else if (AISpellInfo[*i].condition == AICOND_COMBAT)
             events.ScheduleEvent(*i, Milliseconds(AISpellInfo[*i].cooldown + rand() % AISpellInfo[*i].cooldown));
     }
@@ -96,7 +114,35 @@ void CombatAI::UpdateAI(uint32 diff)
 
     if (uint32 spellId = events.ExecuteEvent())
     {
-        DoCast(spellId);
+        // RAMVARIS FIX: Don't recast positive self-buffs that are already active!
+        // CombatAI schedules spells on JustEngagedWith without checking aura presence.
+        // This prevents spam-casting Frost Shield, Lightning Shield, etc. at combat start.
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        bool skipCast = false;
+        if (spellInfo && spellInfo->IsPositive() && !spellInfo->HasAura(SPELL_AURA_MOD_TAUNT))
+        {
+            // Check if this is a self-targeting buff that's already active
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                if (spellInfo->Effects[i].Effect == 0) continue;
+                
+                // Self-targeting effects: TARGET_UNIT_CASTER (value 1)
+                Targets targetType = spellInfo->Effects[i].TargetA.GetTarget();
+                if (targetType == TARGET_UNIT_CASTER)
+                {
+                    // Don't recast if we already have this aura
+                    if (me->HasAura(spellId))
+                    {
+                        skipCast = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (!skipCast)
+            DoCast(spellId);
+            
         events.ScheduleEvent(spellId, Milliseconds(AISpellInfo[spellId].cooldown + rand() % AISpellInfo[spellId].cooldown));
     }
     else
