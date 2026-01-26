@@ -287,18 +287,18 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
         uint32 startIndex = page * SOULS_PER_PAGE;
         uint32 endIndex = std::min(startIndex + SOULS_PER_PAGE, totalSouls);
 
-        // === NAVIGATION AT TOP (quick page flipping with large collections) ===
-        if (page > 0)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                "|TInterface\\Icons\\Ability_Druid_Dash_Orange:20:20:-2:0|t << Previous Page", 
-                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_PREV_PAGE);
-        }
+        // === NAVIGATION AT TOP (Next first for fast forward clicking) ===
         if (page < totalPages - 1)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|TInterface\\Icons\\Ability_Druid_Dash:20:20:-2:0|t Next Page >>", 
                 SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_NEXT_PAGE);
+        }
+        if (page > 0)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+                "|TInterface\\Icons\\Ability_Druid_Dash_Orange:20:20:-2:0|t << Previous Page", 
+                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_PREV_PAGE);
         }
 
         // Page info as text (does nothing on click, purely informational)
@@ -1340,10 +1340,12 @@ public:
         timerRef = 1500; // Run every ~1.5 seconds
 
         // =====================================================================
-        // NATIVE AI BUFF SPAM PREVENTION
+        // NATIVE AI BUFF SPAM PREVENTION (SELF-ONLY BUFFS)
         // Problem: Native CombatAI/SmartAI recasts self-buffs that are already active
         // because it only checks cooldown, not aura presence.
-        // Fix: If a self-buff spell is already active, force-add a cooldown so native AI skips it.
+        // Fix: If a SELF-ONLY buff spell is already active, force-add a cooldown.
+        // CRITICAL: Do NOT block spells that can target OTHERS!
+        // Example: Frost Ward (self-only) → block if active. Mark of the Wild → never block!
         // Performance: Only check template spells once per 1.5s tick, O(8) max iterations.
         // =====================================================================
         CreatureTemplate const* cInfoForBuffCheck = creature->GetCreatureTemplate();
@@ -1354,15 +1356,75 @@ public:
                 uint32 spellId = cInfoForBuffCheck->spells[i];
                 if (!spellId) continue;
                 
-                // Only care about spells that are already on cooldown-free AND creature has the aura
+                // Already on cooldown? Native AI won't spam anyway
                 if (creature->HasSpellCooldown(spellId))
-                    continue; // Already has cooldown, native AI won't spam
+                    continue;
                 
+                // Check if this is a SELF-ONLY buff spell
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+                if (!spellInfo) continue;
+                
+                // Skip non-positive spells (damage, debuffs)
+                if (!spellInfo->IsPositive()) continue;
+                
+                // CRITICAL: Check if spell can target external units!
+                // If spell can target allies/others, DON'T block it - guardian might need to buff owner!
+                // Self-only spells: TARGET_UNIT_CASTER, TARGET_SELF, etc.
+                // External spells: TARGET_UNIT_TARGET_ALLY, TARGET_UNIT_PARTY, etc.
+                bool canTargetOthers = false;
+                for (uint8 j = 0; j < MAX_SPELL_EFFECTS; ++j)
+                {
+                    if (spellInfo->Effects[j].Effect == 0) continue;
+                    
+                    // Check if any effect can target non-self units
+                    SpellImplicitTargetInfo const& targetA = spellInfo->Effects[j].TargetA;
+                    SpellImplicitTargetInfo const& targetB = spellInfo->Effects[j].TargetB;
+                    
+                    // Target types that can affect others (allies, party, raid, etc.)
+                    auto canAffectOthers = [](Targets target) -> bool {
+                        switch (target)
+                        {
+                            // Targeted ally/party/raid spells (like Mark of the Wild)
+                            case TARGET_UNIT_TARGET_ALLY:             // 21
+                            case TARGET_UNIT_TARGET_PARTY:            // 35
+                            case TARGET_UNIT_TARGET_RAID:             // 57
+                            case TARGET_UNIT_TARGET_CHAINHEAL_ALLY:   // 45
+                            // Area ally/party/raid spells (like Prayer of Healing)
+                            case TARGET_UNIT_SRC_AREA_ALLY:           // 30
+                            case TARGET_UNIT_DEST_AREA_ALLY:          // 31
+                            case TARGET_UNIT_SRC_AREA_PARTY:          // 33
+                            case TARGET_UNIT_DEST_AREA_PARTY:         // 34
+                            case TARGET_UNIT_CASTER_AREA_PARTY:       // 20
+                            case TARGET_UNIT_CASTER_AREA_RAID:        // 56
+                            case TARGET_UNIT_TARGET_AREA_RAID_CLASS:  // 61
+                            // Nearby ally/party/raid (smart targeting)
+                            case TARGET_UNIT_NEARBY_ALLY:             // 3
+                            case TARGET_UNIT_NEARBY_PARTY:            // 4
+                            case TARGET_UNIT_NEARBY_RAID:             // 58
+                            case TARGET_UNIT_CONE_ALLY:               // 59
+                            case TARGET_UNIT_LASTTARGET_AREA_PARTY:   // 37
+                                return true;
+                            default:
+                                return false;
+                        }
+                    };
+                    
+                    if (canAffectOthers(targetA.GetTarget()) || canAffectOthers(targetB.GetTarget()))
+                    {
+                        canTargetOthers = true;
+                        break;
+                    }
+                }
+                
+                // If spell CAN target others, don't block it - owner might need the buff!
+                if (canTargetOthers)
+                    continue;
+                
+                // SELF-ONLY spell: Block if creature already has the aura
                 if (!creature->HasAura(spellId))
-                    continue; // Aura not active, no need to block
+                    continue; // Aura not active, don't block
                 
-                // Aura IS active but NO cooldown → native AI will try to recast → add blocker cooldown
-                // Use remaining aura duration + 1s buffer, or 30s minimum
+                // Self-only aura IS active but NO cooldown → native AI will spam → add blocker
                 Aura* aura = creature->GetAura(spellId);
                 uint32 cooldownMs = 30000; // Default 30s
                 if (aura)

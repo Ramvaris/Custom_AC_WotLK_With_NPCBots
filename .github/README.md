@@ -66,7 +66,13 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 - **Out-of-combat buffs** - Apply missing buffs before the next fight
 - **Dispel support** - Removes Magic, Curse, Disease, Poison from owner AND self
 - **Mana-aware** - Guardians check mana cost before casting (scaled by level!)
+- **Smart buff spam prevention** - Blocks self-only buff recasting (Frost Ward, etc.) but allows external buffs (Mark of the Wild) to work normally
 - **No AI conflicts** - UNIT_STATE checks prevent double-casting with native AI
+
+**Gossip Menu (Soul Collection):**
+- **Fast navigation** - Next Page button at TOP for quick browsing through 10+ pages
+- **15 souls per page** - More souls visible, less page flipping
+- **Clean interface** - No duplicate buttons for commands that already exist
 
 **Guardian Scaling System:**
 All guardian output scales with YOUR gear and level - no overpowered captured bosses!
