@@ -30,7 +30,7 @@
 constexpr uint32 SOUL_KEEPER_GOSSIP_MENU_ID = 89999;
 constexpr uint32 SOUL_KEEPER_NPC_TEXT_ID    = 0x7FFFFFFF;
 constexpr uint32 SOUL_KEEPER_GOSSIP_SENDER  = 8999;  // Unique sender to avoid Lua gossip collisions
-constexpr uint32 SOULS_PER_PAGE             = 12;   // Max souls per page (leaves room for nav buttons)
+constexpr uint32 SOULS_PER_PAGE             = 15;   // Souls per page (nav buttons moved to top)
 
 // Soul Keeper Guardian Marker - set in UNIT_CREATED_BY_SPELL field
 // Used in core's RemoveEvadeAuras to identify our guardians and skip aura removal
@@ -41,10 +41,8 @@ constexpr uint32 SPELL_SOUL_KEEPER_GUARDIAN = 81100;
 enum SoulKeeperGossipAction
 {
     SOUL_ACTION_CLOSE           = 0,
-    SOUL_ACTION_DISMISS         = 1,
-    SOUL_ACTION_ABSORB          = 2,
-    SOUL_ACTION_PREV_PAGE       = 3,
-    SOUL_ACTION_NEXT_PAGE       = 4,
+    SOUL_ACTION_PREV_PAGE       = 1,
+    SOUL_ACTION_NEXT_PAGE       = 2,
     SOUL_ACTION_SUMMON_BASE     = 100,   // Actions 100+ = Summon by index
 };
 

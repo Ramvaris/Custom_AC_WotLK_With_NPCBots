@@ -287,25 +287,7 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
         uint32 startIndex = page * SOULS_PER_PAGE;
         uint32 endIndex = std::min(startIndex + SOULS_PER_PAGE, totalSouls);
 
-        // Page header
-        if (totalPages > 1)
-        {
-            std::string pageInfo = "|cff888888Page " + std::to_string(page + 1) + "/" + std::to_string(totalPages) + 
-                                   " (" + std::to_string(totalSouls) + " souls)|r";
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, pageInfo, SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_CLOSE);
-        }
-
-        // Soul list for current page
-        for (uint32 i = startIndex; i < endIndex; ++i)
-        {
-            const SoulData& soul = souls[i];
-            std::string icon = GetCreatureIconString(soul.displayId);
-            // Display as 1-indexed for user, store actual array index in action
-            std::string label = "|cff00ff00[" + std::to_string(i + 1) + "]|r " + icon + " " + soul.customName;
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, label, SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_SUMMON_BASE + i);
-        }
-
-        // === NAVIGATION BUTTONS ===
+        // === NAVIGATION AT TOP (quick page flipping with large collections) ===
         if (page > 0)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
@@ -318,22 +300,27 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
                 "|TInterface\\Icons\\Ability_Druid_Dash:20:20:-2:0|t Next Page >>", 
                 SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_NEXT_PAGE);
         }
+
+        // Page info as text (does nothing on click, purely informational)
+        if (totalPages > 1)
+        {
+            std::string pageInfo = "|cff666666[ Page " + std::to_string(page + 1) + " / " + std::to_string(totalPages) + 
+                                   " - " + std::to_string(totalSouls) + " souls total ]|r";
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, pageInfo, SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_CLOSE);
+        }
+
+        // Soul list for current page
+        for (uint32 i = startIndex; i < endIndex; ++i)
+        {
+            const SoulData& soul = souls[i];
+            std::string icon = GetCreatureIconString(soul.displayId);
+            // Display as 1-indexed for user, store actual array index in action
+            std::string label = "|cff00ff00[" + std::to_string(i + 1) + "]|r " + icon + " " + soul.customName;
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, label, SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_SUMMON_BASE + i);
+        }
     }
 
-    // Absorb target option
-    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, 
-        "|TInterface\\Icons\\Spell_Shadow_SoulGem:20:20:-2:0|t Capture Target's Soul", 
-        SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_ABSORB);
-
-    // Dismiss option (only if guardian is active)
-    if (HasActiveGuardian(player))
-    {
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, 
-            "|TInterface\\Icons\\Spell_Holy_Dispel:20:20:-2:0|t Dismiss Guardian", 
-            SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_DISMISS);
-    }
-
-    // Close
+    // Close button at the very end
     AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
         "|TInterface\\Icons\\Misc_ArrowLeft:20:20:-2:0|t Close", 
         SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_CLOSE);
@@ -353,11 +340,6 @@ bool SoulKeeper::HandleGossipSelect(Player* player, uint32 /*sender*/, uint32 ac
         case SOUL_ACTION_CLOSE:
             return true;
 
-        case SOUL_ACTION_DISMISS:
-            DismissGuardian(player);
-            ShowSoulList(player, _currentGossipPage[playerGuid]);
-            return true;
-
         case SOUL_ACTION_PREV_PAGE:
         {
             uint32 currentPage = _currentGossipPage[playerGuid];
@@ -372,21 +354,6 @@ bool SoulKeeper::HandleGossipSelect(Player* player, uint32 /*sender*/, uint32 ac
         {
             uint32 currentPage = _currentGossipPage[playerGuid];
             ShowSoulList(player, currentPage + 1);
-            return true;
-        }
-
-        case SOUL_ACTION_ABSORB:
-        {
-            Unit* target = player->GetSelectedUnit();
-            if (!target || !target->ToCreature())
-            {
-                ChatHandler(player->GetSession()).SendSysMessage("|cffff0000You must target a creature.|r");
-                ShowSoulList(player, _currentGossipPage[playerGuid]);
-                return true;
-            }
-
-            AddGuardian(player, target);
-            ShowSoulList(player, _currentGossipPage[playerGuid]);
             return true;
         }
 
