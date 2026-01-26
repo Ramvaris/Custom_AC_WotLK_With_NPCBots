@@ -1372,6 +1372,42 @@ public:
         }
         timerRef = 1500; // Run every ~1.5 seconds
 
+        // =====================================================================
+        // NATIVE AI BUFF SPAM PREVENTION
+        // Problem: Native CombatAI/SmartAI recasts self-buffs that are already active
+        // because it only checks cooldown, not aura presence.
+        // Fix: If a self-buff spell is already active, force-add a cooldown so native AI skips it.
+        // Performance: Only check template spells once per 1.5s tick, O(8) max iterations.
+        // =====================================================================
+        CreatureTemplate const* cInfoForBuffCheck = creature->GetCreatureTemplate();
+        if (cInfoForBuffCheck)
+        {
+            for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+            {
+                uint32 spellId = cInfoForBuffCheck->spells[i];
+                if (!spellId) continue;
+                
+                // Only care about spells that are already on cooldown-free AND creature has the aura
+                if (creature->HasSpellCooldown(spellId))
+                    continue; // Already has cooldown, native AI won't spam
+                
+                if (!creature->HasAura(spellId))
+                    continue; // Aura not active, no need to block
+                
+                // Aura IS active but NO cooldown → native AI will try to recast → add blocker cooldown
+                // Use remaining aura duration + 1s buffer, or 30s minimum
+                Aura* aura = creature->GetAura(spellId);
+                uint32 cooldownMs = 30000; // Default 30s
+                if (aura)
+                {
+                    int32 remaining = aura->GetDuration();
+                    if (remaining > 0)
+                        cooldownMs = remaining + 1000; // Aura duration + 1 second buffer
+                }
+                creature->AddSpellCooldown(spellId, 0, cooldownMs);
+            }
+        }
+
         // Don't interrupt existing actions or conflict with native AI
         // This ensures we play nice with SmartAI, ScriptedAI, CombatAI, etc.
         if (creature->HasUnitState(UNIT_STATE_CASTING | UNIT_STATE_STUNNED | 
