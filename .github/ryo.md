@@ -28,18 +28,18 @@ LATEST_FEATURE:
   - Status: WORKING 🍥
 
 THOUGHTS&RANTS:
-  - "I screwed up. Didn't read the vampire.lua properly - just put random values instead of calculating."
-  - "Forced attack speed on ALL creatures instead of checking if they had none (== 0)."
-  - "Added wrong spell IDs (15286 instead of 81009). That's just lazy..."
-  - "Fixed it now. vampire.lua formula: stat * multiplier per cast → damage * percentage."
-  - "Conversion: (expectedStat * multiplier) / avgDamage = damage leech percentage."
-  - "Lesson: READ THE SOURCE FIRST, CALCULATE SECOND, IMPLEMENT THIRD."
+  - "IsHostileTo() bug: I put a faction check in OnDamage that broke neutral mobs. Blamed the game when it was MY code."
+  - "Lesson: OnDamage fires = damage is happening. No need to verify hostility."
+  - "Previously: Wrong vampire.lua values, wrong spell IDs, forced attack speed on all creatures."
+  - "READ THE SOURCE FIRST, CALCULATE SECOND, IMPLEMENT THIRD."
+  - "And when debugging: CHECK YOUR OWN CODE BEFORE BLAMING GAME MECHANICS."
 
 ACTIVE_WORK:
-  COMPLETED: Solo Sustain proper values from vampire.lua
-  - Life: Warrior/Rogue 0.35, DK 0.30, Hunter/Mage 0.16, others 0.00
+  COMPLETED: Solo Sustain v2 - Fixed and working
+  - Removed IsHostileTo check (broke neutral mobs)
+  - Life: Warrior/Rogue 0.35, DK 0.00, Hunter/Mage 0.16
   - Mana: Hunter 0.55, Mage/Warlock 0.60, Healers 0.80-0.90
   - Spell IDs: 81009 (heal), 81012 (mana)
-  - No caps (removed)
-  - Attack speed: Only set if creature has 0 attack time
+  - Pet support: IsPet() check only, owner's class values
+  - Status: PUSHED TO REPO 🍥
 

@@ -4,18 +4,15 @@
 # Solo Sustain Module Configuration
 # Author: Ramvaris
 # 
-# Passive life and mana leech based on damage dealt.
-# All values are percentages (0.10 = 10% of damage dealt).
-#
-# This provides basic sustain for solo play.
-# Adjust values to fit your server's balance needs.
+# Passive life and mana leech based on player damage dealt.
+# Player heals themselves AND their pets/guardians from their own damage.
+# 
+# Design: Player deals damage → Player heals → Pet/Guardian also heals
+# Pets/Guardians do NOT trigger leech from their own damage.
 ########################################
 
 # Enable/Disable the module
 SoloSustain.Enable = 1
-
-# Debug mode - prints leech info to server console
-SoloSustain.Debug = 0
 
 ########################################
 # SPELL IDs
@@ -24,42 +21,40 @@ SoloSustain.Debug = 0
 # Default: Standard WoW spells (exist in default Spell.dbc)
 #   15286 = Vampiric Embrace (heal visual in combat log)
 #   57669 = Replenishment (mana visual in combat log)
-#
-# You can create custom dummy spells in Spell.dbc for
-# cleaner combat log names if desired.
 ########################################
 
 SoloSustain.SpellId.Heal = 15286
 SoloSustain.SpellId.Mana = 57669
 
 ########################################
-# PET SUPPORT (Hunter/Warlock only)
-# Permanent pets (IsPet() = true) get life leech.
-# Does NOT support guardians/temporary summons.
+# PET/GUARDIAN SUSTAIN
+# When enabled, player's damage heals their active minions too.
+# Health: Always healed
+# Mana: Only if the pet/guardian uses mana
 ########################################
 
-# Enable leech for player pets
+# Heal player's permanent pet (Hunter/Warlock pets)
 SoloSustain.Pet.Enable = 1
 
-# Leech multiplier for pets (1.0 = same as owner's class value)
-SoloSustain.Pet.LeechMultiplier = 1.0
+# Heal player's guardians (Army of Dead, Mirror Images, etc.)
+SoloSustain.Guardian.Enable = 1
 
 ########################################
 # LIFE LEECH PER CLASS
-# Percentage of damage dealt that heals the player.
+# Percentage of damage dealt that heals the player (and minions).
 # 0.10 = 10% of damage dealt becomes health.
 ########################################
 
 SoloSustain.LifeLeech.Warrior = 0.10
-SoloSustain.LifeLeech.Rogue = 0.10
-SoloSustain.LifeLeech.DeathKnight = 0.10
+SoloSustain.LifeLeech.Paladin = 0.10
 SoloSustain.LifeLeech.Hunter = 0.10
+SoloSustain.LifeLeech.Rogue = 0.10
+SoloSustain.LifeLeech.Priest = 0.10
+SoloSustain.LifeLeech.DeathKnight = 0.10
+SoloSustain.LifeLeech.Shaman = 0.10
 SoloSustain.LifeLeech.Mage = 0.10
 SoloSustain.LifeLeech.Warlock = 0.10
-SoloSustain.LifeLeech.Priest = 0.10
-SoloSustain.LifeLeech.Shaman = 0.10
 SoloSustain.LifeLeech.Druid = 0.10
-SoloSustain.LifeLeech.Paladin = 0.10
 
 ########################################
 # MANA LEECH PER CLASS
@@ -69,12 +64,12 @@ SoloSustain.LifeLeech.Paladin = 0.10
 ########################################
 
 SoloSustain.ManaLeech.Warrior = 0.00
-SoloSustain.ManaLeech.Rogue = 0.00
-SoloSustain.ManaLeech.DeathKnight = 0.00
+SoloSustain.ManaLeech.Paladin = 0.10
 SoloSustain.ManaLeech.Hunter = 0.10
+SoloSustain.ManaLeech.Rogue = 0.00
+SoloSustain.ManaLeech.Priest = 0.10
+SoloSustain.ManaLeech.DeathKnight = 0.00
+SoloSustain.ManaLeech.Shaman = 0.10
 SoloSustain.ManaLeech.Mage = 0.10
 SoloSustain.ManaLeech.Warlock = 0.10
-SoloSustain.ManaLeech.Priest = 0.10
-SoloSustain.ManaLeech.Shaman = 0.10
 SoloSustain.ManaLeech.Druid = 0.10
-SoloSustain.ManaLeech.Paladin = 0.10
