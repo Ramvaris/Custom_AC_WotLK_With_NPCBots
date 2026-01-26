@@ -1789,18 +1789,27 @@ public:
         damage = (int32)(totalDPS * castTimeSeconds);
     }
 
-    // === HEAL VALUE SCALING ===
-    // Heals from guardians scale the same way as damage: HPS * gearRatio * castTime
-    // Prevents both over-healing (high-level guardian with OP heal) and under-healing
+    // === HEAL VALUE SCALING (OUTGOING ONLY) ===
+    // ONLY scales heals CAST BY our guardians, not heals RECEIVED by guardians!
+    // Guardian CASTS heal → scale it based on guardian's level/gear
+    // Player/NPC heals guardian → leave completely untouched (their healing, their power)
     void ModifyHealReceived(Unit* /*target*/, Unit* healer, uint32& heal, SpellInfo const* spellInfo) override
     {
         if (!healer || heal == 0)
             return;
 
+        // CRITICAL: NEVER touch heals cast by players!
+        // This is the player's healing spell - it should heal for the player's amount.
+        if (healer->GetTypeId() == TYPEID_PLAYER)
+            return;
+
+        // Must be a creature to be one of our guardians
         Creature* healerCreature = healer->ToCreature();
         if (!healerCreature)
             return;
 
+        // Only scale if the HEALER (caster) is a Soul Keeper guardian
+        // External heals (from other NPCs, bosses, etc.) are NOT our business
         auto scalingIt = sSoulKeeper->_guardianScaling.find(healerCreature->GetGUID());
         if (scalingIt == sSoulKeeper->_guardianScaling.end())
             return;
@@ -1848,7 +1857,8 @@ public:
         }
     }
 
-    // === AURA VALUE SCALING ===
+    // === AURA VALUE SCALING (OUTGOING ONLY) ===
+    // ONLY scales auras CAST BY guardians, not auras received FROM external sources!
     // Scales fixed-value auras from guardians. Percentage-based auras are IGNORED.
     // Types scaled:
     //   - SPELL_AURA_SCHOOL_ABSORB / MANA_SHIELD → Shields (HPS * 1.0s)
@@ -1858,15 +1868,21 @@ public:
         if (!aura)
             return;
         
-        // Get the caster - must be a guardian
+        // Get the caster - must be a guardian (not player, not random NPC)
         Unit* caster = aura->GetCaster();
         if (!caster)
+            return;
+        
+        // CRITICAL: NEVER touch auras cast by players!
+        // This is the player's buff/shield - it should work at the player's power level.
+        if (caster->GetTypeId() == TYPEID_PLAYER)
             return;
         
         Creature* casterCreature = caster->ToCreature();
         if (!casterCreature)
             return;
         
+        // Only scale if the CASTER is a Soul Keeper guardian
         auto scalingIt = sSoulKeeper->_guardianScaling.find(casterCreature->GetGUID());
         if (scalingIt == sSoulKeeper->_guardianScaling.end())
             return;
