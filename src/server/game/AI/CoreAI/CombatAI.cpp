@@ -75,26 +75,33 @@ void CombatAI::JustDied(Unit* killer)
  */
 void CombatAI::JustEngagedWith(Unit* who)
 {
+    // SOUL KEEPER GUARDIAN MARKER: 81100 (prevents buff spam for our guardians ONLY)
+    constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
+    bool isSoulKeeperGuardian = me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER;
+    
     for (SpellVct::iterator i = spells.begin(); i != spells.end(); ++i)
     {
         if (AISpellInfo[*i].condition == AICOND_AGGRO)
         {
-            // RAMVARIS FIX: Don't recast self-buffs that are already active at combat start
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(*i);
-            bool isSelfBuff = false;
-            if (spellInfo && spellInfo->IsPositive())
+            // RAMVARIS FIX: Don't recast self-buffs that are already active (GUARDIAN-ONLY)
+            bool skipCast = false;
+            if (isSoulKeeperGuardian)
             {
-                for (uint8 j = 0; j < MAX_SPELL_EFFECTS; ++j)
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(*i);
+                if (spellInfo && spellInfo->IsPositive())
                 {
-                    if (spellInfo->Effects[j].TargetA.GetTarget() == TARGET_UNIT_CASTER)
+                    for (uint8 j = 0; j < MAX_SPELL_EFFECTS; ++j)
                     {
-                        if (me->HasAura(*i))
-                            isSelfBuff = true;
-                        break;
+                        if (spellInfo->Effects[j].TargetA.GetTarget() == TARGET_UNIT_CASTER)
+                        {
+                            if (me->HasAura(*i))
+                                skipCast = true;
+                            break;
+                        }
                     }
                 }
             }
-            if (!isSelfBuff)
+            if (!skipCast)
                 me->CastSpell(who, *i, false);
         }
         else if (AISpellInfo[*i].condition == AICOND_COMBAT)
@@ -115,26 +122,26 @@ void CombatAI::UpdateAI(uint32 diff)
     if (uint32 spellId = events.ExecuteEvent())
     {
         // RAMVARIS FIX: Don't recast positive self-buffs that are already active!
-        // CombatAI schedules spells on JustEngagedWith without checking aura presence.
-        // This prevents spam-casting Frost Shield, Lightning Shield, etc. at combat start.
-        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        // GUARDIAN-ONLY: Only applies to Soul Keeper guardians (marker 81100)
+        constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
         bool skipCast = false;
-        if (spellInfo && spellInfo->IsPositive() && !spellInfo->HasAura(SPELL_AURA_MOD_TAUNT))
+        
+        if (me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER)
         {
-            // Check if this is a self-targeting buff that's already active
-            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (spellInfo && spellInfo->IsPositive() && !spellInfo->HasAura(SPELL_AURA_MOD_TAUNT))
             {
-                if (spellInfo->Effects[i].Effect == 0) continue;
-                
-                // Self-targeting effects: TARGET_UNIT_CASTER (value 1)
-                Targets targetType = spellInfo->Effects[i].TargetA.GetTarget();
-                if (targetType == TARGET_UNIT_CASTER)
+                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
                 {
-                    // Don't recast if we already have this aura
-                    if (me->HasAura(spellId))
+                    if (spellInfo->Effects[i].Effect == 0) continue;
+                    
+                    if (spellInfo->Effects[i].TargetA.GetTarget() == TARGET_UNIT_CASTER)
                     {
-                        skipCast = true;
-                        break;
+                        if (me->HasAura(spellId))
+                        {
+                            skipCast = true;
+                            break;
+                        }
                     }
                 }
             }

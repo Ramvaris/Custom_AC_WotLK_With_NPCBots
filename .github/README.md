@@ -66,8 +66,9 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 - **Out-of-combat buffs** - Apply missing buffs before the next fight
 - **Dispel support** - Removes Magic, Curse, Disease, Poison from owner AND self
 - **Mana-aware** - Guardians check mana cost before casting (scaled by level!)
-- **Smart buff spam prevention** - Core CombatAI now checks aura presence before recasting self-buffs (Frost Ward, etc.)
+- **Smart buff spam prevention** - Soul Keeper guardians don't recast self-buffs already active (Frost Ward, etc.)
 - **External buffs allowed** - Spells that can target others (Mark of the Wild) are never blocked
+- **Guardian-only** - Core CombatAI fix uses marker check, no changes to vanilla creature behavior
 - **No AI conflicts** - UNIT_STATE checks prevent double-casting with native AI
 
 **Gossip Menu (Soul Collection):**
