@@ -32,6 +32,11 @@ constexpr uint32 SOUL_KEEPER_NPC_TEXT_ID    = 0x7FFFFFFF;
 constexpr uint32 SOUL_KEEPER_GOSSIP_SENDER  = 8999;  // Unique sender to avoid Lua gossip collisions
 constexpr uint32 SOULS_PER_PAGE             = 12;   // Max souls per page (leaves room for nav buttons)
 
+// Soul Keeper Guardian Marker - set in UNIT_CREATED_BY_SPELL field
+// Used in core's RemoveEvadeAuras to identify our guardians and skip aura removal
+// This is just a marker value - no actual spell needs to exist!
+constexpr uint32 SPELL_SOUL_KEEPER_GUARDIAN = 81100;
+
 // Gossip Actions
 enum SoulKeeperGossipAction
 {
@@ -75,6 +80,10 @@ public:
         uint32 ownerLevel;        // Owner level at summon time
     };
     std::unordered_map<ObjectGuid, GuardianScalingInfo> _guardianScaling;
+
+    // Guardian AI Timer: Map<GuardianGUID, NextAITickTime>
+    // Per-guardian AI injection cooldown (not global singleton timer!)
+    std::unordered_map<ObjectGuid, uint32> _guardianAITimer;
 
     // Gossip Page Tracking: Map<PlayerGUIDLow, CurrentPage>
     std::unordered_map<uint32, uint32> _currentGossipPage;

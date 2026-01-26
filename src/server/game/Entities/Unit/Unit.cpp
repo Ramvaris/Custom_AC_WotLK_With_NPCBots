@@ -5882,11 +5882,14 @@ void Unit::RemoveAllAurasExceptType(AuraType type)
 }*/
 
 // Xinef: We should not remove passive auras on evade, if npc has player owner (scripted one cast auras)
-// Ramires: Extended to keep ALL player-cast auras on player-owned creatures (Soul Keeper guardians, etc.)
+// Ramires: Soul Keeper guardians (UNIT_CREATED_BY_SPELL = 81100) keep ALL auras on evade for combat fairness
 void Unit::RemoveEvadeAuras()
 {
-    // Cache owner check - if owner is a player, keep player-cast buffs
-    bool hasPlayerOwner = GetOwnerGUID().IsPlayer();
+    // Soul Keeper Guardian marker (81100 in UNIT_CREATED_BY_SPELL)
+    // Skip ALL aura removal for these guardians to preserve buffs AND debuffs (fairness)
+    // This marker is set only by mod-soul-keeper, not Hunter/Warlock pets or other summons
+    if (GetUInt32Value(UNIT_CREATED_BY_SPELL) == 81100)
+        return;
     
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
     {
@@ -5896,14 +5899,12 @@ void Unit::RemoveEvadeAuras()
         // Keep aura if:
         // 1. Spell has IGNORE_EVADE or STAYS_AFTER_COMBAT attribute
         // 2. It's a vehicle control or clone aura
-        // 3. It's a passive aura on player-owned creature
-        // 4. It's cast by a player on a player-owned creature (blessings, buffs)
+        // 3. It's a passive aura
         bool keepAura = spellInfo->HasAttribute(SPELL_ATTR0_CU_IGNORE_EVADE) 
             || spellInfo->HasAttribute(SPELL_ATTR1_AURA_STAYS_AFTER_COMBAT) 
             || spellInfo->HasAura(SPELL_AURA_CONTROL_VEHICLE)
             || spellInfo->HasAura(SPELL_AURA_CLONE_CASTER) 
-            || (aura->IsPassive() && hasPlayerOwner)
-            || (hasPlayerOwner && aura->GetCasterGUID().IsPlayer());  // Keep player buffs on guardians
+            || aura->IsPassive();
             
         if (keepAura)
             ++iter;
@@ -5920,8 +5921,7 @@ void Unit::RemoveEvadeAuras()
             || spellInfo->HasAttribute(SPELL_ATTR1_AURA_STAYS_AFTER_COMBAT) 
             || spellInfo->HasAura(SPELL_AURA_CONTROL_VEHICLE)
             || spellInfo->HasAura(SPELL_AURA_CLONE_CASTER) 
-            || (aura->IsPassive() && hasPlayerOwner)
-            || (hasPlayerOwner && aura->GetCasterGUID().IsPlayer());  // Keep player buffs on guardians
+            || aura->IsPassive();
             
         if (keepAura)
             ++iter;

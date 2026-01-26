@@ -50,6 +50,7 @@
 
 #include "SoulKeeper.h"
 #include "Chat.h"
+#include "CombatAI.h"
 #include "Creature.h"
 #include "GameTime.h"
 #include "Player.h"
@@ -70,6 +71,8 @@
 #include "DBCStores.h"
 #include "TemporarySummon.h"
 #include "Map.h"
+#include "SpellMgr.h"
+#include "SpellInfo.h"
 #include <algorithm>
 
 // =============================================================================
@@ -401,6 +404,7 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
             if (Creature* oldGuardian = ObjectAccessor::GetCreature(*player, it->second))
             {
                 _guardianScaling.erase(oldGuardian->GetGUID());
+                _guardianAITimer.erase(oldGuardian->GetGUID());
                 oldGuardian->DespawnOrUnsummon();
             }
             _activeGuardians.erase(it);
@@ -535,6 +539,32 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     }
     guardian->GetMotionMaster()->MoveFollow(player, PET_FOLLOW_DIST, -PET_FOLLOW_ANGLE);
 
+    // === FORCE CombatAI IF CREATURE HAS SPELLS BUT NO AI ===
+    // Default AI for hostile creatures is AggressorAI (melee only, no spells).
+    // CombatAI handles spell casting via events. If creature_template has spells
+    // but no explicit AIName AND no ScriptName, the guardian would never use its spells.
+    // 
+    // IMPORTANT: Do NOT override if:
+    // - AIName is set (SmartAI, CombatAI, etc. - they handle spells)
+    // - ScriptID is set (scripted AI like boss scripts - they're smarter than CombatAI)
+    // 
+    // Only force CombatAI for "dumb" creatures with spells but no AI configuration.
+    CreatureTemplate const* cInfo = guardian->GetCreatureTemplate();
+    bool hasSpells = false;
+    for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+    {
+        if (cInfo->spells[i] != 0)
+        {
+            hasSpells = true;
+            break;
+        }
+    }
+    if (hasSpells && cInfo->AIName.empty() && cInfo->ScriptID == 0)
+    {
+        // AIM_Initialize with CombatAI ensures creature uses its database spells
+        guardian->AIM_Initialize(new CombatAI(guardian));
+    }
+
     // Track Active Guardian
     _activeGuardians[player->GetGUID().GetCounter()] = guardian->GetGUID();
 
@@ -580,6 +610,12 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
 
     // === AVOIDANCE: Standard pet AoE damage reduction ===
     guardian->AddAura(SPELL_PET_AVOIDANCE, guardian);
+    
+    // === SOUL KEEPER MARKER: Identifies this as OUR guardian ===
+    // Core's RemoveEvadeAuras checks UNIT_CREATED_BY_SPELL for this value
+    // This lets guardians keep buffs AND debuffs after combat (fairness!)
+    // No actual spell needs to exist - it's just a marker value
+    guardian->SetUInt32Value(UNIT_CREATED_BY_SPELL, SPELL_SOUL_KEEPER_GUARDIAN);
 
     // === HEALTH: 80% of owner (minimum: level * 20) ===
     // CRITICAL: Must use SetStatFlatModifier because Guardian::UpdateMaxHealth()
@@ -778,6 +814,7 @@ void SoulKeeper::DismissGuardian(Player* player)
         {
             // Clean up scaling data
             _guardianScaling.erase(guardian->GetGUID());
+            _guardianAITimer.erase(guardian->GetGUID());
             guardian->DespawnOrUnsummon();
         }
         _activeGuardians.erase(it);
@@ -815,6 +852,7 @@ void SoulKeeper::ReturnGuardian(Player* player)
         {
             // Clean up scaling data
             _guardianScaling.erase(guardian->GetGUID());
+            _guardianAITimer.erase(guardian->GetGUID());
             guardian->DespawnOrUnsummon();
         }
         _activeGuardians.erase(it);
@@ -847,6 +885,7 @@ void SoulKeeper::OnGuardianDeath(Creature* guardian)
     {
         // Our guardian died - clean up
         _guardianScaling.erase(guardian->GetGUID());
+        _guardianAITimer.erase(guardian->GetGUID());
         _activeGuardians.erase(it);
 
         // Notify owner if online
@@ -1159,29 +1198,28 @@ public:
 // GUARDIAN DEATH:
 // When guardian dies → cleanup tracking
 // =============================================================================
+// =============================================================================
+// UnitScript: Owner-Assist + Guardian Damage Scaling + Death Handling + AI Injection
+// =============================================================================
 class SoulKeeper_UnitScript : public UnitScript
 {
 public:
     SoulKeeper_UnitScript() : UnitScript("SoulKeeper_UnitScript", true, 
         { UNITHOOK_ON_UNIT_ENTER_COMBAT, UNITHOOK_ON_DAMAGE, UNITHOOK_ON_UNIT_DEATH,
           UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN, UNITHOOK_MODIFY_PERIODIC_DAMAGE_AURAS_TICK,
-          UNITHOOK_ON_UNIT_ENTER_EVADE_MODE }) { }
+          UNITHOOK_ON_UNIT_ENTER_EVADE_MODE, UNITHOOK_ON_UNIT_UPDATE }) { }
 
-    // === GUARDIAN EVADES → Refresh stats from owner (equipment changes) ===
-    // When combat ends, re-scale guardian to current owner stats.
-    // Preserves HP/Mana percentage so guardian doesn't suddenly heal/die.
+    // === GUARDIAN EVADES → Refresh stats + PRESERVE HP/MANA ===
     void OnUnitEnterEvadeMode(Unit* unit, uint8 /*evadeReason*/) override
     {
         Creature* creature = unit->ToCreature();
         if (!creature)
             return;
 
-        // Only care about player-owned creatures
         ObjectGuid ownerGuid = creature->GetOwnerGUID();
         if (!ownerGuid || !ownerGuid.IsPlayer())
             return;
 
-        // Check if this is one of our tracked guardians
         uint32 ownerLow = ownerGuid.GetCounter();
         auto it = sSoulKeeper->_activeGuardians.find(ownerLow);
         if (it == sSoulKeeper->_activeGuardians.end() || it->second != creature->GetGUID())
@@ -1211,6 +1249,290 @@ public:
             creature->SetPower(POWER_MANA, newMana);
         }
     }
+
+    // === AI INJECTION: Heals, Buffs, Dispels ===
+    // Adds supportive spell behavior without replacing creature's native combat AI.
+    // Uses per-guardian timer (not singleton!) for proper multi-guardian support.
+    void OnUnitUpdate(Unit* unit, uint32 diff) override
+    {
+        Creature* creature = unit->ToCreature();
+        if (!creature || !creature->IsAlive())
+            return;
+
+        // Only act if guardian is owned by player
+        ObjectGuid ownerGuid = creature->GetOwnerGUID();
+        if (!ownerGuid.IsPlayer()) 
+            return;
+        
+        ObjectGuid guardianGuid = creature->GetGUID();
+        
+        // Check if it's our guardian
+        uint32 ownerLow = ownerGuid.GetCounter();
+        auto guardIt = sSoulKeeper->_activeGuardians.find(ownerLow);
+        if (guardIt == sSoulKeeper->_activeGuardians.end() || guardIt->second != guardianGuid)
+            return;
+
+        // Per-guardian AI timer (not shared singleton!)
+        auto& timerRef = sSoulKeeper->_guardianAITimer[guardianGuid];
+        if (timerRef > diff)
+        {
+            timerRef -= diff;
+            return;
+        }
+        timerRef = 1500; // Run every ~1.5 seconds
+
+        // Don't interrupt existing actions or conflict with native AI
+        // This ensures we play nice with SmartAI, ScriptedAI, CombatAI, etc.
+        if (creature->HasUnitState(UNIT_STATE_CASTING | UNIT_STATE_STUNNED | 
+                                   UNIT_STATE_CONFUSED | UNIT_STATE_FLEEING))
+            return;
+
+        Player* owner = ObjectAccessor::GetPlayer(*creature, ownerGuid);
+        if (!owner)
+            return;
+
+        CreatureTemplate const* cInfo = creature->GetCreatureTemplate();
+        
+        // =================================================================
+        // PRIORITY 1: EMERGENCY HEALING (Critical HP)
+        // Owner or self below 35% HP - immediate heal attempt
+        // =================================================================
+        bool ownerCritical = owner->GetHealthPct() < 35.0f;
+        bool selfCritical = creature->GetHealthPct() < 35.0f;
+        
+        if (ownerCritical || selfCritical)
+        {
+            Unit* healTarget = ownerCritical ? (Unit*)owner : (Unit*)creature;
+            if (TryCastHeal(creature, healTarget, cInfo))
+            {
+                timerRef = 2000;
+                return;
+            }
+        }
+        
+        // =================================================================
+        // PRIORITY 2: DISPEL (Remove CC/Debuffs from owner or self)
+        // Check owner first (usually more important), then self
+        // =================================================================
+        if (HasDispellableDebuff(owner))
+        {
+            if (TryCastDispel(creature, owner, cInfo))
+            {
+                timerRef = 2500;
+                return;
+            }
+        }
+        // Self-dispel (guardian might be polymorphed, cursed, etc.)
+        if (HasDispellableDebuff(creature))
+        {
+            if (TryCastDispel(creature, creature, cInfo))
+            {
+                timerRef = 2500;
+                return;
+            }
+        }
+        
+        // =================================================================
+        // PRIORITY 3: NORMAL HEALING (Low HP but not emergency)
+        // Owner or self below 60% HP
+        // =================================================================
+        bool ownerLowHp = owner->GetHealthPct() < 60.0f;
+        bool selfLowHp = creature->GetHealthPct() < 60.0f;
+        
+        if (ownerLowHp || selfLowHp)
+        {
+            Unit* healTarget = ownerLowHp ? (Unit*)owner : (Unit*)creature;
+            if (TryCastHeal(creature, healTarget, cInfo))
+            {
+                timerRef = 2500;
+                return;
+            }
+        }
+        
+        // =================================================================
+        // PRIORITY 4: COMBAT BUFFS (like Bloodlust, Heroism, Battle Shout)
+        // Cast important buffs during combat if not already active
+        // =================================================================
+        if (creature->IsInCombat())
+        {
+            // Buff owner first (they benefit most from Bloodlust etc.)
+            if (TryCastBuff(creature, owner, cInfo))
+            {
+                timerRef = 2000;
+                return;
+            }
+            // Then buff self
+            if (TryCastBuff(creature, creature, cInfo))
+            {
+                timerRef = 2000;
+                return;
+            }
+        }
+        else
+        {
+            // =================================================================
+            // OUT OF COMBAT BEHAVIOR: Rest and recuperate
+            // Guardians should heal/buff like their wild counterparts would
+            // =================================================================
+            
+            // OUT OF COMBAT HEALING: Heal owner or self if not at full HP
+            // This mimics the "rest after combat" behavior players expect
+            if (owner->GetHealthPct() < 95.0f)
+            {
+                if (TryCastHeal(creature, owner, cInfo))
+                {
+                    timerRef = 2000;
+                    return;
+                }
+            }
+            if (creature->GetHealthPct() < 95.0f)
+            {
+                if (TryCastHeal(creature, creature, cInfo))
+                {
+                    timerRef = 2000;
+                    return;
+                }
+            }
+            
+            // OUT OF COMBAT BUFFS: Prep for next fight
+            // Apply missing buffs to owner and self
+            if (TryCastBuff(creature, owner, cInfo))
+            {
+                timerRef = 2000;
+                return;
+            }
+            if (TryCastBuff(creature, creature, cInfo))
+            {
+                timerRef = 2000;
+                return;
+            }
+        }
+    }
+    
+private:
+    // Check if unit has any dispellable negative aura (Magic, Curse, Disease, Poison)
+    bool HasDispellableDebuff(Unit* unit)
+    {
+        for (auto const& pair : unit->GetAppliedAuras())
+        {
+            Aura const* aura = pair.second->GetBase();
+            SpellInfo const* spellInfo = aura->GetSpellInfo();
+            
+            // Must be negative
+            if (spellInfo->IsPositive()) continue;
+            
+            // Check dispel types
+            uint32 dispelType = spellInfo->Dispel;
+            if (dispelType == DISPEL_MAGIC || dispelType == DISPEL_CURSE ||
+                dispelType == DISPEL_DISEASE || dispelType == DISPEL_POISON)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // Try to cast a heal spell on target
+    bool TryCastHeal(Creature* caster, Unit* target, CreatureTemplate const* cInfo)
+    {
+        for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+        {
+            uint32 spellId = cInfo->spells[i];
+            if (!spellId) continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo) continue;
+
+            // Must be a positive healing spell
+            if (!spellInfo->IsPositive() || spellInfo->IsPassive()) continue;
+            if (!spellInfo->HasEffect(SPELL_EFFECT_HEAL) && 
+                !spellInfo->HasEffect(SPELL_EFFECT_HEAL_PCT) &&
+                !spellInfo->HasAura(SPELL_AURA_PERIODIC_HEAL)) continue;
+            
+            // Check cooldown
+            if (caster->HasSpellCooldown(spellId)) continue;
+            
+            // Check range (use friendly range)
+            float maxRange = spellInfo->GetMaxRange(true);
+            if (maxRange > 0 && !caster->IsWithinDist(target, maxRange)) continue;
+            
+            // Check mana cost
+            if (caster->GetPower(POWER_MANA) < spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask())) continue;
+
+            caster->CastSpell(target, spellId, false);
+            return true;
+        }
+        return false;
+    }
+    
+    // Try to cast a dispel spell on target
+    bool TryCastDispel(Creature* caster, Unit* target, CreatureTemplate const* cInfo)
+    {
+        for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+        {
+            uint32 spellId = cInfo->spells[i];
+            if (!spellId) continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo) continue;
+
+            // Must be a dispel spell
+            if (!spellInfo->HasEffect(SPELL_EFFECT_DISPEL)) continue;
+            
+            // Check cooldown
+            if (caster->HasSpellCooldown(spellId)) continue;
+            
+            // Check range
+            float maxRange = spellInfo->GetMaxRange(true);
+            if (maxRange > 0 && !caster->IsWithinDist(target, maxRange)) continue;
+            
+            // Check mana cost
+            if (caster->GetPower(POWER_MANA) < spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask())) continue;
+
+            caster->CastSpell(target, spellId, false);
+            return true;
+        }
+        return false;
+    }
+    
+    // Try to cast a buff spell on target if they don't have it
+    bool TryCastBuff(Creature* caster, Unit* target, CreatureTemplate const* cInfo)
+    {
+        for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+        {
+            uint32 spellId = cInfo->spells[i];
+            if (!spellId) continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo) continue;
+
+            // Must be a positive buff (not heal, not dispel, has duration, not passive)
+            if (!spellInfo->IsPositive() || spellInfo->IsPassive()) continue;
+            if (spellInfo->HasEffect(SPELL_EFFECT_HEAL) || 
+                spellInfo->HasEffect(SPELL_EFFECT_HEAL_PCT) ||
+                spellInfo->HasEffect(SPELL_EFFECT_DISPEL)) continue;
+            if (spellInfo->GetDuration() <= 0) continue;
+            
+            // Skip if target already has this buff
+            if (target->HasAura(spellId)) continue;
+            
+            // Check cooldown
+            if (caster->HasSpellCooldown(spellId)) continue;
+            
+            // Check range
+            float maxRange = spellInfo->GetMaxRange(true);
+            if (maxRange > 0 && !caster->IsWithinDist(target, maxRange)) continue;
+            
+            // Check mana cost
+            if (caster->GetPower(POWER_MANA) < spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask())) continue;
+
+            caster->CastSpell(target, spellId, false);
+            return true;
+        }
+        return false;
+    }
+
+public:
 
     // === OWNER ENTERS COMBAT → Guardian assists ===
     void OnUnitEnterCombat(Unit* unit, Unit* victim) override

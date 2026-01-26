@@ -47,8 +47,31 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 
 | Module | Description |
 |--------|-------------|
-| **mod-soul-keeper** | Capture creature souls and summon them as guardians - Collect 'em all! |
+| **mod-soul-keeper** | Capture creature souls and summon them as intelligent guardians - Collect 'em all! |
 | **mod-solo-sustain** | Damage-based life/mana leech for solo play - Recount/MSBT compatible! |
+
+#### Soul Keeper Features
+**Soul Capture & Summoning:**
+- Capture any dead creature's soul (including elites, bosses, rares)
+- Summon captured souls as combat guardians that fight alongside you
+- Guardians scale with player level and stats
+- Custom naming support - rename your guardians!
+
+**Intelligent Guardian AI:**
+- **Native AI preserved** - Guardians use their creature abilities (CombatAI, SmartAI, ScriptedAI)
+- **Support AI injection** - Adds healing, buffing, and dispelling without replacing native behavior
+- **Combat healing** - Emergency heals at 35% HP, normal heals at 60% HP
+- **Combat buffs** - Guardians cast Bloodlust, Battle Shout, etc. during combat
+- **Out-of-combat healing** - Guardians heal you and themselves to 95% HP when idle
+- **Out-of-combat buffs** - Apply missing buffs before the next fight
+- **Dispel support** - Removes Magic, Curse, Disease, Poison from owner AND self
+- **Mana-aware** - Guardians check mana cost before casting
+- **No AI conflicts** - UNIT_STATE checks prevent double-casting with native AI
+
+**Combat Fairness:**
+- Guardians keep ALL auras after combat (both buffs AND debuffs)
+- If your guardian got debuffed, it stays - no cheap resets!
+- Only Soul Keeper guardians have this behavior (not Hunter/Warlock pets)
 
 #### Soul Keeper Commands
 ```

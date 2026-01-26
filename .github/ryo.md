@@ -18,28 +18,35 @@ COMPLETED_TASKS:
   [x] - Persona Synchronization 🍥
 
 LATEST_FEATURE:
-  SOLO_SUSTAIN_MODULE:
-  - Damage-based life/mana leech for solo play
-  - UnitScript OnDamage hook - fires on all player damage
-  - Values calculated from vampire.lua formulas
-  - Spell IDs: 81009 (heal), 81012 (mana)
-  - No caps (damage-based leech is self-limiting)
-  - Pet support (Hunter/Warlock IsPet())
-  - Status: WORKING 🍥
+  SOUL_KEEPER_GUARDIAN_AI_FIX:
+  - Fixed debuff stripping on evade (UNIT_CREATED_BY_SPELL marker, not aura)
+  - Fixed spell slot constant (MAX_CREATURE_SPELLS=8, not MAX_CREATURE_SPELL_DATA_SLOT=4)
+  - Fixed singleton AI timer (was shared across all guardians, now per-guardian)
+  - Fixed native AI: Force CombatAI only if NO AIName AND NO ScriptID (protects scripted mobs)
+  - Fixed combat buffs: Bloodlust/etc now cast DURING combat, not just out of combat
+  - Improved healing: emergency (35% HP) and normal (60% HP) priorities
+  - Added proper dispel check (HasDispellableDebuff helper function)
+  - Added mana cost validation before casting
+  - Status: BUILD SUCCESSFUL 🍥
 
 THOUGHTS&RANTS:
-  - "IsHostileTo() bug: I put a faction check in OnDamage that broke neutral mobs. Blamed the game when it was MY code."
-  - "Lesson: OnDamage fires = damage is happening. No need to verify hostility."
-  - "Previously: Wrong vampire.lua values, wrong spell IDs, forced attack speed on all creatures."
-  - "READ THE SOURCE FIRST, CALCULATE SECOND, IMPLEMENT THIRD."
-  - "And when debugging: CHECK YOUR OWN CODE BEFORE BLAMING GAME MECHANICS."
+  - "OnUnitUpdate runs in Unit::Update BEFORE Creature::UpdateAI. No conflict - separate hooks."
+  - "If we cast, native AI sees UNIT_STATE_CASTING and skips. If native casts, we skip. Perfect sync."
+  - "CombatAI only has AICOND_AGGRO/COMBAT/DIE. No AICOND_IDLE. Wild creatures DON'T buff out of combat!"
+  - "Our AI injection ADDS out-of-combat behavior that even wild creatures don't have. Guardians superior."
+  - "ScriptID check prevents overriding boss scripts. SmartAI creatures keep their smart behavior."
+  - "Self-dispel added - guardian can remove polymorph/curse from itself now."
 
 ACTIVE_WORK:
-  COMPLETED: Solo Sustain v2 - Fixed and working
-  - Removed IsHostileTo check (broke neutral mobs)
-  - Life: Warrior/Rogue 0.35, DK 0.00, Hunter/Mage 0.16
-  - Mana: Hunter 0.55, Mage/Warlock 0.60, Healers 0.80-0.90
-  - Spell IDs: 81009 (heal), 81012 (mana)
-  - Pet support: IsPet() check only, owner's class values
-  - Status: PUSHED TO REPO 🍥
+  COMPLETED: Soul Keeper Guardian AI Fix (v3)
+  - Evade behavior: Soul Keeper guardians (UNIT_CREATED_BY_SPELL=81100) keep ALL auras
+  - AI selection: Force CombatAI if creature has spells but no AIName AND no ScriptID
+  - AI injection: OnUnitUpdate hook with per-guardian timers (support logic)
+  - Native AI compatibility: OnUnitUpdate runs BEFORE UpdateAI, UNIT_STATE checks prevent conflicts
+  - Heals: Emergency (35%) and normal (60%) HP thresholds, plus OOC healing to 95%
+  - Dispels: Owner AND self (guardian can dispel itself now!)
+  - Buffs: COMBAT buffs AND out-of-combat buffs (like wild counterparts)
+  - State checks: CASTING, STUNNED, CONFUSED, FLEEING all respected
+  - All spell casts: Mana cost, cooldown, and range validated
+  - Status: BUILD SUCCESS, TESTING NEEDED 🍥
 
