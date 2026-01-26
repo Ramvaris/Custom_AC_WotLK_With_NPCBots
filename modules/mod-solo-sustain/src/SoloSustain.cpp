@@ -31,6 +31,8 @@ struct SoloSustainConfig
     uint32 manaSpellId = DEFAULT_MANA_SPELL_ID;
     bool petEnabled = true;
     bool guardianEnabled = true;
+    float petMultiplier[MAX_CLASSES] = {};      // Per-class pet heal multiplier
+    float guardianMultiplier[MAX_CLASSES] = {}; // Per-class guardian heal multiplier
     float lifeLeech[MAX_CLASSES] = {};
     float manaLeech[MAX_CLASSES] = {};
 };
@@ -89,17 +91,21 @@ public:
             {
                 if (pet->IsAlive())
                 {
+                    float petMult = _config.petMultiplier[playerClass];
+                    uint32 petHealAmount = static_cast<uint32>(healAmount * petMult);
+                    uint32 petManaAmount = static_cast<uint32>(manaAmount * petMult);
+                    
                     // Heal pet health
-                    if (healAmount > 0 && healSpellInfo)
+                    if (petHealAmount > 0 && healSpellInfo)
                     {
-                        HealInfo petHinfo(pet, pet, healAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
+                        HealInfo petHinfo(pet, pet, petHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
                         pet->HealBySpell(petHinfo);
                     }
                     
                     // Restore pet mana (if pet uses mana)
-                    if (manaAmount > 0 && pet->GetMaxPower(POWER_MANA) > 0)
+                    if (petManaAmount > 0 && pet->GetMaxPower(POWER_MANA) > 0)
                     {
-                        pet->EnergizeBySpell(pet, _config.manaSpellId, manaAmount, POWER_MANA);
+                        pet->EnergizeBySpell(pet, _config.manaSpellId, petManaAmount, POWER_MANA);
                     }
                 }
             }
@@ -108,6 +114,10 @@ public:
         // === HEAL GUARDIANS (if enabled) ===
         if (_config.guardianEnabled && !player->m_Controlled.empty())
         {
+            float guardMult = _config.guardianMultiplier[playerClass];
+            uint32 guardHealAmount = static_cast<uint32>(healAmount * guardMult);
+            uint32 guardManaAmount = static_cast<uint32>(manaAmount * guardMult);
+            
             for (Unit::ControlSet::const_iterator itr = player->m_Controlled.begin(); itr != player->m_Controlled.end(); ++itr)
             {
                 Unit* controlled = *itr;
@@ -119,16 +129,16 @@ public:
                     continue;
                 
                 // Heal guardian health
-                if (healAmount > 0 && healSpellInfo)
+                if (guardHealAmount > 0 && healSpellInfo)
                 {
-                    HealInfo guardianHinfo(controlled, controlled, healAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
+                    HealInfo guardianHinfo(controlled, controlled, guardHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
                     controlled->HealBySpell(guardianHinfo);
                 }
                 
                 // Restore guardian mana (if guardian uses mana)
-                if (manaAmount > 0 && controlled->GetMaxPower(POWER_MANA) > 0)
+                if (guardManaAmount > 0 && controlled->GetMaxPower(POWER_MANA) > 0)
                 {
-                    controlled->EnergizeBySpell(controlled, _config.manaSpellId, manaAmount, POWER_MANA);
+                    controlled->EnergizeBySpell(controlled, _config.manaSpellId, guardManaAmount, POWER_MANA);
                 }
             }
         }
@@ -169,6 +179,30 @@ public:
         _config.manaLeech[CLASS_MAGE]         = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Mage", 0.10f);
         _config.manaLeech[CLASS_WARLOCK]      = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Warlock", 0.10f);
         _config.manaLeech[CLASS_DRUID]        = sConfigMgr->GetOption<float>("SoloSustain.ManaLeech.Druid", 0.10f);
+        
+        // Pet heal multiplier per class (applied on top of life/mana leech)
+        _config.petMultiplier[CLASS_WARRIOR]      = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.Warrior", 1.0f);
+        _config.petMultiplier[CLASS_PALADIN]      = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.Paladin", 1.0f);
+        _config.petMultiplier[CLASS_HUNTER]       = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.Hunter", 1.0f);
+        _config.petMultiplier[CLASS_ROGUE]        = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.Rogue", 1.0f);
+        _config.petMultiplier[CLASS_PRIEST]       = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.Priest", 1.0f);
+        _config.petMultiplier[CLASS_DEATH_KNIGHT] = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.DeathKnight", 1.0f);
+        _config.petMultiplier[CLASS_SHAMAN]       = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.Shaman", 1.0f);
+        _config.petMultiplier[CLASS_MAGE]         = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.Mage", 1.0f);
+        _config.petMultiplier[CLASS_WARLOCK]      = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.Warlock", 1.0f);
+        _config.petMultiplier[CLASS_DRUID]        = sConfigMgr->GetOption<float>("SoloSustain.Pet.Multiplier.Druid", 1.0f);
+        
+        // Guardian heal multiplier per class (DK ghouls, Shaman totems, etc.)
+        _config.guardianMultiplier[CLASS_WARRIOR]      = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.Warrior", 1.0f);
+        _config.guardianMultiplier[CLASS_PALADIN]      = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.Paladin", 1.0f);
+        _config.guardianMultiplier[CLASS_HUNTER]       = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.Hunter", 1.0f);
+        _config.guardianMultiplier[CLASS_ROGUE]        = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.Rogue", 1.0f);
+        _config.guardianMultiplier[CLASS_PRIEST]       = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.Priest", 1.0f);
+        _config.guardianMultiplier[CLASS_DEATH_KNIGHT] = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.DeathKnight", 1.0f);
+        _config.guardianMultiplier[CLASS_SHAMAN]       = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.Shaman", 1.0f);
+        _config.guardianMultiplier[CLASS_MAGE]         = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.Mage", 1.0f);
+        _config.guardianMultiplier[CLASS_WARLOCK]      = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.Warlock", 1.0f);
+        _config.guardianMultiplier[CLASS_DRUID]        = sConfigMgr->GetOption<float>("SoloSustain.Guardian.Multiplier.Druid", 1.0f);
         
         if (_config.enabled)
         {
