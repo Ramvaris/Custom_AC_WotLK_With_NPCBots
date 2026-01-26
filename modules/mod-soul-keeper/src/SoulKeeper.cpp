@@ -1243,14 +1243,18 @@ public:
 //   → Uses native creature AI for abilities (not PetAI)
 //   → Returns to follow when combat ends
 //
-// DAMAGE SCALING:
-// All guardian damage uses UNIFIED DPS formula based on OWNER'S STATS:
-//   → DPS = ownerLevel * 2 + masterStat * 0.52
-//   → Melee: DPS * ACTUAL attack speed (reads creature's real swing timer)
-//   → Spells: DPS * castTime (instant = 1.0s GCD equivalent)
-//   → DoTs: 30% of DPS per tick (reduced because they STACK with auto-attacks)
-//   → Target: 20% of owner DPS at endgame (level 80, 3500 SP, 10K owner DPS)
-//   → While leveling the ratio is higher (~40%), which is acceptable
+// DAMAGE SCALING (Level-Bracket System):
+// All guardian damage scales to owner's level and gear quality.
+// Base DPS is determined by level bracket (e.g., 750 DPS at level 80).
+// GearRatio = best of (meleeAP/expected, rangedAP/expected, spellPower/expected).
+//
+// SCALING FORMULAS:
+//   → Melee:   DPS × attackTimeSeconds (creature's actual swing timer)
+//   → Spells:  DPS × castTimeSeconds (instant = 1.0s)
+//   → DoTs:    DPS × 0.15 × tickIntervalSeconds (15% extra DPS contribution)
+//   → HoTs:    HPS × 0.15 × tickIntervalSeconds (15% extra HPS contribution)
+//   → Shields: HPS × 3.0 (absorbs ~3 seconds of damage)
+//   → Thorns:  DPS × 0.15 per proc
 //
 // GUARDIAN DEATH:
 // When guardian dies → cleanup tracking
@@ -1803,14 +1807,29 @@ public:
         
         // === HEAL SCALING ===
         // Direct heals: HPS * cast time (same as offensive spells)
-        // HoTs: HPS * 0.30 (reduced because they STACK with direct heals, like DoTs stack with autos)
+        // HoTs: Target 15% HPS contribution using ACTUAL tick interval
+        //       Formula: tickHeal = HPS * 0.15 * tickIntervalSeconds
+        //       This ensures ALL HoTs contribute exactly 15% extra HPS regardless of tick speed
         
         bool isHoT = spellInfo && spellInfo->HasAura(SPELL_AURA_PERIODIC_HEAL);
         
         if (isHoT)
         {
-            // HoT tick = 30% of HPS (reduced because it stacks with direct heals)
-            heal = (uint32)(totalHPS * 0.30f);
+            // Get tick interval from spellInfo (EffectAmplitude)
+            float tickIntervalSeconds = 3.0f; // Default if not found
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                if (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_PERIODIC_HEAL)
+                {
+                    if (spellInfo->Effects[i].Amplitude > 0)
+                        tickIntervalSeconds = spellInfo->Effects[i].Amplitude / 1000.0f;
+                    break;
+                }
+            }
+            // HoT contribution = 15% of HPS (reasonable supplemental healing)
+            // per tick = HPS * 0.15 * tickInterval (normalizes all tick speeds)
+            heal = (uint32)(totalHPS * 0.15f * tickIntervalSeconds);
+            if (heal < 1) heal = 1; // Minimum 1 heal
         }
         else
         {
@@ -1824,6 +1843,7 @@ public:
                     castTimeSeconds = rawCastTime;
             }
             heal = (uint32)(totalHPS * castTimeSeconds);
+            if (heal < 1) heal = 1; // Minimum 1 heal
         }
     }
 
@@ -1831,8 +1851,8 @@ public:
     // ONLY scales auras CAST BY guardians, not auras received FROM external sources!
     // Scales fixed-value auras from guardians. Percentage-based auras are IGNORED.
     // Types scaled:
-    //   - SPELL_AURA_SCHOOL_ABSORB / MANA_SHIELD → Shields (HPS * 1.0s)
-    //   - SPELL_AURA_DAMAGE_SHIELD → Thorns (DPS * 0.30, passive like DoTs)
+    //   - SPELL_AURA_SCHOOL_ABSORB / MANA_SHIELD → Shields (HPS * 3.0s worth = 3 seconds of healing)
+    //   - SPELL_AURA_DAMAGE_SHIELD → Thorns (DPS * 0.15 = 15% of melee DPS per proc)
     void OnAuraApply(Unit* /*unit*/, Aura* aura) override
     {
         if (!aura)
@@ -1886,33 +1906,37 @@ public:
             
             switch (auraType)
             {
-                // === ABSORB SHIELDS: HPS * 1.0s (instant cast = GCD equivalent) ===
+                // === ABSORB SHIELDS: Worth 3 seconds of HPS ===
+                // Shields are "stored healing" - should absorb meaningful damage
+                // At level 80 with total DPS ~750, shield = 750 * 3 = 2250 absorb
+                // This is about one big hit worth of protection
                 case SPELL_AURA_SCHOOL_ABSORB:
                 case SPELL_AURA_MANA_SHIELD:
-                    newAmount = (int32)(totalValue * 1.0f);
+                    newAmount = (int32)(totalValue * 3.0f);
                     break;
                 
-                // === DAMAGE SHIELD (Thorns): DPS * 0.30 (passive, like DoTs) ===
-                // Thorns is "free" damage - no GCD, stacks with everything
-                // Scale at 30% like DoT ticks to prevent OP thorns guardians
+                // === DAMAGE SHIELD (Thorns): 15% of DPS per proc ===
+                // Thorns is "free" damage on being hit
+                // Balanced lower because it requires no GCD and stacks with everything
                 case SPELL_AURA_DAMAGE_SHIELD:
-                    newAmount = (int32)(totalValue * 0.30f);
+                    newAmount = (int32)(totalValue * 0.15f);
                     break;
                 
                 default:
                     continue; // Skip unhandled aura types
             }
             
-            // Apply the scaled amount
-            if (newAmount > 0)
-                effect->ChangeAmount(newAmount, true, false);
+            // Apply the scaled amount (minimum 1)
+            if (newAmount < 1) newAmount = 1;
+            effect->ChangeAmount(newAmount, true, false);
         }
     }
 
     // === DOT DAMAGE SCALING ===
-    // DoTs use REDUCED damage because they STACK with auto-attacks!
-    // If auto-attack = 25% and DoT = 25%, combined = 50% (too high)
-    // Solution: DoT per tick = 30% of the base DPS (adds ~6% total on top of autos)
+    // DoTs add supplemental damage on TOP of auto-attacks.
+    // Target: 15% extra DPS from DoTs using ACTUAL tick interval.
+    // Formula: tickDamage = DPS * 0.15 * tickIntervalSeconds
+    // This ensures ALL DoTs contribute exactly 15% extra DPS regardless of tick speed.
     // NOTE: This hook is confusingly called for BOTH DoTs AND HoTs! Must skip heals.
     void ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage, SpellInfo const* spellInfo) override
     {
@@ -1935,7 +1959,6 @@ public:
         const auto& info = scalingIt->second;
         
         // === LEVEL BRACKET TARGET DPS ===
-        // gearRatio is already pre-calculated and normalized in ScaleGuardian.
         float targetDPS;
         uint32 lvl = info.ownerLevel;
         
@@ -1948,11 +1971,31 @@ public:
         else if (lvl <= 70) { targetDPS = 175.0f; }
         else                { targetDPS = 750.0f; }
         
-        // Use pre-calculated gear ratio directly
         float totalDPS = targetDPS * info.gearRatio;
         
-        // DoT tick = 30% of DPS (reduced because it stacks with autos)
-        damage = (uint32)(totalDPS * 0.30f);
+        // Get tick interval from spellInfo (EffectAmplitude)
+        float tickIntervalSeconds = 3.0f; // Default if not found
+        if (spellInfo)
+        {
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                // Find the periodic damage/leech effect
+                uint32 auraName = spellInfo->Effects[i].ApplyAuraName;
+                if (auraName == SPELL_AURA_PERIODIC_DAMAGE || 
+                    auraName == SPELL_AURA_PERIODIC_LEECH ||
+                    auraName == SPELL_AURA_PERIODIC_DAMAGE_PERCENT)
+                {
+                    if (spellInfo->Effects[i].Amplitude > 0)
+                        tickIntervalSeconds = spellInfo->Effects[i].Amplitude / 1000.0f;
+                    break;
+                }
+            }
+        }
+        
+        // DoT contribution = 15% of DPS (reasonable supplemental damage)
+        // per tick = DPS * 0.15 * tickInterval (normalizes all tick speeds)
+        damage = (uint32)(totalDPS * 0.15f * tickIntervalSeconds);
+        if (damage < 1) damage = 1; // Minimum 1 damage
     }
 
     // === MELEE DAMAGE: No hook scaling needed ===
