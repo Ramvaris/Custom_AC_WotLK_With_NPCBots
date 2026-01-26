@@ -36,13 +36,13 @@
 
 bool WorldSession::CanOpenMailBox(ObjectGuid guid)
 {
+    // Allow player's own GUID as mailbox (used by Lua scripts like .special command)
+    // This enables script-based portable mailboxes without requiring GM permissions.
+    // The client still sends the player's GUID when performing mail operations after
+    // a Lua script calls player:SendShowMailBox(player:GetGUID()).
     if (guid == _player->GetGUID())
     {
-        if (_player->GetSession()->GetSecurity() < SEC_MODERATOR)
-        {
-            LOG_ERROR("network.opcode", "{} attempt open mailbox in cheating way.", _player->GetName());
-            return false;
-        }
+        return true;
     }
     else if (guid.IsGameObject())
     {
