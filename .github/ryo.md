@@ -18,15 +18,13 @@ COMPLETED_TASKS:
   [x] - Persona Synchronization 🍥
 
 LATEST_FEATURE:
-  SOUL_KEEPER_GUARDIAN_AI_FIX:
-  - Fixed debuff stripping on evade (UNIT_CREATED_BY_SPELL marker, not aura)
-  - Fixed spell slot constant (MAX_CREATURE_SPELLS=8, not MAX_CREATURE_SPELL_DATA_SLOT=4)
-  - Fixed singleton AI timer (was shared across all guardians, now per-guardian)
-  - Fixed native AI: Force CombatAI only if NO AIName AND NO ScriptID (protects scripted mobs)
-  - Fixed combat buffs: Bloodlust/etc now cast DURING combat, not just out of combat
-  - Improved healing: emergency (35% HP) and normal (60% HP) priorities
-  - Added proper dispel check (HasDispellableDebuff helper function)
-  - Added mana cost validation before casting
+  GOSSIP_MENU_COLLISION_FIX:
+  - Soul Keeper gossip (.soul summon) was colliding with Lua gossip (.special)
+  - Root cause: ClearMenus() does NOT reset _menuId field
+  - When .special (menu_id 99999) was used first, Soul Keeper inherited that menu_id
+  - Eluna handler for 99999 fired when clicking Soul Keeper options = NPC spawn!
+  - FIX: Explicitly call SetMenuId(SOUL_KEEPER_GOSSIP_MENU_ID) after ClearGossipMenuFor()
+  - FIX: Change OnPlayerGossipSelect to strict menu_id check (no OR with sender)
   - Status: BUILD SUCCESSFUL 🍥
 
 THOUGHTS&RANTS:

@@ -198,6 +198,11 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
     _currentGossipPage[playerGuid] = page;
 
     ClearGossipMenuFor(player);
+    
+    // CRITICAL: Explicitly set our menu_id to prevent collision with Lua gossip menus
+    // ClearMenus() does NOT reset menu_id, so if .special (menu_id 99999) was used before,
+    // Eluna would fire its handler when player clicks our options!
+    player->PlayerTalkClass->GetGossipMenu().SetMenuId(SOUL_KEEPER_GOSSIP_MENU_ID);
 
     if (souls.empty())
     {
@@ -964,8 +969,10 @@ public:
 
     void OnPlayerGossipSelect(Player* player, uint32 menu_id, uint32 sender, uint32 action) override
     {
-        // Only handle our unique sender (avoids collision with Lua gossip menus)
-        if (menu_id == SOUL_KEEPER_GOSSIP_MENU_ID || sender == SOUL_KEEPER_GOSSIP_SENDER)
+        // STRICT menu_id check - only handle OUR gossip menu (89999)
+        // This prevents collision with Lua gossip (e.g., .special uses 99999)
+        // The sender check is redundant now but kept for extra safety
+        if (menu_id == SOUL_KEEPER_GOSSIP_MENU_ID && sender == SOUL_KEEPER_GOSSIP_SENDER)
         {
             // Handle ALL Soul Keeper actions (0-4 = menu actions, 100+ = summon by index)
             if (action <= SOUL_ACTION_NEXT_PAGE || action >= SOUL_ACTION_SUMMON_BASE)
