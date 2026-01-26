@@ -65,8 +65,28 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 - **Out-of-combat healing** - Guardians heal you and themselves to 95% HP when idle
 - **Out-of-combat buffs** - Apply missing buffs before the next fight
 - **Dispel support** - Removes Magic, Curse, Disease, Poison from owner AND self
-- **Mana-aware** - Guardians check mana cost before casting
+- **Mana-aware** - Guardians check mana cost before casting (scaled by level!)
 - **No AI conflicts** - UNIT_STATE checks prevent double-casting with native AI
+
+**Guardian Scaling System:**
+All guardian output scales with YOUR gear and level - no overpowered captured bosses!
+
+| Damage/Heal Type | Formula | Notes |
+|------------------|---------|-------|
+| Melee attacks | DPS × attack_speed | Uses creature's native swing timer |
+| Direct spells | DPS × cast_time | Instant = 1.0s (GCD equivalent) |
+| DoT ticks | DPS × 0.30 | Reduced - stacks with auto-attacks |
+| Direct heals | HPS × cast_time | Same formula as damage spells |
+| HoT ticks | HPS × 0.30 | Reduced - stacks with direct heals |
+| Absorb shields | HPS × 1.0s | Power Word: Shield, Ice Barrier, etc. |
+| Damage shields | DPS × 0.30 | Thorns, Fire Shield, etc. (passive) |
+
+- **Level brackets** - DPS/HPS scales smoothly from level 1-80
+- **Gear detection** - Compares melee AP, ranged AP, spell power - picks the best stat
+- **Hybrid support** - Ret Paladin uses melee AP, Holy uses spell power automatically
+- **Mana scaling** - Spell costs scale by owner level (3-8% of guardian max mana)
+- **Immunity throttling** - Divine Shield-type spells have 60s minimum cooldown, only trigger when taking damage
+- **Cooldown persistence** - Dismissing and re-summoning does NOT reset spell cooldowns!
 
 **Combat Fairness:**
 - Guardians keep ALL auras after combat (both buffs AND debuffs)

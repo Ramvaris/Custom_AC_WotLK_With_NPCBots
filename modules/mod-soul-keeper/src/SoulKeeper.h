@@ -85,6 +85,18 @@ public:
     // Per-guardian AI injection cooldown (not global singleton timer!)
     std::unordered_map<ObjectGuid, uint32> _guardianAITimer;
 
+    // Guardian Damage Tracking: Map<GuardianGUID, LastDamageTimestamp>
+    // Used to trigger defensive cooldowns (immunity buffs) only when ACTUALLY taking damage
+    std::unordered_map<ObjectGuid, uint32> _guardianLastDamage;
+
+    // Persistent Cooldown Tracking: Prevents dismiss/summon exploit to reset cooldowns!
+    // Structure: ownerGUIDLow -> creatureEntry -> spellId -> cooldownEndTime (absolute getMSTime)
+    // Cooldowns persist across summon/dismiss cycles per guardian TYPE per OWNER.
+    // When guardian is dismissed: remaining cooldowns are saved here.
+    // When guardian is summoned: cooldowns are restored from here.
+    // RAM usage: ~20 bytes per active cooldown, acceptable tradeoff for exploit prevention.
+    std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_map<uint32, uint32>>> _persistentCooldowns;
+
     // Gossip Page Tracking: Map<PlayerGUIDLow, CurrentPage>
     std::unordered_map<uint32, uint32> _currentGossipPage;
 
@@ -101,6 +113,10 @@ public:
     void OnGuardianDeath(Creature* guardian);  // Called when guardian dies
     void RenameGuardian(Player* player, std::string const& newName);
     void ScaleGuardian(Creature* guardian, Player* owner);
+    
+    // Cooldown Persistence (prevent dismiss/summon exploit)
+    void SaveGuardianCooldowns(Creature* guardian, Player* owner);
+    void RestoreGuardianCooldowns(Creature* guardian, Player* owner);
     
     // Gossip Menu System (paginated for 400+ souls)
     void ShowSoulList(Player* player, uint32 page = 0);

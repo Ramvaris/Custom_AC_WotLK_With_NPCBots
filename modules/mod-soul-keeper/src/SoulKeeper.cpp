@@ -177,6 +177,75 @@ std::string SoulKeeper::GetCreatureIconString(uint32 /*displayId*/)
 }
 
 // =============================================================================
+// Cooldown Persistence: Save/Restore across dismiss/summon cycles
+// Prevents exploit: .soul dismiss + .soul summon = FREE COOLDOWN RESET
+// Cooldowns are stored per (ownerGUID, creatureEntry) so swapping guardians
+// doesn't let you bypass cooldowns either (each guardian type tracks separately).
+// =============================================================================
+void SoulKeeper::SaveGuardianCooldowns(Creature* guardian, Player* owner)
+{
+    if (!guardian || !owner) return;
+    
+    uint32 ownerLow = owner->GetGUID().GetCounter();
+    uint32 creatureEntry = guardian->GetEntry();
+    uint32 now = getMSTime();
+    
+    // Get creature template to iterate over known spells
+    CreatureTemplate const* cInfo = guardian->GetCreatureTemplate();
+    if (!cInfo) return;
+    
+    // Clear old cooldowns for this guardian type
+    _persistentCooldowns[ownerLow][creatureEntry].clear();
+    
+    // Save remaining cooldowns for each spell
+    for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+    {
+        uint32 spellId = cInfo->spells[i];
+        if (!spellId) continue;
+        
+        if (guardian->HasSpellCooldown(spellId))
+        {
+            // Get remaining cooldown time
+            uint32 remaining = guardian->GetSpellCooldownDelay(spellId);
+            if (remaining > 0)
+            {
+                // Store absolute end time
+                _persistentCooldowns[ownerLow][creatureEntry][spellId] = now + remaining;
+            }
+        }
+    }
+}
+
+void SoulKeeper::RestoreGuardianCooldowns(Creature* guardian, Player* owner)
+{
+    if (!guardian || !owner) return;
+    
+    uint32 ownerLow = owner->GetGUID().GetCounter();
+    uint32 creatureEntry = guardian->GetEntry();
+    uint32 now = getMSTime();
+    
+    // Check if we have persistent cooldowns for this guardian type
+    auto ownerIt = _persistentCooldowns.find(ownerLow);
+    if (ownerIt == _persistentCooldowns.end()) return;
+    
+    auto entryIt = ownerIt->second.find(creatureEntry);
+    if (entryIt == ownerIt->second.end()) return;
+    
+    // Restore each cooldown that hasn't expired yet
+    for (auto& [spellId, endTime] : entryIt->second)
+    {
+        if (endTime > now)
+        {
+            uint32 remaining = endTime - now;
+            guardian->AddSpellCooldown(spellId, 0, remaining);
+        }
+    }
+    
+    // Clear restored cooldowns (they're now on the guardian)
+    entryIt->second.clear();
+}
+
+// =============================================================================
 // Gossip Menu: Soul List (Paginated)
 // Shows captured souls with [index] for .soul summon command
 // Supports pagination for collectors with 400+ souls
@@ -410,6 +479,7 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
             {
                 _guardianScaling.erase(oldGuardian->GetGUID());
                 _guardianAITimer.erase(oldGuardian->GetGUID());
+                _guardianLastDamage.erase(oldGuardian->GetGUID());
                 oldGuardian->DespawnOrUnsummon();
             }
             _activeGuardians.erase(it);
@@ -533,6 +603,10 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
 
     // === Apply our custom scaling on TOP of InitStatsForLevel ===
     ScaleGuardian(guardian, player);
+    
+    // === RESTORE COOLDOWNS from previous summon (prevent dismiss/summon exploit!) ===
+    // If player dismissed this guardian type earlier, restored cooldowns still apply.
+    RestoreGuardianCooldowns(guardian, player);
 
     // === Follow Master (RIGHT side to avoid overlapping Hunter/Warlock pets on LEFT) ===
     // CRITICAL: Must also set m_followAngle via SetFollowAngle(), otherwise when AI or
@@ -817,9 +891,13 @@ void SoulKeeper::DismissGuardian(Player* player)
         // GUIDs never recycle during runtime - if creature exists, it's ours
         if (Creature* guardian = ObjectAccessor::GetCreature(*player, it->second))
         {
+            // SAVE COOLDOWNS before despawn (prevent dismiss/summon exploit!)
+            SaveGuardianCooldowns(guardian, player);
+            
             // Clean up scaling data
             _guardianScaling.erase(guardian->GetGUID());
             _guardianAITimer.erase(guardian->GetGUID());
+            _guardianLastDamage.erase(guardian->GetGUID());
             guardian->DespawnOrUnsummon();
         }
         _activeGuardians.erase(it);
@@ -855,9 +933,13 @@ void SoulKeeper::ReturnGuardian(Player* player)
     {
         if (Creature* guardian = ObjectAccessor::GetCreature(*player, it->second))
         {
+            // SAVE COOLDOWNS before despawn (prevent dismiss/summon exploit!)
+            SaveGuardianCooldowns(guardian, player);
+            
             // Clean up scaling data
             _guardianScaling.erase(guardian->GetGUID());
             _guardianAITimer.erase(guardian->GetGUID());
+            _guardianLastDamage.erase(guardian->GetGUID());
             guardian->DespawnOrUnsummon();
         }
         _activeGuardians.erase(it);
@@ -891,6 +973,7 @@ void SoulKeeper::OnGuardianDeath(Creature* guardian)
         // Our guardian died - clean up
         _guardianScaling.erase(guardian->GetGUID());
         _guardianAITimer.erase(guardian->GetGUID());
+        _guardianLastDamage.erase(guardian->GetGUID());
         _activeGuardians.erase(it);
 
         // Notify owner if online
@@ -1214,7 +1297,8 @@ public:
     SoulKeeper_UnitScript() : UnitScript("SoulKeeper_UnitScript", true, 
         { UNITHOOK_ON_UNIT_ENTER_COMBAT, UNITHOOK_ON_DAMAGE, UNITHOOK_ON_UNIT_DEATH,
           UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN, UNITHOOK_MODIFY_PERIODIC_DAMAGE_AURAS_TICK,
-          UNITHOOK_ON_UNIT_ENTER_EVADE_MODE, UNITHOOK_ON_UNIT_UPDATE }) { }
+          UNITHOOK_ON_UNIT_ENTER_EVADE_MODE, UNITHOOK_ON_UNIT_UPDATE,
+          UNITHOOK_MODIFY_HEAL_RECEIVED, UNITHOOK_ON_AURA_APPLY }) { }
 
     // === GUARDIAN EVADES → Refresh stats + PRESERVE HP/MANA ===
     void OnUnitEnterEvadeMode(Unit* unit, uint8 /*evadeReason*/) override
@@ -1439,6 +1523,42 @@ private:
         return false;
     }
     
+    // === HELPER: Get scaled mana cost by owner level ===
+    // Prevents lvl 15 creature spells costing peanuts on lvl 77 guardians with huge mana pools.
+    // Only applies if the spell actually costs mana (some spells are free).
+    uint32 GetScaledManaCost(Creature* caster, SpellInfo const* spellInfo)
+    {
+        // If spell doesn't cost mana, return 0 (don't amplify free spells!)
+        uint32 baseCost = spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask());
+        if (baseCost == 0 || spellInfo->PowerType != POWER_MANA)
+            return 0;
+        
+        // Get owner level for bracket
+        ObjectGuid ownerGuid = caster->GetOwnerGUID();
+        if (!ownerGuid.IsPlayer())
+            return baseCost; // No owner = use original cost
+        
+        auto scalingIt = sSoulKeeper->_guardianScaling.find(caster->GetGUID());
+        if (scalingIt == sSoulKeeper->_guardianScaling.end())
+            return baseCost;
+        
+        uint32 lvl = scalingIt->second.ownerLevel;
+        
+        // Level-bracketed fixed mana costs (% of max mana)
+        // These are designed so spells feel meaningful but not crippling
+        float manaPct;
+        if (lvl <= 10)      { manaPct = 0.08f; }  // 8% of max mana
+        else if (lvl <= 20) { manaPct = 0.07f; }  // 7%
+        else if (lvl <= 30) { manaPct = 0.06f; }  // 6%
+        else if (lvl <= 40) { manaPct = 0.05f; }  // 5%
+        else if (lvl <= 50) { manaPct = 0.05f; }  // 5%
+        else if (lvl <= 60) { manaPct = 0.04f; }  // 4%
+        else if (lvl <= 70) { manaPct = 0.04f; }  // 4%
+        else                { manaPct = 0.03f; }  // 3% at 80 (with big mana pools)
+        
+        return (uint32)(caster->GetMaxPower(POWER_MANA) * manaPct);
+    }
+    
     // Try to cast a heal spell on target
     bool TryCastHeal(Creature* caster, Unit* target, CreatureTemplate const* cInfo)
     {
@@ -1463,16 +1583,17 @@ private:
             float maxRange = spellInfo->GetMaxRange(true);
             if (maxRange > 0 && !caster->IsWithinDist(target, maxRange)) continue;
             
-            // Check mana cost
-            if (caster->GetPower(POWER_MANA) < spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask())) continue;
+            // Check mana cost (scaled by level)
+            uint32 scaledCost = GetScaledManaCost(caster, spellInfo);
+            if (caster->GetPower(POWER_MANA) < scaledCost) continue;
 
             caster->CastSpell(target, spellId, false);
             
-            // CRITICAL: Creatures don't auto-track cooldowns via CastSpell!
-            // CombatAI uses EventMap, not HasSpellCooldown(). We must add it ourselves.
+            // Add cooldown using spell's ACTUAL cooldown (no artificial minimum)
+            // If spell has no cooldown, that's fine - the creature can spam it
             uint32 cooldown = spellInfo->GetRecoveryTime();
-            if (cooldown < 5000) cooldown = 5000; // Minimum 5 seconds for heals
-            caster->AddSpellCooldown(spellId, 0, cooldown);
+            if (cooldown > 0)
+                caster->AddSpellCooldown(spellId, 0, cooldown);
             
             return true;
         }
@@ -1500,15 +1621,16 @@ private:
             float maxRange = spellInfo->GetMaxRange(true);
             if (maxRange > 0 && !caster->IsWithinDist(target, maxRange)) continue;
             
-            // Check mana cost
-            if (caster->GetPower(POWER_MANA) < spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask())) continue;
+            // Check mana cost (scaled by level)
+            uint32 scaledCost = GetScaledManaCost(caster, spellInfo);
+            if (caster->GetPower(POWER_MANA) < scaledCost) continue;
 
             caster->CastSpell(target, spellId, false);
             
-            // Add cooldown (minimum 8 seconds for dispels to prevent spam)
+            // Add cooldown using spell's ACTUAL cooldown (no artificial minimum)
             uint32 cooldown = spellInfo->GetRecoveryTime();
-            if (cooldown < 8000) cooldown = 8000;
-            caster->AddSpellCooldown(spellId, 0, cooldown);
+            if (cooldown > 0)
+                caster->AddSpellCooldown(spellId, 0, cooldown);
             
             return true;
         }
@@ -1533,14 +1655,22 @@ private:
                 spellInfo->HasEffect(SPELL_EFFECT_DISPEL)) continue;
             if (spellInfo->GetDuration() <= 0) continue;
             
-            // BLOCK DANGEROUS IMMUNITY AURAS - Never auto-cast these!
-            // These are WAY too powerful for guardians to spam (Divine Shield, etc.)
-            if (spellInfo->HasAura(SPELL_AURA_SCHOOL_IMMUNITY) ||      // Immune to magic school
-                spellInfo->HasAura(SPELL_AURA_DAMAGE_IMMUNITY) ||      // Immune to all damage
-                spellInfo->HasAura(SPELL_AURA_MECHANIC_IMMUNITY) ||    // Immune to stun/fear/etc
-                spellInfo->HasAura(SPELL_AURA_MOD_IMMUNE_AURA_APPLY_SCHOOL)) // Immune to aura application
+            // IMMUNITY BUFFS: Only cast when ACTUALLY taking damage!
+            // Don't waste the 60s cooldown just because combat started (mob still running to us).
+            // Check if guardian/owner took damage within last 5 seconds.
+            bool isImmunity = spellInfo->HasAura(SPELL_AURA_SCHOOL_IMMUNITY) ||
+                              spellInfo->HasAura(SPELL_AURA_DAMAGE_IMMUNITY) ||
+                              spellInfo->HasAura(SPELL_AURA_MECHANIC_IMMUNITY) ||
+                              spellInfo->HasAura(SPELL_AURA_MOD_IMMUNE_AURA_APPLY_SCHOOL);
+            if (isImmunity)
             {
-                continue; // Skip this spell entirely
+                auto damageIt = sSoulKeeper->_guardianLastDamage.find(caster->GetGUID());
+                if (damageIt == sSoulKeeper->_guardianLastDamage.end())
+                    continue; // No damage recorded yet, skip immunity
+                    
+                uint32 timeSinceDamage = getMSTimeDiff(damageIt->second, getMSTime());
+                if (timeSinceDamage > 5000)
+                    continue; // Damage was more than 5 seconds ago, skip immunity
             }
             
             // Skip if target already has this buff
@@ -1553,16 +1683,22 @@ private:
             float maxRange = spellInfo->GetMaxRange(true);
             if (maxRange > 0 && !caster->IsWithinDist(target, maxRange)) continue;
             
-            // Check mana cost
-            if (caster->GetPower(POWER_MANA) < spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask())) continue;
+            // Check mana cost (scaled by level)
+            uint32 scaledCost = GetScaledManaCost(caster, spellInfo);
+            if (caster->GetPower(POWER_MANA) < scaledCost) continue;
 
             caster->CastSpell(target, spellId, false);
             
-            // Add cooldown (minimum 30 seconds for buffs to prevent spam)
-            // Most buffs have long durations so this is reasonable
+            // Determine cooldown based on spell type
             uint32 cooldown = spellInfo->GetRecoveryTime();
-            if (cooldown < 30000) cooldown = 30000;
-            caster->AddSpellCooldown(spellId, 0, cooldown);
+            
+            // IMMUNITY AURAS: 60s minimum cooldown (already checked isImmunity above)
+            if (isImmunity && cooldown < 60000)
+                cooldown = 60000;
+            
+            // Add cooldown if any
+            if (cooldown > 0)
+                caster->AddSpellCooldown(spellId, 0, cooldown);
             
             return true;
         }
@@ -1646,13 +1782,153 @@ public:
         damage = (int32)(totalDPS * castTimeSeconds);
     }
 
+    // === HEAL VALUE SCALING ===
+    // Heals from guardians scale the same way as damage: HPS * gearRatio * castTime
+    // Prevents both over-healing (high-level guardian with OP heal) and under-healing
+    void ModifyHealReceived(Unit* /*target*/, Unit* healer, uint32& heal, SpellInfo const* spellInfo) override
+    {
+        if (!healer || heal == 0)
+            return;
+
+        Creature* healerCreature = healer->ToCreature();
+        if (!healerCreature)
+            return;
+
+        auto scalingIt = sSoulKeeper->_guardianScaling.find(healerCreature->GetGUID());
+        if (scalingIt == sSoulKeeper->_guardianScaling.end())
+            return;
+
+        const auto& info = scalingIt->second;
+        
+        // === LEVEL BRACKET TARGET HPS (same as DPS) ===
+        float targetHPS;
+        uint32 lvl = info.ownerLevel;
+        
+        if (lvl <= 10)      { targetHPS = 1.5f; }
+        else if (lvl <= 20) { targetHPS = 5.0f; }
+        else if (lvl <= 30) { targetHPS = 12.0f; }
+        else if (lvl <= 40) { targetHPS = 25.0f; }
+        else if (lvl <= 50) { targetHPS = 45.0f; }
+        else if (lvl <= 60) { targetHPS = 85.0f; }
+        else if (lvl <= 70) { targetHPS = 175.0f; }
+        else                { targetHPS = 750.0f; }
+        
+        float totalHPS = targetHPS * info.gearRatio;
+        
+        // === HEAL SCALING ===
+        // Direct heals: HPS * cast time (same as offensive spells)
+        // HoTs: HPS * 0.30 (reduced because they STACK with direct heals, like DoTs stack with autos)
+        
+        bool isHoT = spellInfo && spellInfo->HasAura(SPELL_AURA_PERIODIC_HEAL);
+        
+        if (isHoT)
+        {
+            // HoT tick = 30% of HPS (reduced because it stacks with direct heals)
+            heal = (uint32)(totalHPS * 0.30f);
+        }
+        else
+        {
+            // Direct heal: HPS * cast time
+            // Instant spells (CalcCastTime = 0) count as 1.0s matching GCD
+            float castTimeSeconds = 1.0f;
+            if (spellInfo)
+            {
+                float rawCastTime = spellInfo->CalcCastTime() / 1000.0f;
+                if (rawCastTime > 0.0f)
+                    castTimeSeconds = rawCastTime;
+            }
+            heal = (uint32)(totalHPS * castTimeSeconds);
+        }
+    }
+
+    // === AURA VALUE SCALING ===
+    // Scales fixed-value auras from guardians. Percentage-based auras are IGNORED.
+    // Types scaled:
+    //   - SPELL_AURA_SCHOOL_ABSORB / MANA_SHIELD → Shields (HPS * 1.0s)
+    //   - SPELL_AURA_DAMAGE_SHIELD → Thorns (DPS * 0.30, passive like DoTs)
+    void OnAuraApply(Unit* /*unit*/, Aura* aura) override
+    {
+        if (!aura)
+            return;
+        
+        // Get the caster - must be a guardian
+        Unit* caster = aura->GetCaster();
+        if (!caster)
+            return;
+        
+        Creature* casterCreature = caster->ToCreature();
+        if (!casterCreature)
+            return;
+        
+        auto scalingIt = sSoulKeeper->_guardianScaling.find(casterCreature->GetGUID());
+        if (scalingIt == sSoulKeeper->_guardianScaling.end())
+            return;
+        
+        const auto& info = scalingIt->second;
+        
+        // Get level bracket base value (same for DPS and HPS)
+        float targetValue;
+        uint32 lvl = info.ownerLevel;
+        
+        if (lvl <= 10)      { targetValue = 1.5f; }
+        else if (lvl <= 20) { targetValue = 5.0f; }
+        else if (lvl <= 30) { targetValue = 12.0f; }
+        else if (lvl <= 40) { targetValue = 25.0f; }
+        else if (lvl <= 50) { targetValue = 45.0f; }
+        else if (lvl <= 60) { targetValue = 85.0f; }
+        else if (lvl <= 70) { targetValue = 175.0f; }
+        else                { targetValue = 750.0f; }
+        
+        float totalValue = targetValue * info.gearRatio;
+        
+        // Check each effect for scalable aura types
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        {
+            AuraEffect* effect = aura->GetEffect(i);
+            if (!effect)
+                continue;
+            
+            AuraType auraType = effect->GetAuraType();
+            int32 newAmount = 0;
+            
+            switch (auraType)
+            {
+                // === ABSORB SHIELDS: HPS * 1.0s (instant cast = GCD equivalent) ===
+                case SPELL_AURA_SCHOOL_ABSORB:
+                case SPELL_AURA_MANA_SHIELD:
+                    newAmount = (int32)(totalValue * 1.0f);
+                    break;
+                
+                // === DAMAGE SHIELD (Thorns): DPS * 0.30 (passive, like DoTs) ===
+                // Thorns is "free" damage - no GCD, stacks with everything
+                // Scale at 30% like DoT ticks to prevent OP thorns guardians
+                case SPELL_AURA_DAMAGE_SHIELD:
+                    newAmount = (int32)(totalValue * 0.30f);
+                    break;
+                
+                default:
+                    continue; // Skip unhandled aura types
+            }
+            
+            // Apply the scaled amount
+            if (newAmount > 0)
+                effect->ChangeAmount(newAmount, true, false);
+        }
+    }
+
     // === DOT DAMAGE SCALING ===
     // DoTs use REDUCED damage because they STACK with auto-attacks!
     // If auto-attack = 25% and DoT = 25%, combined = 50% (too high)
     // Solution: DoT per tick = 30% of the base DPS (adds ~6% total on top of autos)
-    void ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage, SpellInfo const* /*spellInfo*/) override
+    // NOTE: This hook is confusingly called for BOTH DoTs AND HoTs! Must skip heals.
+    void ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage, SpellInfo const* spellInfo) override
     {
         if (!attacker || !target || damage == 0)
+            return;
+
+        // SKIP HEALS: This hook is called for HoTs too (confusing naming!)
+        // HoTs are handled by ModifyHealReceived instead
+        if (spellInfo && spellInfo->HasAura(SPELL_AURA_PERIODIC_HEAL))
             return;
 
         Creature* attackerCreature = attacker->ToCreature();
@@ -1717,7 +1993,7 @@ public:
             }
         }
 
-        // === CASE 2: Owner TAKES damage → Guardian defends ===
+        // === CASE 2: Owner TAKES damage → Guardian defends + Track damage time ===
         Player* victimPlayer = victim->ToPlayer();
         if (victimPlayer)
         {
@@ -1728,12 +2004,29 @@ public:
                 Creature* guardian = ObjectAccessor::GetCreature(*victimPlayer, it->second);
                 if (guardian && guardian->IsAlive())
                 {
+                    // TRACK DAMAGE: Owner took damage, record timestamp on guardian
+                    // This enables defensive cooldowns (immunity buffs) to trigger
+                    sSoulKeeper->_guardianLastDamage[guardian->GetGUID()] = getMSTime();
+                    
                     // Guardian defends: attack whoever hit the owner
                     if (guardian->CanCreatureAttack(attacker) && !guardian->IsInCombatWith(attacker))
                     {
                         guardian->AI()->AttackStart(attacker);
                     }
                 }
+            }
+        }
+        
+        // === CASE 3: Guardian TAKES damage → Track damage time ===
+        Creature* victimCreature = victim->ToCreature();
+        if (victimCreature)
+        {
+            // Check if this creature is a tracked guardian
+            auto scalingIt = sSoulKeeper->_guardianScaling.find(victimCreature->GetGUID());
+            if (scalingIt != sSoulKeeper->_guardianScaling.end())
+            {
+                // Guardian took damage, record timestamp
+                sSoulKeeper->_guardianLastDamage[victimCreature->GetGUID()] = getMSTime();
             }
         }
     }
