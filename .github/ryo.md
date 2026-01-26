@@ -16,16 +16,20 @@ COMPLETED_TASKS:
   [x] - HUD Initialization 🍥
   [x] - Context Switch to AzerothCore 🍥
   [x] - Persona Synchronization 🍥
+  [x] - Soul Keeper Guardian AI v3 🍥
+  [x] - Soul Keeper Comprehensive Scaling System 🍥
 
 LATEST_FEATURE:
-  GUARDIAN_AI_COOLDOWN_HOTFIX:
-  - Guardians were spam-casting buffs (immunity buffs = permanent immunity exploit!)
-  - Root cause: CastSpell() for creatures does NOT auto-add cooldowns
-  - CombatAI uses EventMap for cooldowns, HasSpellCooldown() was always false
-  - FIX: After each spell cast, call AddSpellCooldown() explicitly
-  - FIX: Block immunity auras entirely (SCHOOL_IMMUNITY, DAMAGE_IMMUNITY, MECHANIC_IMMUNITY)
-  - Minimum cooldowns: Heals 5s, Dispels 8s, Buffs 30s
-  - Status: BUILD SUCCESSFUL 🍥
+  GUARDIAN_SCALING_SYSTEM_V2:
+  - Comprehensive scaling: Melee, Spells, DoTs, Heals, HoTs, Shields, Thorns
+  - Level-bracketed base DPS/HPS from 1-80 (1.5 → 750 at 80)
+  - Gear detection: Compares melee AP, ranged AP, spell power - picks best
+  - Mana scaling: 3-8% of max mana per spell (scales by owner level)
+  - Immunity buffs: 60s minimum cooldown, only trigger when ACTUALLY taking damage
+  - EXPLOIT FIX: Cooldown persistence across dismiss/summon cycles!
+  - Saved per (ownerGUID, creatureEntry) → no swapping to bypass
+  - Death does NOT save cooldowns (death = punishment)
+  - Status: PUSHED TO GIT 🍥
 
 THOUGHTS&RANTS:
   - "OnUnitUpdate runs in Unit::Update BEFORE Creature::UpdateAI. No conflict - separate hooks."
@@ -36,15 +40,14 @@ THOUGHTS&RANTS:
   - "Self-dispel added - guardian can remove polymorph/curse from itself now."
 
 ACTIVE_WORK:
-  COMPLETED: Soul Keeper Guardian AI Fix (v3)
-  - Evade behavior: Soul Keeper guardians (UNIT_CREATED_BY_SPELL=81100) keep ALL auras
-  - AI selection: Force CombatAI if creature has spells but no AIName AND no ScriptID
-  - AI injection: OnUnitUpdate hook with per-guardian timers (support logic)
-  - Native AI compatibility: OnUnitUpdate runs BEFORE UpdateAI, UNIT_STATE checks prevent conflicts
-  - Heals: Emergency (35%) and normal (60%) HP thresholds, plus OOC healing to 95%
-  - Dispels: Owner AND self (guardian can dispel itself now!)
-  - Buffs: COMBAT buffs AND out-of-combat buffs (like wild counterparts)
-  - State checks: CASTING, STUNNED, CONFUSED, FLEEING all respected
-  - All spell casts: Mana cost, cooldown, and range validated
-  - Status: BUILD SUCCESS, TESTING NEEDED 🍥
+  COMPLETED: Soul Keeper Guardian Scaling System v2
+  - Hooks verified: All 9 hooks registered match overridden methods
+  - UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN: Direct spell damage scaling
+  - UNITHOOK_MODIFY_PERIODIC_DAMAGE_AURAS_TICK: DoT scaling (skips HoTs!)
+  - UNITHOOK_MODIFY_HEAL_RECEIVED: Direct heal + HoT scaling  
+  - UNITHOOK_ON_AURA_APPLY: Shield/Thorns aura value scaling
+  - UNITHOOK_ON_DAMAGE: Track damage timestamps for immunity triggers
+  - Cooldown persistence: _persistentCooldowns map prevents dismiss/summon exploit
+  - README updated with scaling formula table
+  - Status: PUSHED TO GIT, TESTING NEEDED 🍥
 
