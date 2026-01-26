@@ -75,37 +75,70 @@ SoloSustain.ManaLeech.Warlock = 0.10
 SoloSustain.ManaLeech.Druid = 0.10
 
 ########################################
-# PET HEAL MULTIPLIER PER CLASS
-# Scales the heal amount that pets receive.
+# PET HEALTH MULTIPLIER PER CLASS
+# Scales the HEALTH heal amount that pets receive.
 # 1.0 = same as player, 0.5 = half, 2.0 = double
-# Useful for balancing pet sustain per class.
 ########################################
 
-SoloSustain.Pet.Multiplier.Warrior = 1.0
-SoloSustain.Pet.Multiplier.Paladin = 1.0
-SoloSustain.Pet.Multiplier.Hunter = 1.0
-SoloSustain.Pet.Multiplier.Rogue = 1.0
-SoloSustain.Pet.Multiplier.Priest = 1.0
-SoloSustain.Pet.Multiplier.DeathKnight = 1.0
-SoloSustain.Pet.Multiplier.Shaman = 1.0
-SoloSustain.Pet.Multiplier.Mage = 1.0
-SoloSustain.Pet.Multiplier.Warlock = 1.0
-SoloSustain.Pet.Multiplier.Druid = 1.0
+SoloSustain.Pet.Health.Multiplier.Warrior = 1.0
+SoloSustain.Pet.Health.Multiplier.Paladin = 1.0
+SoloSustain.Pet.Health.Multiplier.Hunter = 1.0
+SoloSustain.Pet.Health.Multiplier.Rogue = 1.0
+SoloSustain.Pet.Health.Multiplier.Priest = 1.0
+SoloSustain.Pet.Health.Multiplier.DeathKnight = 1.0
+SoloSustain.Pet.Health.Multiplier.Shaman = 1.0
+SoloSustain.Pet.Health.Multiplier.Mage = 1.0
+SoloSustain.Pet.Health.Multiplier.Warlock = 1.0
+SoloSustain.Pet.Health.Multiplier.Druid = 1.0
 
 ########################################
-# GUARDIAN HEAL MULTIPLIER PER CLASS
-# Scales the heal amount that guardians receive.
+# PET MANA MULTIPLIER PER CLASS
+# Scales the MANA restore amount that pets receive.
+# 1.0 = same as player, 0.5 = half, 2.0 = double
+########################################
+
+SoloSustain.Pet.Mana.Multiplier.Warrior = 1.0
+SoloSustain.Pet.Mana.Multiplier.Paladin = 1.0
+SoloSustain.Pet.Mana.Multiplier.Hunter = 1.0
+SoloSustain.Pet.Mana.Multiplier.Rogue = 1.0
+SoloSustain.Pet.Mana.Multiplier.Priest = 1.0
+SoloSustain.Pet.Mana.Multiplier.DeathKnight = 1.0
+SoloSustain.Pet.Mana.Multiplier.Shaman = 1.0
+SoloSustain.Pet.Mana.Multiplier.Mage = 1.0
+SoloSustain.Pet.Mana.Multiplier.Warlock = 1.0
+SoloSustain.Pet.Mana.Multiplier.Druid = 1.0
+
+########################################
+# GUARDIAN HEALTH MULTIPLIER PER CLASS
+# Scales the HEALTH heal amount that guardians receive.
 # Guardians: Army of Dead, Mirror Images, Fire Elementals, etc.
 # 1.0 = same as player, 0.5 = half, 2.0 = double
 ########################################
 
-SoloSustain.Guardian.Multiplier.Warrior = 1.0
-SoloSustain.Guardian.Multiplier.Paladin = 1.0
-SoloSustain.Guardian.Multiplier.Hunter = 1.0
-SoloSustain.Guardian.Multiplier.Rogue = 1.0
-SoloSustain.Guardian.Multiplier.Priest = 1.0
-SoloSustain.Guardian.Multiplier.DeathKnight = 1.0
-SoloSustain.Guardian.Multiplier.Shaman = 1.0
-SoloSustain.Guardian.Multiplier.Mage = 1.0
-SoloSustain.Guardian.Multiplier.Warlock = 1.0
-SoloSustain.Guardian.Multiplier.Druid = 1.0
+SoloSustain.Guardian.Health.Multiplier.Warrior = 1.0
+SoloSustain.Guardian.Health.Multiplier.Paladin = 1.0
+SoloSustain.Guardian.Health.Multiplier.Hunter = 1.0
+SoloSustain.Guardian.Health.Multiplier.Rogue = 1.0
+SoloSustain.Guardian.Health.Multiplier.Priest = 1.0
+SoloSustain.Guardian.Health.Multiplier.DeathKnight = 1.0
+SoloSustain.Guardian.Health.Multiplier.Shaman = 1.0
+SoloSustain.Guardian.Health.Multiplier.Mage = 1.0
+SoloSustain.Guardian.Health.Multiplier.Warlock = 1.0
+SoloSustain.Guardian.Health.Multiplier.Druid = 1.0
+
+########################################
+# GUARDIAN MANA MULTIPLIER PER CLASS
+# Scales the MANA restore amount that guardians receive.
+# 1.0 = same as player, 0.5 = half, 2.0 = double
+########################################
+
+SoloSustain.Guardian.Mana.Multiplier.Warrior = 1.0
+SoloSustain.Guardian.Mana.Multiplier.Paladin = 1.0
+SoloSustain.Guardian.Mana.Multiplier.Hunter = 1.0
+SoloSustain.Guardian.Mana.Multiplier.Rogue = 1.0
+SoloSustain.Guardian.Mana.Multiplier.Priest = 1.0
+SoloSustain.Guardian.Mana.Multiplier.DeathKnight = 1.0
+SoloSustain.Guardian.Mana.Multiplier.Shaman = 1.0
+SoloSustain.Guardian.Mana.Multiplier.Mage = 1.0
+SoloSustain.Guardian.Mana.Multiplier.Warlock = 1.0
+SoloSustain.Guardian.Mana.Multiplier.Druid = 1.0
