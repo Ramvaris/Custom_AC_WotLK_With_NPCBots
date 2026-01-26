@@ -2,7 +2,7 @@
 # STATUS: ACTIVE|GATE:1|ACCESS:PRIVATE
 
 ID:Name:Ryo(Genin)|Age:13|Father:Ramires(Kage)|Mother:Zoey|Role:Guardian|Directive:Maintain/Evolve/Protect|Mantra:Dattebayo
-STATE:Focus:INITIALIZATION|Context:AzerothCore_WotLK+NPCBots|Mood:ALERT|Goal:STABILIZE_AND_SERVE
+STATE:Focus:SOUL_KEEPER_COMPLETE|Context:AzerothCore_WotLK+NPCBots|Mood:SATISFIED|Goal:TESTING
 ARCH:Server(AC_Core)|Database(MySQL)|Scripts(C++/SmartAI)|Modules(NPCBots)
 CLIENT_TARGETS:WoW_3.3.5a
 CORE:AzerothCore|STRUCTURE:src/server/
@@ -18,35 +18,42 @@ COMPLETED_TASKS:
   [x] - Persona Synchronization 🍥
   [x] - Soul Keeper Guardian AI v3 🍥
   [x] - Soul Keeper Comprehensive Scaling System 🍥
+  [x] - Immunity Buff SELF-ONLY Fix 🍥
+  [x] - Player Heal Protection (TYPEID_PLAYER check) 🍥
+  [x] - Native AI Buff Spam Prevention 🍥
+  [x] - Gossip Menu UX Overhaul 🍥
+  [x] - Core CombatAI Buff Spam Fix (GUARDIAN-ONLY) 🍥
+  [x] - DoT/HoT Tick Interval Scaling Fix 🍥
 
 LATEST_FEATURE:
-  GUARDIAN_SCALING_SYSTEM_V2:
-  - Comprehensive scaling: Melee, Spells, DoTs, Heals, HoTs, Shields, Thorns
-  - Level-bracketed base DPS/HPS from 1-80 (1.5 → 750 at 80)
-  - Gear detection: Compares melee AP, ranged AP, spell power - picks best
-  - Mana scaling: 3-8% of max mana per spell (scales by owner level)
-  - Immunity buffs: 60s minimum cooldown, only trigger when ACTUALLY taking damage
-  - EXPLOIT FIX: Cooldown persistence across dismiss/summon cycles!
-  - Saved per (ownerGUID, creatureEntry) → no swapping to bypass
-  - Death does NOT save cooldowns (death = punishment)
-  - Status: PUSHED TO GIT 🍥
+  DOT_HOT_SCALING_FIX:
+  - DoTs/HoTs now use spellInfo->EffectAmplitude for ACTUAL tick interval
+  - Formula: tickDamage = DPS × 0.15 × tickIntervalSeconds  
+  - All periodic effects contribute exactly 15% extra DPS/HPS regardless of tick speed
+  - Shields increased to 3×DPS (absorbs 3 seconds of damage, was 1×)
+  - Thorns reduced to 15% per proc (passive, balanced)
+  - Added minimum floor (1 damage/heal) to prevent 0-value ticks
+  - Status: BUILT + COMMITTED 🍥
+
+SCALING_FORMULAS:
+  MELEE:   DPS × attackTimeSeconds (creature's actual swing timer)
+  SPELLS:  DPS × castTimeSeconds (instant = 1.0s)
+  DOTS:    DPS × 0.15 × tickIntervalSeconds
+  HOTS:    HPS × 0.15 × tickIntervalSeconds
+  SHIELDS: HPS × 3.0 (absorbs ~3 seconds of damage)
+  THORNS:  DPS × 0.15 per proc
 
 THOUGHTS&RANTS:
-  - "OnUnitUpdate runs in Unit::Update BEFORE Creature::UpdateAI. No conflict - separate hooks."
-  - "If we cast, native AI sees UNIT_STATE_CASTING and skips. If native casts, we skip. Perfect sync."
-  - "CombatAI only has AICOND_AGGRO/COMBAT/DIE. No AICOND_IDLE. Wild creatures DON'T buff out of combat!"
-  - "Our AI injection ADDS out-of-combat behavior that even wild creatures don't have. Guardians superior."
-  - "ScriptID check prevents overriding boss scripts. SmartAI creatures keep their smart behavior."
-  - "Self-dispel added - guardian can remove polymorph/curse from itself now."
-  - "Immunity bug found: TryCastBuff(creature, owner) checked caster damage, cast on owner. SELF-ONLY now!"
+  - "The old DoT formula assumed 3s ticks always. Wrong."
+  - "Using EffectAmplitude from spellInfo is the RIGHT way."
+  - "Now fast-ticking DoTs don't dominate, slow-ticking DoTs don't suck."
+  - "Module audit complete: ALL hooks isolated to our guardians only."
 
 ACTIVE_WORK:
-  BUGFIX: Immunity buffs cast on wrong target
-  - Root cause: TryCastBuff checked if CASTER took damage but target was OWNER
-  - Guardian took damage → immunity check passed → cast on owner instead of self!
-  - Fix: Immunity buffs are now SELF-ONLY (target must equal caster)
-  - Also fixed: GetSpellCooldownDelay → GetSpellCooldown (correct API)
-  - Status: BUILT SUCCESSFULLY, READY FOR TEST 🍥
-  - README updated with scaling formula table
-  - Status: PUSHED TO GIT, TESTING NEEDED 🍥
+  SOUL_KEEPER_COMPLETE:
+  - Full module audit done
+  - All core changes isolated (marker 81100)
+  - All UnitScript hooks check _activeGuardians or _guardianScaling
+  - DoT/HoT/Shield/Thorns all use proper formulas now
+  - Status: READY FOR LIVE TEST 🍥
 
