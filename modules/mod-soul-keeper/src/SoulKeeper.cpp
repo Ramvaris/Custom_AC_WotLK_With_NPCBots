@@ -1467,6 +1467,13 @@ private:
             if (caster->GetPower(POWER_MANA) < spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask())) continue;
 
             caster->CastSpell(target, spellId, false);
+            
+            // CRITICAL: Creatures don't auto-track cooldowns via CastSpell!
+            // CombatAI uses EventMap, not HasSpellCooldown(). We must add it ourselves.
+            uint32 cooldown = spellInfo->GetRecoveryTime();
+            if (cooldown < 5000) cooldown = 5000; // Minimum 5 seconds for heals
+            caster->AddSpellCooldown(spellId, 0, cooldown);
+            
             return true;
         }
         return false;
@@ -1497,6 +1504,12 @@ private:
             if (caster->GetPower(POWER_MANA) < spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask())) continue;
 
             caster->CastSpell(target, spellId, false);
+            
+            // Add cooldown (minimum 8 seconds for dispels to prevent spam)
+            uint32 cooldown = spellInfo->GetRecoveryTime();
+            if (cooldown < 8000) cooldown = 8000;
+            caster->AddSpellCooldown(spellId, 0, cooldown);
+            
             return true;
         }
         return false;
@@ -1520,6 +1533,16 @@ private:
                 spellInfo->HasEffect(SPELL_EFFECT_DISPEL)) continue;
             if (spellInfo->GetDuration() <= 0) continue;
             
+            // BLOCK DANGEROUS IMMUNITY AURAS - Never auto-cast these!
+            // These are WAY too powerful for guardians to spam (Divine Shield, etc.)
+            if (spellInfo->HasAura(SPELL_AURA_SCHOOL_IMMUNITY) ||      // Immune to magic school
+                spellInfo->HasAura(SPELL_AURA_DAMAGE_IMMUNITY) ||      // Immune to all damage
+                spellInfo->HasAura(SPELL_AURA_MECHANIC_IMMUNITY) ||    // Immune to stun/fear/etc
+                spellInfo->HasAura(SPELL_AURA_MOD_IMMUNE_AURA_APPLY_SCHOOL)) // Immune to aura application
+            {
+                continue; // Skip this spell entirely
+            }
+            
             // Skip if target already has this buff
             if (target->HasAura(spellId)) continue;
             
@@ -1534,6 +1557,13 @@ private:
             if (caster->GetPower(POWER_MANA) < spellInfo->CalcPowerCost(caster, spellInfo->GetSchoolMask())) continue;
 
             caster->CastSpell(target, spellId, false);
+            
+            // Add cooldown (minimum 30 seconds for buffs to prevent spam)
+            // Most buffs have long durations so this is reasonable
+            uint32 cooldown = spellInfo->GetRecoveryTime();
+            if (cooldown < 30000) cooldown = 30000;
+            caster->AddSpellCooldown(spellId, 0, cooldown);
+            
             return true;
         }
         return false;

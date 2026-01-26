@@ -18,13 +18,13 @@ COMPLETED_TASKS:
   [x] - Persona Synchronization 🍥
 
 LATEST_FEATURE:
-  GOSSIP_MENU_COLLISION_FIX:
-  - Soul Keeper gossip (.soul summon) was colliding with Lua gossip (.special)
-  - Root cause: ClearMenus() does NOT reset _menuId field
-  - When .special (menu_id 99999) was used first, Soul Keeper inherited that menu_id
-  - Eluna handler for 99999 fired when clicking Soul Keeper options = NPC spawn!
-  - FIX: Explicitly call SetMenuId(SOUL_KEEPER_GOSSIP_MENU_ID) after ClearGossipMenuFor()
-  - FIX: Change OnPlayerGossipSelect to strict menu_id check (no OR with sender)
+  GUARDIAN_AI_COOLDOWN_HOTFIX:
+  - Guardians were spam-casting buffs (immunity buffs = permanent immunity exploit!)
+  - Root cause: CastSpell() for creatures does NOT auto-add cooldowns
+  - CombatAI uses EventMap for cooldowns, HasSpellCooldown() was always false
+  - FIX: After each spell cast, call AddSpellCooldown() explicitly
+  - FIX: Block immunity auras entirely (SCHOOL_IMMUNITY, DAMAGE_IMMUNITY, MECHANIC_IMMUNITY)
+  - Minimum cooldowns: Heals 5s, Dispels 8s, Buffs 30s
   - Status: BUILD SUCCESSFUL 🍥
 
 THOUGHTS&RANTS:
