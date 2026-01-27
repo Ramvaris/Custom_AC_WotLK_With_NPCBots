@@ -24,46 +24,41 @@ COMPLETED_TASKS:
   [x] - Gossip Menu UX Overhaul 🍥
   [x] - Core CombatAI Buff Spam Fix (GUARDIAN-ONLY) 🍥
   [x] - DoT/HoT Tick Interval Scaling Fix 🍥
-  [x] - Guardian Visual Scale Fix (SetObjectScale) 🍥
+  [x] - Guardian Damage Scaling Fix (Melee/Ranged separation + Dual-Wield) 🍥
 
 LATEST_FEATURE:
-  CLIENT_SCALING_LIMITATION_RESEARCH:
-  - Researched TrinityCore #24551 (open since May 2020)
-  - Creatures with family > 0 AND pet-type models get CLIENT-scaled
-  - This is hardcoded in WoW.exe - ignores server scale values
-  - Moths = family 37 (CREATURE_FAMILY_MOTH) → shrinks
-  - Blood Elf Scouts = family 0 → stays correct size
-  - Removed useless server-side workarounds (100ms delay, etc.)
-  - Honestly documented in README with TrinityCore link
-  - Status: ACCEPTED AS CLIENT LIMITATION 🍥
+  DAMAGE_SCALING_FIX:
+  - Fixed melee/ranged/spell damage scaling to be INDEPENDENT
+  - Melee creatures scale from owner's melee AP ONLY
+  - Ranged creatures scale from owner's ranged AP ONLY
+  - Added offhand damage scaling for dual-wielders (50% of mainhand)
+  - Spell damage uses best of melee/ranged/spell ratio
+  - Status: FIXED 🍥
 
 SCALING_FORMULAS:
-  MELEE:   DPS × attackTimeSeconds (creature's actual swing timer)
-  SPELLS:  DPS × castTimeSeconds (instant = 1.0s)
+  MELEE:   meleeDPS = targetDPS × (meleeAP / expectedMelee)
+  RANGED:  rangedDPS = targetDPS × (rangedAP / expectedRanged)
+  OFFHAND: 50% of mainhand DPS
+  SPELLS:  Uses best ratio of melee/ranged/spell for gearRatio
   DOTS:    DPS × 0.15 × tickIntervalSeconds
   HOTS:    HPS × 0.15 × tickIntervalSeconds
-  SHIELDS: HPS × 3.0 (absorbs ~3 seconds of damage)
-  THORNS:  DPS × 0.15 per proc
+  SHIELDS: HPS × 3.0
 
 THOUGHTS&RANTS:
   - "WoW 3.3.5a client design... Ramires was right to question it."
-  - "Why does the SERVER send plain text only for CLIENT to scramble?"
-  - "Client ignores SPELL_AURA_COMPREHEND_LANGUAGE. Who coded that?"
-  - "Only fix: send LANG_UNIVERSAL for understood languages."
-  - "No prefix - keeps immersion. You just won't know WHICH language."
-  - "This is the best we can do without modifying the client."
-  - "CLIENT also scales creatures with pet families. TrinityCore #24551."
-  - "Open issue since 2020. Nobody fixed it because you CAN'T. Client-side."
-  - "Moths shrink, Blood Elf Scouts don't. Family > 0 vs Family = 0."
-  - "Some things are just baked into the 3.3.5a client. Accept and move on."
+  - "Hunter RAP = high, Hunter melee AP = low. Different stats!"
+  - "Can't use 'pick the best stat' for physical damage."
+  - "Melee creatures MUST scale from melee AP only."
+  - "Ranged creatures MUST scale from ranged AP only."
+  - "Dual-wielders need offhand damage set too - was missing!"
+  - "Thuros Lightfingers was using default creature offhand damage."
 
 ACTIVE_WORK:
-  CLIENT_SCALING_LIMITATION_DOCUMENTED:
-  - TrinityCore #24551: Creatures with family > 0 get scaled by CLIENT
-  - Models associated with hunter pets trigger client-side scaling
-  - Server sends correct scale, client overrides it visually
-  - Moths (family=37) shrink, Humanoids (family=0) don't
-  - This is HARDCODED in the 3.3.5a client - NO SERVER FIX POSSIBLE
-  - Documented in README.md with link to TrinityCore issue
-  - Status: DOCUMENTED AS KNOWN LIMITATION 🍥
+  DAMAGE_SCALING_COMPLETE:
+  - Melee damage now scales from owner's melee AP only
+  - Ranged damage now scales from owner's ranged AP only
+  - Offhand damage = 50% of mainhand (for dual-wielders)
+  - Spell damage scaling uses best ratio (for hybrid classes)
+  - Client pet scaling for family > 0 cannot be fixed (client-side)
+  - Status: TESTING 🍥
 

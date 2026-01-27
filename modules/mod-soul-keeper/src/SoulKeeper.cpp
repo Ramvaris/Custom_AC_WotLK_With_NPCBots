@@ -575,22 +575,10 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     // === Apply our custom scaling on TOP of InitStatsForLevel ===
     ScaleGuardian(guardian, player);
 
-    // === VISUAL SCALE FROM DATABASE ===
-    // Set the scale from creature_template_model (the creature's intended size).
-    // 
-    // CLIENT-SIDE PET SCALING WORKAROUND:
-    // The WoW 3.3.5a client applies its OWN scaling to creatures with family > 0
-    // (tameable pet families like moth, wolf, etc.) when they're summoned as guardians.
-    // This client-side scaling is HARDCODED and overrides synchronous SetObjectScale calls.
-    // 
-    // SOLUTION: Delay the scale update by 200ms so it fires AFTER the client
-    // has finished processing the summon packet and applied its automatic scaling.
-    // The delayed SetObjectScale then overrides the client's scaling.
-    // This pattern is identical to how the Mend Pet spell can resize pets.
-    float scaleFactor = targetSoul->scaleFactor;
-    guardian->m_Events.AddEventAtOffset([guardian, scaleFactor]() {
-        guardian->SetObjectScale(scaleFactor);
-    }, 200ms);
+    // === VISUAL SCALE: Set immediately from captured soul ===
+    // Note: Creatures with hunter pet families (family > 0) may appear smaller
+    // due to client-side display scaling that cannot be overridden server-side.
+    guardian->SetObjectScale(targetSoul->scaleFactor);
     
     // === RESTORE COOLDOWNS from previous summon (prevent dismiss/summon exploit!) ===
     // If player dismissed this guardian type earlier, restored cooldowns still apply.
@@ -729,6 +717,8 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
 
     // === DAMAGE SCALING ===
     // Get owner's stats for each damage type
+    // IMPORTANT: Each attack type (melee/ranged/spell) scales independently!
+    // A Hunter's ranged AP shouldn't boost a melee creature's damage.
     float meleeAP  = owner->GetTotalAttackPowerValue(BASE_ATTACK);
     float rangedAP = owner->GetTotalAttackPowerValue(RANGED_ATTACK);
     float maxSP    = 0.0f;
@@ -741,7 +731,6 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     // === LEVEL BRACKET DPS FORMULA ===
     // Based on typical WotLK 3.3.5a player DPS and stats per level bracket.
     // Target: 25% of player DPS at all levels (20-30% acceptable range).
-    // Now with PROPER expected values per stat type!
     float targetDPS;
     float expectedMelee;   // Expected melee AP at this level
     float expectedRanged;  // Expected ranged AP at this level
@@ -749,7 +738,6 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     
     // 10-level brackets with separate expected values per stat type
     // At level 80: melee ~4500 AP, ranged ~4000 RAP, caster ~2800 SP
-    // Other brackets scale proportionally (melee/spell ratio ~1.6:1)
     if (ownerLevel <= 10)
     {
         targetDPS = 1.5f;
@@ -791,44 +779,40 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
         expectedMelee = 4500.0f; expectedRanged = 4000.0f; expectedSpell = 2800.0f;
     }
 
-    // === EFFECTIVE CONTRIBUTION: Which stat produces the most DPS? ===
-    // Compare normalized ratios (stat / expectedForType), not raw values!
-    // A Paladin with 2000 AP and 800 SP: melee = 2000/4500 = 0.44, spell = 800/2800 = 0.29
-    // → Melee wins. But a Holy Pally with 500 AP and 2000 SP: melee = 0.11, spell = 0.71
-    // → Spell wins. This is the CORRECT behavior for hybrid classes!
-    float meleeRatio  = meleeAP / expectedMelee;
-    float rangedRatio = rangedAP / expectedRanged;
-    float spellRatio  = maxSP / expectedSpell;
+    // === SEPARATE SCALING FOR MELEE/RANGED/SPELL ===
+    // Each attack type uses its OWN stat - no cross-contamination!
+    // A Hunter's RAP boosts ranged guardians, not melee ones.
+    // A Paladin's AP boosts melee guardians, SP boosts spell guardians.
+    float meleeRatio  = std::max(0.5f, meleeAP / expectedMelee);
+    float rangedRatio = std::max(0.5f, rangedAP / expectedRanged);
+    float spellRatio  = std::max(0.5f, maxSP / expectedSpell);
 
-    // Pick the winner (whichever normalized ratio is highest)
-    float gearRatio;
-    if (meleeRatio >= rangedRatio && meleeRatio >= spellRatio)
-        gearRatio = meleeRatio;
-    else if (rangedRatio >= meleeRatio && rangedRatio >= spellRatio)
-        gearRatio = rangedRatio;
-    else
-        gearRatio = spellRatio;
-
-    // Floor at 50% (naked characters still get reasonable guardian)
-    gearRatio = std::max(0.5f, gearRatio);
-
-    // Scale guardian DPS by gear quality
-    float totalDPS = targetDPS * gearRatio;
-
-    // === MELEE DAMAGE ===
-    // Use ACTUAL creature attack speed (not hardcoded 2.0s)
-    // Damage per hit = DPS * attackTimeSeconds
-    float meleeAttackTime = (float)guardian->GetAttackTime(BASE_ATTACK);
-    if (meleeAttackTime <= 0.0f) meleeAttackTime = 2000.0f;  // Default if not set
-
-    float meleeDamagePerHit = totalDPS * (meleeAttackTime / 1000.0f);
+    // === MELEE DPS (scales from owner's melee AP only) ===
+    float meleeDPS = targetDPS * meleeRatio;
     
-    // === RANGED DAMAGE ===
-    // Same formula but using ranged attack speed
-    float rangedAttackTime = (float)guardian->GetAttackTime(RANGED_ATTACK);
-    if (rangedAttackTime <= 0.0f) rangedAttackTime = 2000.0f;  // Default if not set
+    // === RANGED DPS (scales from owner's ranged AP only) ===
+    float rangedDPS = targetDPS * rangedRatio;
+    
+    // === SPELL SCALING: Use best of melee/ranged/spell for hook ===
+    // Spells can be cast by any creature type, so we pick the strongest stat
+    float gearRatio = std::max({meleeRatio, rangedRatio, spellRatio});
 
-    float rangedDamagePerHit = totalDPS * (rangedAttackTime / 1000.0f);
+    // === MELEE DAMAGE PER HIT ===
+    // Use ACTUAL creature attack speed (not hardcoded 2.0s)
+    float meleeAttackTime = (float)guardian->GetAttackTime(BASE_ATTACK);
+    if (meleeAttackTime <= 0.0f) meleeAttackTime = 2000.0f;
+    float meleeDamagePerHit = meleeDPS * (meleeAttackTime / 1000.0f);
+    
+    // === OFFHAND DAMAGE (for dual-wielders) ===
+    // Standard WoW: offhand damage = 50% of mainhand
+    float offhandAttackTime = (float)guardian->GetAttackTime(OFF_ATTACK);
+    if (offhandAttackTime <= 0.0f) offhandAttackTime = meleeAttackTime;
+    float offhandDamagePerHit = (meleeDPS * 0.5f) * (offhandAttackTime / 1000.0f);
+    
+    // === RANGED DAMAGE PER HIT ===
+    float rangedAttackTime = (float)guardian->GetAttackTime(RANGED_ATTACK);
+    if (rangedAttackTime <= 0.0f) rangedAttackTime = 2000.0f;
+    float rangedDamagePerHit = rangedDPS * (rangedAttackTime / 1000.0f);
     
     // === DAMAGE SCALING (Guardian-compatible) ===
     // Guardian::UpdateDamagePhysical calculates: (BASE_VALUE + AP/14*att_speed + weapon_damage)
@@ -842,14 +826,25 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     guardian->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, 0.0f);
     guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_MAINHAND, BASE_VALUE, 0.0f);
     guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_VALUE, 0.0f);
+    guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_OFFHAND, BASE_VALUE, 0.0f);
+    guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_OFFHAND, TOTAL_VALUE, 0.0f);
     guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_RANGED, BASE_VALUE, 0.0f);
     guardian->SetStatFlatModifier(UNIT_MOD_DAMAGE_RANGED, TOTAL_VALUE, 0.0f);
     
-    // === MELEE WEAPON DAMAGE ===
+    // === MAINHAND WEAPON DAMAGE ===
     guardian->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, meleeDamagePerHit * 0.9f);
     guardian->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, meleeDamagePerHit * 1.1f);
     guardian->UpdateAttackPowerAndDamage(false);
     guardian->UpdateDamagePhysical(BASE_ATTACK);
+    
+    // === OFFHAND WEAPON DAMAGE (for dual-wielders) ===
+    // Check if creature actually has offhand capability
+    if (guardian->GetAttackTime(OFF_ATTACK) > 0)
+    {
+        guardian->SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, offhandDamagePerHit * 0.9f);
+        guardian->SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, offhandDamagePerHit * 1.1f);
+        guardian->UpdateDamagePhysical(OFF_ATTACK);
+    }
     
     // === RANGED WEAPON DAMAGE ===
     guardian->SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, rangedDamagePerHit * 0.9f);
