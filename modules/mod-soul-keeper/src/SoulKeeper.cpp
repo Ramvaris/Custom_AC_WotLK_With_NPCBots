@@ -579,7 +579,20 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     // Guardians should look EXACTLY like their database counterpart.
     // The scaleFactor is captured from GetNativeObjectScale() - the creature_template_model
     // defined size, NOT current scale (which could be shrunk by pet level-scaling).
-    guardian->SetObjectScale(targetSoul->scaleFactor);
+    //
+    // IMPORTANT: Set scale immediately AND schedule a delayed update.
+    // Something in the creature initialization chain (possibly AI init, model loading,
+    // or a script hook) resets scale after our code runs. The delayed event ensures
+    // our scale "wins" after all initialization completes.
+    float finalScale = targetSoul->scaleFactor;
+    guardian->SetObjectScale(finalScale);
+    
+    // Schedule a 100ms delayed scale fix to override any late initialization
+    guardian->m_Events.AddEventAtOffset([guardian, finalScale]()
+    {
+        if (guardian && guardian->IsInWorld())
+            guardian->SetObjectScale(finalScale);
+    }, 100ms);
     
     // === RESTORE COOLDOWNS from previous summon (prevent dismiss/summon exploit!) ===
     // If player dismissed this guardian type earlier, restored cooldowns still apply.
