@@ -21,9 +21,36 @@
 #include "Creature.h"
 #include "GridNotifiers.h"
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "SharedDefines.h"
+#include "SpellAuraEffects.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
+#include <type_traits>
+
+// === LANGUAGE COMPREHENSION HELPER (81100) ===
+// The WoW 3.3.5a client scrambles NPC speech solely based on race, ignoring learned skills and
+// SPELL_AURA_COMPREHEND_LANGUAGES. This helper checks if a player TRULY knows a language via
+// skill OR comprehension aura, allowing us to send LANG_UNIVERSAL to bypass client scrambling.
+inline bool PlayerKnowsLanguage(Player const* player, Language lang)
+{
+    if (!player || lang == LANG_UNIVERSAL || lang == LANG_ADDON)
+        return true;
+
+    // Check if player has the language skill
+    LanguageDesc const* langDesc = GetLanguageDescByID(uint32(lang));
+    if (langDesc && langDesc->skill_id != 0 && player->HasSkill(langDesc->skill_id))
+        return true;
+
+    // Check if player has SPELL_AURA_COMPREHEND_LANGUAGE aura for this language
+    for (auto const& auraEff : player->GetAuraEffectsByType(SPELL_AURA_COMPREHEND_LANGUAGE))
+    {
+        if (auraEff->GetMiscValue() == int32(lang))
+            return true;
+    }
+
+    return false;
+}
 
 enum CreatureTextRange
 {
@@ -109,13 +136,24 @@ private:
 
 #define sCreatureTextMgr CreatureTextMgr::instance()
 
+// === TEMPLATE HELPER: Detect if Builder has GetLanguage() method ===
+// Uses C++17 SFINAE to check at compile-time if the builder exposes language info.
+// Builders without GetLanguage() will fall back to original behavior (no comprehension fix).
+template<typename T, typename = void>
+struct HasGetLanguage : std::false_type {};
+
+template<typename T>
+struct HasGetLanguage<T, std::void_t<decltype(std::declval<T>().GetLanguage())>> : std::true_type {};
+
 template<class Builder>
 class CreatureTextLocalizer
 {
 public:
     CreatureTextLocalizer(Builder const& builder, ChatMsg msgType) : _builder(builder), _msgType(msgType)
     {
-        _packetCache.resize(TOTAL_LOCALES, nullptr);
+        // Cache: [0..TOTAL_LOCALES-1] = original language packets
+        //        [TOTAL_LOCALES..2*TOTAL_LOCALES-1] = universal-with-tag packets (for players who know the language)
+        _packetCache.resize(TOTAL_LOCALES * 2, nullptr);
     }
 
     ~CreatureTextLocalizer()
@@ -131,20 +169,58 @@ public:
     void operator()(Player* player)
     {
         LocaleConstant loc_idx = player->GetSession()->GetSessionDbLocaleIndex();
+        
+        // === LANGUAGE COMPREHENSION FIX (81100) ===
+        // WoW 3.3.5a client scrambles NPC speech solely based on race, ignoring learned skills and
+        // SPELL_AURA_COMPREHEND_LANGUAGES. Since the client does ALL scrambling (server sends plain text
+        // with language ID), our only fix is to send LANG_UNIVERSAL to players who understand the language.
+        // Trade-off: Player sees clean text but doesn't know which language was spoken.
+        bool needsUniversalConversion = false;
+        Language lang = LANG_UNIVERSAL;
+        
+        if constexpr (HasGetLanguage<Builder>::value)
+        {
+            lang = Language(_builder.GetLanguage());
+            bool playerKnows = PlayerKnowsLanguage(player, lang);
+            needsUniversalConversion = playerKnows && lang != LANG_UNIVERSAL && lang != LANG_ADDON;
+        }
+        
+        // Determine cache index: original = loc_idx, universal = loc_idx + TOTAL_LOCALES
+        std::size_t cacheIdx = needsUniversalConversion ? (loc_idx + TOTAL_LOCALES) : loc_idx;
+        
         WorldPacket* messageTemplate;
         std::size_t whisperGUIDpos;
 
         // create if not cached yet
-        if (!_packetCache[loc_idx])
+        if (!_packetCache[cacheIdx])
         {
             messageTemplate = new WorldPacket();
-            whisperGUIDpos = _builder(messageTemplate, loc_idx);
-            _packetCache[loc_idx] = new std::pair<WorldPacket*, std::size_t>(messageTemplate, whisperGUIDpos);
+            
+            if constexpr (HasGetLanguage<Builder>::value)
+            {
+                if (needsUniversalConversion)
+                {
+                    // Build packet with LANG_UNIVERSAL (no prefix - clean text).
+                    // Client doesn't know about comprehension auras, so we override to universal.
+                    whisperGUIDpos = _builder(messageTemplate, loc_idx, LANG_UNIVERSAL, "");
+                }
+                else
+                {
+                    whisperGUIDpos = _builder(messageTemplate, loc_idx);
+                }
+            }
+            else
+            {
+                // Builder doesn't expose language - use original behavior
+                whisperGUIDpos = _builder(messageTemplate, loc_idx);
+            }
+            
+            _packetCache[cacheIdx] = new std::pair<WorldPacket*, std::size_t>(messageTemplate, whisperGUIDpos);
         }
         else
         {
-            messageTemplate = _packetCache[loc_idx]->first;
-            whisperGUIDpos = _packetCache[loc_idx]->second;
+            messageTemplate = _packetCache[cacheIdx]->first;
+            whisperGUIDpos = _packetCache[cacheIdx]->second;
         }
 
         WorldPacket data(*messageTemplate);

@@ -38,6 +38,16 @@ public:
         return ChatHandler::BuildChatPacket(*data, _msgType, Language(_language), _source, _target, text, 0, "", locale);
     }
 
+    // Build packet with language override and text prefix (for language comprehension fix)
+    std::size_t operator()(WorldPacket* data, LocaleConstant locale, Language overrideLang, std::string const& textPrefix) const
+    {
+        std::string text = textPrefix + sCreatureTextMgr->GetLocalizedChatString(_source->GetEntry(), _gender, _textGroup, _textId, locale);
+
+        return ChatHandler::BuildChatPacket(*data, _msgType, overrideLang, _source, _target, text, 0, "", locale);
+    }
+
+    uint32 GetLanguage() const { return _language; }
+
 private:
     WorldObject* _source;
     uint8 _gender;
@@ -60,6 +70,16 @@ public:
 
         return ChatHandler::BuildChatPacket(*data, _msgType, Language(_language), _talker, _target, text, 0, "", locale);
     }
+
+    // Build packet with language override and text prefix (for language comprehension fix)
+    std::size_t operator()(WorldPacket* data, LocaleConstant locale, Language overrideLang, std::string const& textPrefix) const
+    {
+        std::string text = textPrefix + sCreatureTextMgr->GetLocalizedChatString(_source->GetEntry(), _gender, _textGroup, _textId, locale);
+
+        return ChatHandler::BuildChatPacket(*data, _msgType, overrideLang, _talker, _target, text, 0, "", locale);
+    }
+
+    uint32 GetLanguage() const { return _language; }
 
 private:
     WorldObject* _source;

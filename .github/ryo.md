@@ -24,16 +24,17 @@ COMPLETED_TASKS:
   [x] - Gossip Menu UX Overhaul 🍥
   [x] - Core CombatAI Buff Spam Fix (GUARDIAN-ONLY) 🍥
   [x] - DoT/HoT Tick Interval Scaling Fix 🍥
+  [x] - Guardian Visual Scale Fix (SetObjectScale) 🍥
 
 LATEST_FEATURE:
-  DOT_HOT_SCALING_FIX:
-  - DoTs/HoTs now use spellInfo->EffectAmplitude for ACTUAL tick interval
-  - Formula: tickDamage = DPS × 0.15 × tickIntervalSeconds  
-  - All periodic effects contribute exactly 15% extra DPS/HPS regardless of tick speed
-  - Shields increased to 3×DPS (absorbs 3 seconds of damage, was 1×)
-  - Thorns reduced to 15% per proc (passive, balanced)
-  - Added minimum floor (1 damage/heal) to prevent 0-value ticks
-  - Status: BUILT + COMMITTED 🍥
+  LANGUAGE_COMPREHENSION_FIX:
+  - WoW 3.3.5a client does ALL scrambling (based on race only)
+  - Client ignores learned skills and SPELL_AURA_COMPREHEND_LANGUAGE
+  - Server sends plain text + language ID to ALL players
+  - Only fix: send LANG_UNIVERSAL to players who know the language
+  - Trade-off: Player sees clean text but doesn't know original language
+  - NO PREFIX - clean text, maximum immersion
+  - Status: BUILT + READY FOR COMMIT 🍥
 
 SCALING_FORMULAS:
   MELEE:   DPS × attackTimeSeconds (creature's actual swing timer)
@@ -44,16 +45,20 @@ SCALING_FORMULAS:
   THORNS:  DPS × 0.15 per proc
 
 THOUGHTS&RANTS:
-  - "The old DoT formula assumed 3s ticks always. Wrong."
-  - "Using EffectAmplitude from spellInfo is the RIGHT way."
-  - "Now fast-ticking DoTs don't dominate, slow-ticking DoTs don't suck."
-  - "Module audit complete: ALL hooks isolated to our guardians only."
+  - "WoW 3.3.5a client design... Ramires was right to question it."
+  - "Why does the SERVER send plain text only for CLIENT to scramble?"
+  - "Client ignores SPELL_AURA_COMPREHEND_LANGUAGE. Who coded that?"
+  - "Only fix: send LANG_UNIVERSAL for understood languages."
+  - "No prefix - keeps immersion. You just won't know WHICH language."
+  - "This is the best we can do without modifying the client."
 
 ACTIVE_WORK:
-  SOUL_KEEPER_COMPLETE:
-  - Full module audit done
-  - All core changes isolated (marker 81100)
-  - All UnitScript hooks check _activeGuardians or _guardianScaling
-  - DoT/HoT/Shield/Thorns all use proper formulas now
-  - Status: READY FOR LIVE TEST 🍥
+  LANGUAGE_COMPREHENSION_FIX:
+  - WoW 3.3.5a client does ALL scrambling (based on race only)
+  - Client ignores learned skills and SPELL_AURA_COMPREHEND_LANGUAGE
+  - Server sends plain text + language ID to ALL players
+  - Only fix: send LANG_UNIVERSAL to players who know the language
+  - Trade-off: Player sees clean text but doesn't know original language
+  - Removed ugly "[LanguageName] " prefix - now clean text only
+  - Status: BUILT + READY FOR COMMIT 🍥
 
