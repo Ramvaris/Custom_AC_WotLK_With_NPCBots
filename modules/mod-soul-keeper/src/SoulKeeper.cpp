@@ -578,15 +578,19 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     // === VISUAL SCALE FROM DATABASE ===
     // Set the scale from creature_template_model (the creature's intended size).
     // 
-    // KNOWN CLIENT-SIDE LIMITATION (TrinityCore #24551, unfixable):
-    // The WoW 3.3.5a client applies its OWN scaling to creatures that have:
-    //   1. family > 0 (tameable pet family like CREATURE_FAMILY_MOTH)
-    //   2. A model associated with hunter pets
-    // This client-side scaling is HARDCODED and ignores server-sent scale values.
-    // Result: Creatures with pet families (moths, wolves, etc.) will appear smaller
-    // than creatures without families (humanoids, elementals, etc.) regardless of
-    // what scale the server sends. There is NO server-side fix for this behavior.
-    guardian->SetObjectScale(targetSoul->scaleFactor);
+    // CLIENT-SIDE PET SCALING WORKAROUND:
+    // The WoW 3.3.5a client applies its OWN scaling to creatures with family > 0
+    // (tameable pet families like moth, wolf, etc.) when they're summoned as guardians.
+    // This client-side scaling is HARDCODED and overrides synchronous SetObjectScale calls.
+    // 
+    // SOLUTION: Delay the scale update by 200ms so it fires AFTER the client
+    // has finished processing the summon packet and applied its automatic scaling.
+    // The delayed SetObjectScale then overrides the client's scaling.
+    // This pattern is identical to how the Mend Pet spell can resize pets.
+    float scaleFactor = targetSoul->scaleFactor;
+    guardian->m_Events.AddEventAtOffset([guardian, scaleFactor]() {
+        guardian->SetObjectScale(scaleFactor);
+    }, 200ms);
     
     // === RESTORE COOLDOWNS from previous summon (prevent dismiss/summon exploit!) ===
     // If player dismissed this guardian type earlier, restored cooldowns still apply.
