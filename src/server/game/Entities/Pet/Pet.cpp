@@ -2482,52 +2482,12 @@ Player* Pet::GetOwner() const
 
 float Pet::GetNativeObjectScale() const
 {
-    uint8 ctFamily = GetCreatureTemplate()->family;
-
-    CreatureFamilyEntry const* creatureFamily = sCreatureFamilyStore.LookupEntry(ctFamily);
-    if (creatureFamily && creatureFamily->minScale > 0.0f && getPetType() & HUNTER_PET)
-    {
-        float minScaleLevel = creatureFamily->minScaleLevel;
-        uint8 level = GetLevel();
-
-        float minLevelScaleMod = level >= minScaleLevel ? (level / minScaleLevel) : 0.0f;
-        float maxScaleMod = creatureFamily->maxScaleLevel - minScaleLevel;
-
-        if (minLevelScaleMod > maxScaleMod)
-            minLevelScaleMod = maxScaleMod;
-
-        float scaleMod = creatureFamily->maxScaleLevel != minScaleLevel ? minLevelScaleMod / maxScaleMod : 0.f;
-
-        float maxScale = creatureFamily->maxScale;
-
-        // override maxScale
-        switch (ctFamily)
-        {
-            case CREATURE_FAMILY_CHIMAERA:
-            case CREATURE_FAMILY_CORE_HOUND:
-            case CREATURE_FAMILY_CRAB:
-            case CREATURE_FAMILY_DEVILSAUR:
-            case CREATURE_FAMILY_NETHER_RAY:
-            case CREATURE_FAMILY_RHINO:
-            case CREATURE_FAMILY_SPIDER:
-            case CREATURE_FAMILY_TURTLE:
-            case CREATURE_FAMILY_WARP_STALKER:
-            case CREATURE_FAMILY_WASP:
-            case CREATURE_FAMILY_WIND_SERPENT:
-                maxScale = 1.0f;
-                break;
-            default:
-                break;
-        }
-
-        float scale = (maxScale - creatureFamily->minScale) * scaleMod + creatureFamily->minScale;
-
-        scale = std::min(scale, maxScale);
-
-        return scale;
-    }
-
-    // take value for non-hunter pets from DB
+    // === HUNTER PET LEVEL SCALING DISABLED ===
+    // This system shrinks tamed beasts based on level and creature family.
+    // Problem: Tame a huge gorilla, it becomes baby-sized. Even at 80 it's smaller
+    // than the original wild creature. This is immersion-breaking and annoying.
+    // Also interfered with Soul Keeper guardians (moth scaled down, scout not).
+    // Solution: Just use the database scale for ALL pets. Pets keep their original size.
     return Guardian::GetNativeObjectScale();
 }
 

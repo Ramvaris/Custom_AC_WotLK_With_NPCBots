@@ -406,7 +406,11 @@ void SoulKeeper::AddGuardian(Player* player, Unit* victim)
     newSoul.creatureEntry = creature->GetEntry();
     newSoul.customName    = creature->GetName();
     newSoul.displayId     = creature->GetDisplayId();
-    newSoul.scaleFactor   = creature->GetObjectScale();
+    // Use GetNativeObjectScale() to get the DATABASE-DEFINED size, not the current scale.
+    // GetObjectScale() returns whatever the creature's scale is RIGHT NOW (e.g., shrunk by
+    // hunter pet level-scaling or other effects). GetNativeObjectScale() returns the scale
+    // from creature_template_model - the creature's INTENDED visual size.
+    newSoul.scaleFactor   = creature->GetNativeObjectScale();
 
     // Add to Memory
     _caughtSouls[player->GetGUID().GetCounter()].push_back(newSoul);
@@ -571,9 +575,10 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     // === Apply our custom scaling on TOP of InitStatsForLevel ===
     ScaleGuardian(guardian, player);
 
-    // === RESTORE VISUAL SCALE FROM CAPTURED CREATURE ===
+    // === RESTORE VISUAL SCALE FROM DATABASE (Native Scale) ===
     // Guardians should look EXACTLY like their database counterpart.
-    // The scaleFactor was captured from GetObjectScale() when soul was caught.
+    // The scaleFactor is captured from GetNativeObjectScale() - the creature_template_model
+    // defined size, NOT current scale (which could be shrunk by pet level-scaling).
     guardian->SetObjectScale(targetSoul->scaleFactor);
     
     // === RESTORE COOLDOWNS from previous summon (prevent dismiss/summon exploit!) ===

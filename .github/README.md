@@ -20,6 +20,8 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 - Some QoL stuff
 -> Looting of mobs that were killed by a players pet without the player doing damage to it
 -> All Ore- and Flower-Nodes respawn in 120 seconds instead of 24 hours to 7 days.
+- **Working Language Comprehension** - NPCs speaking Orcish/Thalassian/etc. are actually readable if your character knows the language (via skill or aura). Non-speakers get the original scrambled text with proper language tags. No Client-Mod neccesary.
+- **Hunter Pet Scaling Removed** - Tamed beasts keep their original size forever. No more baby-sized gorillas at level 80. Pets look like they did in the wild when you tamed them.
 - Some AC modules from other people integrated and kept up-to-date
 
 Notice: I also have some LUA-Script / MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' for massive amounts of gold, QoL Spells for any race/class on login (Aspect of the Uber Cheetah / 40% / No Dazzle, Levitation over water and mounted that does not dispel, Detect Invisibility (To see all the easter eggs) with endless duration, Stealth without Movement Speed Reduction, the Druid waterform), Human Reputation Bonus for everyone on Login, 70% of the time bad weather (Weather Effects on all parts of the world, like in Stormwind, etc., Storms, Snow, Desert Wind, etc.), an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
