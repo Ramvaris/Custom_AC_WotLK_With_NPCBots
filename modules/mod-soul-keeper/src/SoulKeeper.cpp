@@ -575,24 +575,18 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
     // === Apply our custom scaling on TOP of InitStatsForLevel ===
     ScaleGuardian(guardian, player);
 
-    // === RESTORE VISUAL SCALE FROM DATABASE (Native Scale) ===
-    // Guardians should look EXACTLY like their database counterpart.
-    // The scaleFactor is captured from GetNativeObjectScale() - the creature_template_model
-    // defined size, NOT current scale (which could be shrunk by pet level-scaling).
-    //
-    // IMPORTANT: Set scale immediately AND schedule a delayed update.
-    // Something in the creature initialization chain (possibly AI init, model loading,
-    // or a script hook) resets scale after our code runs. The delayed event ensures
-    // our scale "wins" after all initialization completes.
-    float finalScale = targetSoul->scaleFactor;
-    guardian->SetObjectScale(finalScale);
-    
-    // Schedule a 100ms delayed scale fix to override any late initialization
-    guardian->m_Events.AddEventAtOffset([guardian, finalScale]()
-    {
-        if (guardian && guardian->IsInWorld())
-            guardian->SetObjectScale(finalScale);
-    }, 100ms);
+    // === VISUAL SCALE FROM DATABASE ===
+    // Set the scale from creature_template_model (the creature's intended size).
+    // 
+    // KNOWN CLIENT-SIDE LIMITATION (TrinityCore #24551, unfixable):
+    // The WoW 3.3.5a client applies its OWN scaling to creatures that have:
+    //   1. family > 0 (tameable pet family like CREATURE_FAMILY_MOTH)
+    //   2. A model associated with hunter pets
+    // This client-side scaling is HARDCODED and ignores server-sent scale values.
+    // Result: Creatures with pet families (moths, wolves, etc.) will appear smaller
+    // than creatures without families (humanoids, elementals, etc.) regardless of
+    // what scale the server sends. There is NO server-side fix for this behavior.
+    guardian->SetObjectScale(targetSoul->scaleFactor);
     
     // === RESTORE COOLDOWNS from previous summon (prevent dismiss/summon exploit!) ===
     // If player dismissed this guardian type earlier, restored cooldowns still apply.

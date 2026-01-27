@@ -2482,12 +2482,16 @@ Player* Pet::GetOwner() const
 
 float Pet::GetNativeObjectScale() const
 {
-    // === HUNTER PET LEVEL SCALING DISABLED ===
-    // This system shrinks tamed beasts based on level and creature family.
-    // Problem: Tame a huge gorilla, it becomes baby-sized. Even at 80 it's smaller
-    // than the original wild creature. This is immersion-breaking and annoying.
-    // Also interfered with Soul Keeper guardians (moth scaled down, scout not).
-    // Solution: Just use the database scale for ALL pets. Pets keep their original size.
+    // === SERVER-SIDE PET LEVEL SCALING DISABLED ===
+    // Original code scaled hunter pets based on level and creature family formula.
+    // This made tamed beasts smaller than their wild counterparts (e.g., baby-sized gorillas).
+    // 
+    // We return the database-defined scale to keep pets their original captured size.
+    //
+    // NOTE: The WoW 3.3.5a CLIENT also applies its own separate scaling to models
+    // with family > 0. This client-side behavior is hardcoded and cannot be fixed
+    // server-side (see TrinityCore issue #24551). So creatures with tameable families
+    // may still appear scaled down on the client despite this server-side fix.
     return Guardian::GetNativeObjectScale();
 }
 
