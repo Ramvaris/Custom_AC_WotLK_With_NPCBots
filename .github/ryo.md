@@ -27,38 +27,30 @@ COMPLETED_TASKS:
   [x] - Guardian Damage Scaling Fix (Melee/Ranged separation + Dual-Wield) 🍥
 
 LATEST_FEATURE:
-  DAMAGE_SCALING_FIX:
-  - Fixed melee/ranged/spell damage scaling to be INDEPENDENT
-  - Melee creatures scale from owner's melee AP ONLY
-  - Ranged creatures scale from owner's ranged AP ONLY
-  - Added offhand damage scaling for dual-wielders (50% of mainhand)
-  - Spell damage uses best of melee/ranged/spell ratio
-  - Status: FIXED 🍥
+  GUARDIAN_DAMAGE_SCALING_VERIFIED:
+  - Best ratio design confirmed working via debug test
+  - Stats correctly read: MeleeAP, RangedAP, MaxSP all working
+  - Ratios correctly calculated and best one selected
+  - Debug output removed, code cleaned up
+  - Status: COMPLETE 🍥
 
 SCALING_FORMULAS:
-  MELEE:   meleeDPS = targetDPS × (meleeAP / expectedMelee)
-  RANGED:  rangedDPS = targetDPS × (rangedAP / expectedRanged)
+  BEST_RATIO_DESIGN:  Pick max of (meleeAP/expectedMelee, rangedAP/expectedRanged, maxSP/expectedSpell)
+  ALL_DAMAGE:  targetDPS × gearRatio (ONE ratio for all attack types)
   OFFHAND: 50% of mainhand DPS
-  SPELLS:  Uses best ratio of melee/ranged/spell for gearRatio
   DOTS:    DPS × 0.15 × tickIntervalSeconds
   HOTS:    HPS × 0.15 × tickIntervalSeconds
   SHIELDS: HPS × 3.0
 
 THOUGHTS&RANTS:
-  - "WoW 3.3.5a client design... Ramires was right to question it."
-  - "Hunter RAP = high, Hunter melee AP = low. Different stats!"
-  - "Can't use 'pick the best stat' for physical damage."
-  - "Melee creatures MUST scale from melee AP only."
-  - "Ranged creatures MUST scale from ranged AP only."
-  - "Dual-wielders need offhand damage set too - was missing!"
-  - "Thuros Lightfingers was using default creature offhand damage."
+  - "Debug test confirmed: stats are being read correctly!"
+  - "SpellPower won for the Paladin as expected (169 SP vs 139 AP)"
+  - "Best ratio design is working as intended."
+  - "Time to clean up and commit."
 
 ACTIVE_WORK:
-  DAMAGE_SCALING_COMPLETE:
-  - Melee damage now scales from owner's melee AP only
-  - Ranged damage now scales from owner's ranged AP only
-  - Offhand damage = 50% of mainhand (for dual-wielders)
-  - Spell damage scaling uses best ratio (for hybrid classes)
-  - Client pet scaling for family > 0 cannot be fixed (client-side)
-  - Status: TESTING 🍥
+  CLEANUP_AND_COMMIT:
+  - Removed debug file logging
+  - Ready to push to git
+  - Status: COMMITTING 🍥
 

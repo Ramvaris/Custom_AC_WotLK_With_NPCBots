@@ -716,9 +716,8 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     }
 
     // === DAMAGE SCALING ===
-    // Get owner's stats for each damage type
-    // IMPORTANT: Each attack type (melee/ranged/spell) scales independently!
-    // A Hunter's ranged AP shouldn't boost a melee creature's damage.
+    // Get owner's stats (melee AP, ranged AP, spell power)
+    // We'll pick the BEST normalized ratio and use it for ALL guardian damage.
     float meleeAP  = owner->GetTotalAttackPowerValue(BASE_ATTACK);
     float rangedAP = owner->GetTotalAttackPowerValue(RANGED_ATTACK);
     float maxSP    = 0.0f;
@@ -779,40 +778,45 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
         expectedMelee = 4500.0f; expectedRanged = 4000.0f; expectedSpell = 2800.0f;
     }
 
-    // === SEPARATE SCALING FOR MELEE/RANGED/SPELL ===
-    // Each attack type uses its OWN stat - no cross-contamination!
-    // A Hunter's RAP boosts ranged guardians, not melee ones.
-    // A Paladin's AP boosts melee guardians, SP boosts spell guardians.
-    float meleeRatio  = std::max(0.5f, meleeAP / expectedMelee);
-    float rangedRatio = std::max(0.5f, rangedAP / expectedRanged);
-    float spellRatio  = std::max(0.5f, maxSP / expectedSpell);
+    // === BEST RATIO SELECTION ===
+    // Compare normalized ratios (stat / expectedForType) and pick the WINNER.
+    // This ONE ratio is used for ALL guardian damage (melee, ranged, spells).
+    // A Hunter with high RAP gets bonus from RAP. A Paladin with high AP gets bonus from AP.
+    float meleeRatio  = meleeAP / expectedMelee;
+    float rangedRatio = rangedAP / expectedRanged;
+    float spellRatio  = maxSP / expectedSpell;
 
-    // === MELEE DPS (scales from owner's melee AP only) ===
-    float meleeDPS = targetDPS * meleeRatio;
-    
-    // === RANGED DPS (scales from owner's ranged AP only) ===
-    float rangedDPS = targetDPS * rangedRatio;
-    
-    // === SPELL SCALING: Use best of melee/ranged/spell for hook ===
-    // Spells can be cast by any creature type, so we pick the strongest stat
-    float gearRatio = std::max({meleeRatio, rangedRatio, spellRatio});
+    // Pick the highest normalized ratio
+    float gearRatio;
+    if (meleeRatio >= rangedRatio && meleeRatio >= spellRatio)
+        gearRatio = meleeRatio;
+    else if (rangedRatio >= meleeRatio && rangedRatio >= spellRatio)
+        gearRatio = rangedRatio;
+    else
+        gearRatio = spellRatio;
+
+    // Floor at 50% (naked characters still get reasonable guardian)
+    gearRatio = std::max(0.5f, gearRatio);
+
+    // Scale guardian DPS by gear quality
+    float totalDPS = targetDPS * gearRatio;
 
     // === MELEE DAMAGE PER HIT ===
     // Use ACTUAL creature attack speed (not hardcoded 2.0s)
     float meleeAttackTime = (float)guardian->GetAttackTime(BASE_ATTACK);
     if (meleeAttackTime <= 0.0f) meleeAttackTime = 2000.0f;
-    float meleeDamagePerHit = meleeDPS * (meleeAttackTime / 1000.0f);
+    float meleeDamagePerHit = totalDPS * (meleeAttackTime / 1000.0f);
     
     // === OFFHAND DAMAGE (for dual-wielders) ===
     // Standard WoW: offhand damage = 50% of mainhand
     float offhandAttackTime = (float)guardian->GetAttackTime(OFF_ATTACK);
     if (offhandAttackTime <= 0.0f) offhandAttackTime = meleeAttackTime;
-    float offhandDamagePerHit = (meleeDPS * 0.5f) * (offhandAttackTime / 1000.0f);
+    float offhandDamagePerHit = (totalDPS * 0.5f) * (offhandAttackTime / 1000.0f);
     
     // === RANGED DAMAGE PER HIT ===
     float rangedAttackTime = (float)guardian->GetAttackTime(RANGED_ATTACK);
     if (rangedAttackTime <= 0.0f) rangedAttackTime = 2000.0f;
-    float rangedDamagePerHit = rangedDPS * (rangedAttackTime / 1000.0f);
+    float rangedDamagePerHit = totalDPS * (rangedAttackTime / 1000.0f);
     
     // === DAMAGE SCALING (Guardian-compatible) ===
     // Guardian::UpdateDamagePhysical calculates: (BASE_VALUE + AP/14*att_speed + weapon_damage)
