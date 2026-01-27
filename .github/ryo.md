@@ -27,14 +27,15 @@ COMPLETED_TASKS:
   [x] - Guardian Visual Scale Fix (SetObjectScale) 🍥
 
 LATEST_FEATURE:
-  LANGUAGE_COMPREHENSION_FIX:
-  - WoW 3.3.5a client does ALL scrambling (based on race only)
-  - Client ignores learned skills and SPELL_AURA_COMPREHEND_LANGUAGE
-  - Server sends plain text + language ID to ALL players
-  - Only fix: send LANG_UNIVERSAL to players who know the language
-  - Trade-off: Player sees clean text but doesn't know original language
-  - NO PREFIX - clean text, maximum immersion
-  - Status: BUILT + READY FOR COMMIT 🍥
+  CLIENT_SCALING_LIMITATION_RESEARCH:
+  - Researched TrinityCore #24551 (open since May 2020)
+  - Creatures with family > 0 AND pet-type models get CLIENT-scaled
+  - This is hardcoded in WoW.exe - ignores server scale values
+  - Moths = family 37 (CREATURE_FAMILY_MOTH) → shrinks
+  - Blood Elf Scouts = family 0 → stays correct size
+  - Removed useless server-side workarounds (100ms delay, etc.)
+  - Honestly documented in README with TrinityCore link
+  - Status: ACCEPTED AS CLIENT LIMITATION 🍥
 
 SCALING_FORMULAS:
   MELEE:   DPS × attackTimeSeconds (creature's actual swing timer)
@@ -51,14 +52,18 @@ THOUGHTS&RANTS:
   - "Only fix: send LANG_UNIVERSAL for understood languages."
   - "No prefix - keeps immersion. You just won't know WHICH language."
   - "This is the best we can do without modifying the client."
+  - "CLIENT also scales creatures with pet families. TrinityCore #24551."
+  - "Open issue since 2020. Nobody fixed it because you CAN'T. Client-side."
+  - "Moths shrink, Blood Elf Scouts don't. Family > 0 vs Family = 0."
+  - "Some things are just baked into the 3.3.5a client. Accept and move on."
 
 ACTIVE_WORK:
-  LANGUAGE_COMPREHENSION_FIX:
-  - WoW 3.3.5a client does ALL scrambling (based on race only)
-  - Client ignores learned skills and SPELL_AURA_COMPREHEND_LANGUAGE
-  - Server sends plain text + language ID to ALL players
-  - Only fix: send LANG_UNIVERSAL to players who know the language
-  - Trade-off: Player sees clean text but doesn't know original language
-  - Removed ugly "[LanguageName] " prefix - now clean text only
-  - Status: BUILT + READY FOR COMMIT 🍥
+  CLIENT_SCALING_LIMITATION_DOCUMENTED:
+  - TrinityCore #24551: Creatures with family > 0 get scaled by CLIENT
+  - Models associated with hunter pets trigger client-side scaling
+  - Server sends correct scale, client overrides it visually
+  - Moths (family=37) shrink, Humanoids (family=0) don't
+  - This is HARDCODED in the 3.3.5a client - NO SERVER FIX POSSIBLE
+  - Documented in README.md with link to TrinityCore issue
+  - Status: DOCUMENTED AS KNOWN LIMITATION 🍥
 
