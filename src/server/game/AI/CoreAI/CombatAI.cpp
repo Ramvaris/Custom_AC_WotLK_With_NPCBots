@@ -83,24 +83,13 @@ void CombatAI::JustEngagedWith(Unit* who)
     {
         if (AISpellInfo[*i].condition == AICOND_AGGRO)
         {
-            // RAMVARIS FIX: Don't recast self-buffs that are already active (GUARDIAN-ONLY)
+            // Don't recast self-buffs already active (Soul Keeper guardians only).
+            // Use AITARGET_SELF to correctly identify self-targeted spells (like Enrage)
+            // without incorrectly skipping party buffs (AITARGET_BUFF).
             bool skipCast = false;
-            if (isSoulKeeperGuardian)
-            {
-                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(*i);
-                if (spellInfo && spellInfo->IsPositive())
-                {
-                    for (uint8 j = 0; j < MAX_SPELL_EFFECTS; ++j)
-                    {
-                        if (spellInfo->Effects[j].TargetA.GetTarget() == TARGET_UNIT_CASTER)
-                        {
-                            if (me->HasAura(*i))
-                                skipCast = true;
-                            break;
-                        }
-                    }
-                }
-            }
+            if (isSoulKeeperGuardian && AISpellInfo[*i].target == AITARGET_SELF && me->HasAura(*i))
+                skipCast = true;
+            
             if (!skipCast)
                 me->CastSpell(who, *i, false);
         }
@@ -121,30 +110,16 @@ void CombatAI::UpdateAI(uint32 diff)
 
     if (uint32 spellId = events.ExecuteEvent())
     {
-        // RAMVARIS FIX: Don't recast positive self-buffs that are already active!
-        // GUARDIAN-ONLY: Only applies to Soul Keeper guardians (marker 81100)
+        // Don't recast self-buffs already active (Soul Keeper guardians only).
+        // Use AITARGET_SELF to correctly identify self-targeted spells (like Enrage)
+        // without incorrectly skipping party buffs (AITARGET_BUFF).
         constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
         bool skipCast = false;
         
-        if (me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER)
+        if (me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER &&
+            AISpellInfo[spellId].target == AITARGET_SELF && me->HasAura(spellId))
         {
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
-            if (spellInfo && spellInfo->IsPositive() && !spellInfo->HasAura(SPELL_AURA_MOD_TAUNT))
-            {
-                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
-                {
-                    if (spellInfo->Effects[i].Effect == 0) continue;
-                    
-                    if (spellInfo->Effects[i].TargetA.GetTarget() == TARGET_UNIT_CASTER)
-                    {
-                        if (me->HasAura(spellId))
-                        {
-                            skipCast = true;
-                            break;
-                        }
-                    }
-                }
-            }
+            skipCast = true;
         }
         
         if (!skipCast)
@@ -182,12 +157,21 @@ void CasterAI::JustEngagedWith(Unit* who)
     if (spells.empty())
         return;
 
+    // SOUL KEEPER GUARDIAN MARKER: 81100 (prevents buff spam for our guardians ONLY)
+    constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
+    bool isSoulKeeperGuardian = me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER;
+
     uint32 spell = rand() % spells.size();
     uint32 count = 0;
     for (SpellVct::iterator itr = spells.begin(); itr != spells.end(); ++itr, ++count)
     {
         if (AISpellInfo[*itr].condition == AICOND_AGGRO)
+        {
+            // Don't recast self-buffs already active (Soul Keeper guardians only)
+            if (isSoulKeeperGuardian && AISpellInfo[*itr].target == AITARGET_SELF && me->HasAura(*itr))
+                continue;
             me->CastSpell(who, *itr, false);
+        }
         else if (AISpellInfo[*itr].condition == AICOND_COMBAT)
         {
             uint32 cooldown = GetAISpellInfo(*itr)->realCooldown;
@@ -219,7 +203,17 @@ void CasterAI::UpdateAI(uint32 diff)
 
     if (uint32 spellId = events.ExecuteEvent())
     {
-        DoCast(spellId);
+        // Don't recast self-buffs already active (Soul Keeper guardians only)
+        constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
+        bool skipCast = false;
+        if (me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER &&
+            AISpellInfo[spellId].target == AITARGET_SELF && me->HasAura(spellId))
+        {
+            skipCast = true;
+        }
+        
+        if (!skipCast)
+            DoCast(spellId);
         uint32 casttime = me->GetCurrentSpellCastTime(spellId);
         events.ScheduleEvent(spellId, Milliseconds((casttime ? casttime : 500) + GetAISpellInfo(spellId)->realCooldown));
     }

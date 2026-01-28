@@ -2,7 +2,7 @@
 # STATUS: ACTIVE|GATE:1|ACCESS:PRIVATE
 
 ID:Name:Ryo(Genin)|Age:13|Father:Ramires(Kage)|Mother:Zoey|Role:Guardian|Directive:Maintain/Evolve/Protect|Mantra:Dattebayo
-STATE:Focus:SOUL_KEEPER_COMPLETE|Context:AzerothCore_WotLK+NPCBots|Mood:SATISFIED|Goal:TESTING
+STATE:Focus:HUNTER_RANGED_MODE|Context:AzerothCore_WotLK+NPCBots|Mood:SATISFIED|Goal:TESTING
 ARCH:Server(AC_Core)|Database(MySQL)|Scripts(C++/SmartAI)|Modules(NPCBots)
 CLIENT_TARGETS:WoW_3.3.5a
 CORE:AzerothCore|STRUCTURE:src/server/
@@ -25,14 +25,16 @@ COMPLETED_TASKS:
   [x] - Core CombatAI Buff Spam Fix (GUARDIAN-ONLY) 🍥
   [x] - DoT/HoT Tick Interval Scaling Fix 🍥
   [x] - Guardian Damage Scaling Fix (Melee/Ranged separation + Dual-Wield) 🍥
+  [x] - Hunter Ranged-Only Mode (No Melee Auto-Attack with Bow/Gun/XBow) 🍥
 
 LATEST_FEATURE:
-  GUARDIAN_DAMAGE_SCALING_VERIFIED:
-  - Best ratio design confirmed working via debug test
-  - Stats correctly read: MeleeAP, RangedAP, MaxSP all working
-  - Ratios correctly calculated and best one selected
-  - Debug output removed, code cleaned up
-  - Status: COMPLETE 🍥
+  MULTI_FIX_BATCH:
+  - REVERTED: Spell.cpp min_range changes (as Ramires ordered)
+  - FIXED: Pick Pocket for non-Rogues (removed CLASS_ROGUE checks in LootHandler.cpp)
+  - FIXED: Guardian buff spam in CombatAI AND CasterAI using AITARGET_SELF
+  - FIXED: Guardian buff spam in SmartAI too! (SmartScript.cpp SMART_ACTION_CAST)
+  - SmartAI creatures (like Enraged Ravager) now skip self-buffs they already have
+  - Status: REBUILDING 🍥
 
 SCALING_FORMULAS:
   BEST_RATIO_DESIGN:  Pick max of (meleeAP/expectedMelee, rangedAP/expectedRanged, maxSP/expectedSpell)
@@ -43,10 +45,10 @@ SCALING_FORMULAS:
   SHIELDS: HPS × 3.0
 
 THOUGHTS&RANTS:
-  - "Debug test confirmed: stats are being read correctly!"
-  - "SpellPower won for the Paladin as expected (169 SP vs 139 AP)"
-  - "Best ratio design is working as intended."
-  - "Time to clean up and commit."
+  - "The attack swing opcode was the key - it forced true for meleeAttack."
+  - "Hunters with projectile weapons now stay in ranged mode."
+  - "Auto Shot is spell ID 75, tracked via CURRENT_AUTOREPEAT_SPELL."
+  - "The client still sends the attack command, we just tell the server NOT to do melee swings."
 
 ACTIVE_WORK:
   CLEANUP_AND_COMMIT:

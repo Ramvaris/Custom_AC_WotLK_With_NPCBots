@@ -682,6 +682,17 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
             if (e.action.cast.targetsLimit)
                 Acore::Containers::RandomResize(targets, e.action.cast.targetsLimit);
 
+            // SOUL KEEPER GUARDIAN: Prevent self-buff spam (e.g., Enrage recasting every tick)
+            // If this is a Soul Keeper guardian casting a positive self-buff it already has, skip.
+            constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
+            bool isSoulKeeperGuardian = me && me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER;
+            if (isSoulKeeperGuardian)
+            {
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(e.action.cast.spell);
+                if (spellInfo && spellInfo->IsPositive() && !spellInfo->GetMaxRange(false) && me->HasAura(e.action.cast.spell))
+                    break; // Self-buff already active, skip entire action
+            }
+
             bool failedSpellCast = false, successfulSpellCast = false;
 
             for (WorldObject* target : targets)
