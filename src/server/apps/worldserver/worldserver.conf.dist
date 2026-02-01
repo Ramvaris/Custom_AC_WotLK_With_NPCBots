@@ -1797,8 +1797,9 @@ PersistentCharacterCleanFlags = 0
 #                     0 - (Disabled, allow invalid spells)
 #        Disabling this and then having your character learn spells which require DBC edits can result in the character not being saved in the database
 #        Disable AT YOUR OWN RISK
+#        CUSTOM SERVER: Set to 0 to allow cross-class abilities (Pick Pocket, etc.)
 
-ValidateSkillLearnedBySpells = 1
+ValidateSkillLearnedBySpells = 0
 
 #
 ###################################################################################################

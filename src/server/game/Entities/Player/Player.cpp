@@ -13848,6 +13848,17 @@ void Player::_LoadSkills(PreparedQueryResult result)
             SkillRaceClassInfoEntry const* rcEntry = GetSkillRaceClassInfo(skill, getRace(), getClass());
             if (!rcEntry)
             {
+                // Custom server: Allow cross-class skills if validation is disabled
+                if (!sWorld->getBoolConfig(CONFIG_VALIDATE_SKILL_LEARNED_BY_SPELLS))
+                {
+                    // Skip validation - keep the skill even if invalid for race/class
+                    // This allows Lua/GM-granted abilities like Pick Pocket on non-Rogues
+                    loadedSkillValues[skill] = value;
+                    SetSkill(skill, 0, value, max);
+                    ++count;
+                    continue;
+                }
+                
                 LOG_ERROR("entities.player", "Player {} (GUID: {}), has skill ({}) that is invalid for the race/class combination (Race: {}, Class: {}). Will be deleted.",
                     GetName(), GetGUID().GetCounter(), skill, getRace(), getClass());
 

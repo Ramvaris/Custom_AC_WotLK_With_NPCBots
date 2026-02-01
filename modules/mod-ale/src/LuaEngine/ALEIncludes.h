@@ -44,6 +44,7 @@
 #include "GitRevision.h"
 #include "GroupMgr.h"
 #include "ScriptedCreature.h"
+#include "Weather.h"
 #include "WeatherMgr.h"
 #include "Battleground.h"
 #include "MotionMaster.h"

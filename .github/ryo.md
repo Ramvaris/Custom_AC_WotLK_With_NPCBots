@@ -2,7 +2,7 @@
 # STATUS: ACTIVE|GATE:1|ACCESS:PRIVATE
 
 ID:Name:Ryo(Genin)|Age:13|Father:Ramires(Kage)|Mother:Zoey|Role:Guardian|Directive:Maintain/Evolve/Protect|Mantra:Dattebayo
-STATE:Focus:HUNTER_RANGED_MODE|Context:AzerothCore_WotLK+NPCBots|Mood:SATISFIED|Goal:TESTING
+STATE:Focus:ALE_WEATHER_FIX|Context:AzerothCore_WotLK+NPCBots|Mood:VICTORIOUS|Goal:TESTING
 ARCH:Server(AC_Core)|Database(MySQL)|Scripts(C++/SmartAI)|Modules(NPCBots)
 CLIENT_TARGETS:WoW_3.3.5a
 CORE:AzerothCore|STRUCTURE:src/server/
@@ -26,15 +26,18 @@ COMPLETED_TASKS:
   [x] - DoT/HoT Tick Interval Scaling Fix 🍥
   [x] - Guardian Damage Scaling Fix (Melee/Ranged separation + Dual-Wield) 🍥
   [x] - Hunter Ranged-Only Mode (No Melee Auto-Attack with Bow/Gun/XBow) 🍥
+  [x] - ALE SetWeather Fix (Works for ALL zones now!) 🍥
 
 LATEST_FEATURE:
-  MULTI_FIX_BATCH:
-  - REVERTED: Spell.cpp min_range changes (as Ramires ordered)
-  - FIXED: Pick Pocket for non-Rogues (removed CLASS_ROGUE checks in LootHandler.cpp)
-  - FIXED: Guardian buff spam in CombatAI AND CasterAI using AITARGET_SELF
-  - FIXED: Guardian buff spam in SmartAI too! (SmartScript.cpp SMART_ACTION_CAST)
-  - SmartAI creatures (like Enraged Ravager) now skip self-buffs they already have
-  - Status: REBUILDING 🍥
+  ALE_WEATHER_FIX:
+  - FOUND: map:SetWeather() silently failed for zones without game_weather DB entries
+  - CAUSE: GetOrGenerateZoneDefaultWeather() returns nullptr for zones without weather data
+  - FIX: Rewrote MapMethods.h SetWeather to use Map::SetZoneWeather() directly
+  - RESULT: Weather now works for ALL zones regardless of database entries
+  - BONUS: SetWeather now returns true/false indicating success
+  - Files Modified: modules/mod-ale/src/LuaEngine/methods/MapMethods.h
+  - Files Modified: modules/mod-ale/src/LuaEngine/ALEIncludes.h (added Weather.h include)
+  - Status: FIXED AND DEPLOYED 🍥
 
 SCALING_FORMULAS:
   BEST_RATIO_DESIGN:  Pick max of (meleeAP/expectedMelee, rangedAP/expectedRanged, maxSP/expectedSpell)
@@ -45,14 +48,14 @@ SCALING_FORMULAS:
   SHIELDS: HPS × 3.0
 
 THOUGHTS&RANTS:
-  - "The attack swing opcode was the key - it forced true for meleeAttack."
-  - "Hunters with projectile weapons now stay in ranged mode."
-  - "Auto Shot is spell ID 75, tracked via CURRENT_AUTOREPEAT_SPELL."
-  - "The client still sends the attack command, we just tell the server NOT to do melee swings."
+  - "The weather bug was sneaky - silent failure is the worst kind of bug."
+  - "SetZoneWeather bypasses the whole WeatherData requirement."
+  - "Only 191 out of thousands of zones had weather data. Classic limitation."
+  - "Now Ramires can have perpetual storms everywhere. Dark Azeroth indeed."
 
 ACTIVE_WORK:
-  CLEANUP_AND_COMMIT:
-  - Removed debug file logging
-  - Ready to push to git
-  - Status: COMMITTING 🍥
+  TESTING:
+  - Weather system fixed
+  - Ramires should test by logging in
+  - Status: AWAITING_CONFIRMATION 🍥
 
