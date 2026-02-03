@@ -30,7 +30,7 @@
 constexpr uint32 SOUL_KEEPER_GOSSIP_MENU_ID = 89999;
 constexpr uint32 SOUL_KEEPER_NPC_TEXT_ID    = 0x7FFFFFFF;
 constexpr uint32 SOUL_KEEPER_GOSSIP_SENDER  = 8999;  // Unique sender to avoid Lua gossip collisions
-constexpr uint32 SOULS_PER_PAGE             = 15;   // Souls per page (nav buttons moved to top)
+constexpr uint32 SOULS_PER_PAGE             = 20;   // Souls per page (keep under gossip cap with nav/sort)
 
 // Soul Keeper Guardian Marker - set in UNIT_CREATED_BY_SPELL field
 // Used in core's RemoveEvadeAuras to identify our guardians and skip aura removal
@@ -43,7 +43,22 @@ enum SoulKeeperGossipAction
     SOUL_ACTION_CLOSE           = 0,
     SOUL_ACTION_PREV_PAGE       = 1,
     SOUL_ACTION_NEXT_PAGE       = 2,
+    SOUL_ACTION_FIRST_PAGE      = 3,
+    SOUL_ACTION_LAST_PAGE       = 4,
+    SOUL_ACTION_SORT_NEWEST     = 10,
+    SOUL_ACTION_SORT_OLDEST     = 11,
+    SOUL_ACTION_SORT_ALPHA_ASC  = 12,
+    SOUL_ACTION_SORT_ALPHA_DESC = 13,
     SOUL_ACTION_SUMMON_BASE     = 100,   // Actions 100+ = Summon by index
+};
+
+// Soul List Sort Modes (display order only - summon IDs remain capture-order)
+enum SoulKeeperSortMode : uint8
+{
+    SOUL_SORT_NEWEST     = 0,
+    SOUL_SORT_OLDEST     = 1,
+    SOUL_SORT_ALPHA_ASC  = 2,
+    SOUL_SORT_ALPHA_DESC = 3,
 };
 
 // Soul Data Structure
@@ -87,6 +102,10 @@ public:
     // Used to trigger defensive cooldowns (immunity buffs) only when ACTUALLY taking damage
     std::unordered_map<ObjectGuid, uint32> _guardianLastDamage;
 
+    // Guardian Owner Damage Tracking: Map<GuardianGUID, LastOwnerDamageTimestamp>
+    // Used to trigger immunities on the OWNER only when the owner actually took damage
+    std::unordered_map<ObjectGuid, uint32> _guardianLastOwnerDamage;
+
     // Persistent Cooldown Tracking: Prevents dismiss/summon exploit to reset cooldowns!
     // Structure: ownerGUIDLow -> creatureEntry -> spellId -> cooldownEndTime (absolute getMSTime)
     // Cooldowns persist across summon/dismiss cycles per guardian TYPE per OWNER.
@@ -97,6 +116,9 @@ public:
 
     // Gossip Page Tracking: Map<PlayerGUIDLow, CurrentPage>
     std::unordered_map<uint32, uint32> _currentGossipPage;
+
+    // Gossip Sort Tracking: Map<PlayerGUIDLow, SortMode>
+    std::unordered_map<uint32, uint8> _currentSortMode;
 
     // Database Operations
     void LoadSouls(Player* player);

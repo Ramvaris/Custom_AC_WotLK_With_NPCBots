@@ -74,6 +74,7 @@
 #include "SpellMgr.h"
 #include "SpellInfo.h"
 #include <algorithm>
+#include <cctype>
 
 // =============================================================================
 // Singleton Implementation
@@ -118,12 +119,15 @@ void SoulKeeper::SaveSoul(Player* player, SoulData const& soul)
 {
     if (!player) return;
 
+    std::string safeName = soul.customName;
+    CharacterDatabase.EscapeString(safeName);
+
     CharacterDatabase.Execute(
         "INSERT INTO character_soul_keeper (owner_guid, creature_entry, custom_name, display_id, scale_factor, caught_at) "
         "VALUES ({}, {}, '{}', {}, {}, {})",
         player->GetGUID().GetCounter(),
         soul.creatureEntry,
-        soul.customName,
+        safeName,
         soul.displayId,
         soul.scaleFactor,
         (uint64)time(nullptr)
@@ -263,8 +267,12 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
         LoadSouls(player);
     }
 
-    // Store current page for next/prev navigation
-    _currentGossipPage[playerGuid] = page;
+    uint8 sortMode = SOUL_SORT_NEWEST;
+    auto sortIt = _currentSortMode.find(playerGuid);
+    if (sortIt != _currentSortMode.end())
+        sortMode = sortIt->second;
+    else
+        _currentSortMode[playerGuid] = SOUL_SORT_NEWEST;
 
     ClearGossipMenuFor(player);
     
@@ -275,6 +283,7 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
 
     if (souls.empty())
     {
+        _currentGossipPage[playerGuid] = 0;
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
             "|cff888888No souls captured yet. Target a dead enemy and use .soul absorb|r", 
             SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_CLOSE);
@@ -284,21 +293,73 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
         // === PAGINATION MATH ===
         uint32 totalSouls = (uint32)souls.size();
         uint32 totalPages = (totalSouls + SOULS_PER_PAGE - 1) / SOULS_PER_PAGE;
+
+        if (page >= totalPages && totalPages > 0)
+            page = totalPages - 1;
+
+        // Store current page for next/prev navigation
+        _currentGossipPage[playerGuid] = page;
+
+        // Build display order without changing summon IDs
+        std::vector<uint32> orderedIndices;
+        orderedIndices.reserve(totalSouls);
+        for (uint32 i = 0; i < totalSouls; ++i)
+            orderedIndices.push_back(i);
+
+        if (sortMode == SOUL_SORT_NEWEST)
+        {
+            std::reverse(orderedIndices.begin(), orderedIndices.end());
+        }
+        else if (sortMode == SOUL_SORT_ALPHA_ASC || sortMode == SOUL_SORT_ALPHA_DESC)
+        {
+            std::vector<std::string> lowerNames;
+            lowerNames.reserve(totalSouls);
+            for (const auto& soul : souls)
+            {
+                std::string nameLower = soul.customName;
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(),
+                    [](unsigned char c) { return (unsigned char)std::tolower(c); });
+                lowerNames.push_back(std::move(nameLower));
+            }
+
+            std::stable_sort(orderedIndices.begin(), orderedIndices.end(),
+                [&lowerNames](uint32 a, uint32 b)
+                {
+                    if (lowerNames[a] == lowerNames[b])
+                        return a < b; // keep capture-order for ties
+                    return lowerNames[a] < lowerNames[b];
+                });
+
+            if (sortMode == SOUL_SORT_ALPHA_DESC)
+                std::reverse(orderedIndices.begin(), orderedIndices.end());
+        }
         uint32 startIndex = page * SOULS_PER_PAGE;
         uint32 endIndex = std::min(startIndex + SOULS_PER_PAGE, totalSouls);
 
         // === NAVIGATION AT TOP (Next first for fast forward clicking) ===
-        if (page < totalPages - 1)
+        if (totalPages > 1 && page < totalPages - 1)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|TInterface\\Icons\\Ability_Druid_Dash:20:20:-2:0|t Next Page >>", 
                 SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_NEXT_PAGE);
         }
-        if (page > 0)
+        if (totalPages > 1 && page > 0)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
                 "|TInterface\\Icons\\Ability_Druid_Dash_Orange:20:20:-2:0|t << Previous Page", 
                 SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_PREV_PAGE);
+        }
+        if (totalPages > 1 && page == 0)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "|TInterface\\Icons\\Ability_Druid_Dash_Orange:20:20:-2:0|t >> Last Page",
+                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_LAST_PAGE);
+        }
+        if (totalPages > 1 && page == totalPages - 1)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "|TInterface\\Icons\\Ability_Druid_Dash_Orange:20:20:-2:0|t << First Page",
+                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_FIRST_PAGE);
         }
 
         // Page info as text (does nothing on click, purely informational)
@@ -312,11 +373,38 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
         // Soul list for current page
         for (uint32 i = startIndex; i < endIndex; ++i)
         {
-            const SoulData& soul = souls[i];
+            uint32 actualIndex = orderedIndices[i];
+            const SoulData& soul = souls[actualIndex];
             std::string icon = GetCreatureIconString(soul.displayId);
             // Display as 1-indexed for user, store actual array index in action
-            std::string label = "|cff00ff00[" + std::to_string(i + 1) + "]|r " + icon + " " + soul.customName;
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, label, SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_SUMMON_BASE + i);
+            std::string label = "|cff00ff00[" + std::to_string(actualIndex + 1) + "]|r " + icon + " " + soul.customName;
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, label, SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_SUMMON_BASE + actualIndex);
+        }
+
+        // === SORT OPTIONS (show only non-active to save slots) ===
+        if (sortMode != SOUL_SORT_NEWEST)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "|TInterface\\Icons\\INV_Misc_ArrowUp:20:20:-2:0|t Sort: Newest -> Oldest",
+                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_SORT_NEWEST);
+        }
+        if (sortMode != SOUL_SORT_OLDEST)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "|TInterface\\Icons\\INV_Misc_ArrowDown:20:20:-2:0|t Sort: Oldest -> Newest",
+                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_SORT_OLDEST);
+        }
+        if (sortMode != SOUL_SORT_ALPHA_ASC)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "|TInterface\\Icons\\INV_Misc_Note_05:20:20:-2:0|t Sort: Alphabetic (A-Z)",
+                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_SORT_ALPHA_ASC);
+        }
+        if (sortMode != SOUL_SORT_ALPHA_DESC)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "|TInterface\\Icons\\INV_Misc_Note_05:20:20:-2:0|t Sort: Alphabetic (Z-A)",
+                SOUL_KEEPER_GOSSIP_SENDER, SOUL_ACTION_SORT_ALPHA_DESC);
         }
     }
 
@@ -357,6 +445,45 @@ bool SoulKeeper::HandleGossipSelect(Player* player, uint32 /*sender*/, uint32 ac
             return true;
         }
 
+        case SOUL_ACTION_FIRST_PAGE:
+        {
+            ShowSoulList(player, 0);
+            return true;
+        }
+
+        case SOUL_ACTION_LAST_PAGE:
+        {
+            auto& souls = _caughtSouls[playerGuid];
+            if (souls.empty())
+            {
+                ShowSoulList(player, 0);
+                return true;
+            }
+            uint32 totalPages = (uint32)((souls.size() + SOULS_PER_PAGE - 1) / SOULS_PER_PAGE);
+            ShowSoulList(player, totalPages > 0 ? totalPages - 1 : 0);
+            return true;
+        }
+
+        case SOUL_ACTION_SORT_NEWEST:
+            _currentSortMode[playerGuid] = SOUL_SORT_NEWEST;
+            ShowSoulList(player, 0);
+            return true;
+
+        case SOUL_ACTION_SORT_OLDEST:
+            _currentSortMode[playerGuid] = SOUL_SORT_OLDEST;
+            ShowSoulList(player, 0);
+            return true;
+
+        case SOUL_ACTION_SORT_ALPHA_ASC:
+            _currentSortMode[playerGuid] = SOUL_SORT_ALPHA_ASC;
+            ShowSoulList(player, 0);
+            return true;
+
+        case SOUL_ACTION_SORT_ALPHA_DESC:
+            _currentSortMode[playerGuid] = SOUL_SORT_ALPHA_DESC;
+            ShowSoulList(player, 0);
+            return true;
+
         default:
             // Summon action (SOUL_ACTION_SUMMON_BASE + index)
             if (action >= SOUL_ACTION_SUMMON_BASE)
@@ -387,6 +514,13 @@ void SoulKeeper::AddGuardian(Player* player, Unit* victim)
 
     Creature* creature = victim->ToCreature();
 
+    // Ensure souls are loaded for duplicate checks
+    uint32 playerGuid = player->GetGUID().GetCounter();
+    if (_caughtSouls[playerGuid].empty())
+    {
+        LoadSouls(player);
+    }
+
     // DEAD ONLY - no alive capture (prevents capturing Varian, faction leaders, etc.)
     if (!creature->isDead())
     {
@@ -405,12 +539,18 @@ void SoulKeeper::AddGuardian(Player* player, Unit* victim)
     SoulData newSoul;
     newSoul.creatureEntry = creature->GetEntry();
     newSoul.customName    = creature->GetName();
+    if (newSoul.customName.empty())
+        newSoul.customName = "Unknown";
+    if (newSoul.customName.size() > 100)
+        newSoul.customName.resize(100);
     newSoul.displayId     = creature->GetDisplayId();
     // Use GetNativeObjectScale() to get the DATABASE-DEFINED size, not the current scale.
     // GetObjectScale() returns whatever the creature's scale is RIGHT NOW (e.g., shrunk by
     // hunter pet level-scaling or other effects). GetNativeObjectScale() returns the scale
     // from creature_template_model - the creature's INTENDED visual size.
     newSoul.scaleFactor   = creature->GetNativeObjectScale();
+    if (newSoul.scaleFactor <= 0.0f)
+        newSoul.scaleFactor = 1.0f;
 
     // Add to Memory
     _caughtSouls[player->GetGUID().GetCounter()].push_back(newSoul);
@@ -451,6 +591,7 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
                 _guardianScaling.erase(oldGuardian->GetGUID());
                 _guardianAITimer.erase(oldGuardian->GetGUID());
                 _guardianLastDamage.erase(oldGuardian->GetGUID());
+                _guardianLastOwnerDamage.erase(oldGuardian->GetGUID());
                 oldGuardian->DespawnOrUnsummon();
             }
             _activeGuardians.erase(it);
@@ -903,6 +1044,7 @@ void SoulKeeper::DismissGuardian(Player* player)
             _guardianScaling.erase(guardian->GetGUID());
             _guardianAITimer.erase(guardian->GetGUID());
             _guardianLastDamage.erase(guardian->GetGUID());
+            _guardianLastOwnerDamage.erase(guardian->GetGUID());
             guardian->DespawnOrUnsummon();
         }
         _activeGuardians.erase(it);
@@ -945,6 +1087,7 @@ void SoulKeeper::ReturnGuardian(Player* player)
             _guardianScaling.erase(guardian->GetGUID());
             _guardianAITimer.erase(guardian->GetGUID());
             _guardianLastDamage.erase(guardian->GetGUID());
+            _guardianLastOwnerDamage.erase(guardian->GetGUID());
             guardian->DespawnOrUnsummon();
         }
         _activeGuardians.erase(it);
@@ -979,6 +1122,7 @@ void SoulKeeper::OnGuardianDeath(Creature* guardian)
         _guardianScaling.erase(guardian->GetGUID());
         _guardianAITimer.erase(guardian->GetGUID());
         _guardianLastDamage.erase(guardian->GetGUID());
+        _guardianLastOwnerDamage.erase(guardian->GetGUID());
         _activeGuardians.erase(it);
 
         // Notify owner if online
@@ -1027,19 +1171,28 @@ void SoulKeeper::RenameGuardian(Player* player, std::string const& newName)
         if (soul.creatureEntry == creatureEntry)
         {
             std::string oldName = soul.customName;
-            soul.customName = newName;
+            std::string finalName = newName;
+            if (finalName.size() > 100)
+            {
+                finalName.resize(100);
+                ChatHandler(player->GetSession()).SendSysMessage("|cff888888Name too long; truncated to 100 characters.|r");
+            }
+            soul.customName = finalName;
+
+            std::string safeName = finalName;
+            CharacterDatabase.EscapeString(safeName);
 
             // Update database
             CharacterDatabase.Execute(
                 "UPDATE character_soul_keeper SET custom_name = '{}' WHERE owner_guid = {} AND creature_entry = {}",
-                newName, guid, creatureEntry);
+                safeName, guid, creatureEntry);
 
             // Apply name to currently summoned guardian IMMEDIATELY (not just on resummon)
-            guardian->SetName(newName);
+            guardian->SetName(finalName);
             // Force client to re-query the pet name by updating the timestamp
             guardian->SetUInt32Value(UNIT_FIELD_PET_NAME_TIMESTAMP, uint32(GameTime::GetGameTime().count()));
 
-            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Renamed '{}' to '{}'!|r", oldName, newName);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00Renamed '{}' to '{}'!|r", oldName, finalName);
             return;
         }
     }
@@ -1062,11 +1215,8 @@ public:
         // The sender check is redundant now but kept for extra safety
         if (menu_id == SOUL_KEEPER_GOSSIP_MENU_ID && sender == SOUL_KEEPER_GOSSIP_SENDER)
         {
-            // Handle ALL Soul Keeper actions (0-4 = menu actions, 100+ = summon by index)
-            if (action <= SOUL_ACTION_NEXT_PAGE || action >= SOUL_ACTION_SUMMON_BASE)
-            {
-                sSoulKeeper->HandleGossipSelect(player, sender, action);
-            }
+            // Handle ALL Soul Keeper actions (menu/nav/sort actions < 100, summon by index >= 100)
+            sSoulKeeper->HandleGossipSelect(player, sender, action);
         }
     }
 
@@ -1534,6 +1684,26 @@ private:
         }
         return false;
     }
+
+    // Check if target already has this buff or any rank of it
+    bool HasAuraOrRankedAura(Unit* target, SpellInfo const* spellInfo)
+    {
+        if (!target || !spellInfo)
+            return false;
+
+        for (auto const& pair : target->GetAppliedAuras())
+        {
+            Aura const* aura = pair.second->GetBase();
+            SpellInfo const* auraInfo = aura->GetSpellInfo();
+            if (!auraInfo)
+                continue;
+
+            if (auraInfo->Id == spellInfo->Id || auraInfo->IsRankOf(spellInfo))
+                return true;
+        }
+
+        return false;
+    }
     
     // === HELPER: Get scaled mana cost by owner level ===
     // Prevents lvl 15 creature spells costing peanuts on lvl 77 guardians with huge mana pools.
@@ -1675,25 +1845,44 @@ private:
             bool isImmunity = spellInfo->HasAura(SPELL_AURA_SCHOOL_IMMUNITY) ||
                               spellInfo->HasAura(SPELL_AURA_DAMAGE_IMMUNITY) ||
                               spellInfo->HasAura(SPELL_AURA_MECHANIC_IMMUNITY) ||
+                              spellInfo->HasAura(SPELL_AURA_EFFECT_IMMUNITY) ||
+                              spellInfo->HasAura(SPELL_AURA_STATE_IMMUNITY) ||
+                              spellInfo->HasAura(SPELL_AURA_DISPEL_IMMUNITY) ||
                               spellInfo->HasAura(SPELL_AURA_MOD_IMMUNE_AURA_APPLY_SCHOOL);
             if (isImmunity)
             {
-                // Immunity buffs are SELF-ONLY - don't cast on others
-                if (target != caster)
+                ObjectGuid ownerGuid = caster->GetOwnerGUID();
+                bool targetIsCaster = (target == caster);
+                bool targetIsOwner = (ownerGuid && target->GetGUID() == ownerGuid);
+
+                // Immunity buffs are ONLY for self or owner - never other friendly targets
+                if (!targetIsCaster && !targetIsOwner)
                     continue;
-                    
-                // Check if WE (the caster/target) actually took damage recently
-                auto damageIt = sSoulKeeper->_guardianLastDamage.find(caster->GetGUID());
-                if (damageIt == sSoulKeeper->_guardianLastDamage.end())
-                    continue; // No damage recorded yet, skip immunity
-                    
-                uint32 timeSinceDamage = getMSTimeDiff(damageIt->second, getMSTime());
+
+                // Check if the relevant target actually took damage recently
+                uint32 lastDamageTime = 0;
+                if (targetIsOwner)
+                {
+                    auto damageIt = sSoulKeeper->_guardianLastOwnerDamage.find(caster->GetGUID());
+                    if (damageIt == sSoulKeeper->_guardianLastOwnerDamage.end())
+                        continue;
+                    lastDamageTime = damageIt->second;
+                }
+                else
+                {
+                    auto damageIt = sSoulKeeper->_guardianLastDamage.find(caster->GetGUID());
+                    if (damageIt == sSoulKeeper->_guardianLastDamage.end())
+                        continue;
+                    lastDamageTime = damageIt->second;
+                }
+
+                uint32 timeSinceDamage = getMSTimeDiff(lastDamageTime, getMSTime());
                 if (timeSinceDamage > 5000)
                     continue; // Damage was more than 5 seconds ago, skip immunity
             }
             
-            // Skip if target already has this buff
-            if (target->HasAura(spellId)) continue;
+            // Skip if target already has this buff (any rank)
+            if (HasAuraOrRankedAura(target, spellInfo)) continue;
             
             // Check cooldown
             if (caster->HasSpellCooldown(spellId)) continue;
@@ -1759,6 +1948,10 @@ public:
         if (!attacker || !target || damage <= 0)
             return;
 
+        // Percent-based damage already scales with target/weapon - do not override
+        if (spellInfo && spellInfo->HasEffect(SPELL_EFFECT_WEAPON_PERCENT_DAMAGE))
+            return;
+
         Creature* attackerCreature = attacker->ToCreature();
         if (!attackerCreature)
             return;
@@ -1808,6 +2001,10 @@ public:
     void ModifyHealReceived(Unit* /*target*/, Unit* healer, uint32& heal, SpellInfo const* spellInfo) override
     {
         if (!healer || heal == 0)
+            return;
+
+        // Percent-based heals already scale correctly - do not override
+        if (spellInfo && (spellInfo->HasEffect(SPELL_EFFECT_HEAL_PCT) || spellInfo->HasEffect(SPELL_EFFECT_HEAL_MAX_HEALTH)))
             return;
 
         // CRITICAL: NEVER touch heals cast by players!
@@ -1986,6 +2183,10 @@ public:
         if (spellInfo && spellInfo->HasAura(SPELL_AURA_PERIODIC_HEAL))
             return;
 
+        // Percent-based DoTs already scale correctly
+        if (spellInfo && spellInfo->HasAura(SPELL_AURA_PERIODIC_DAMAGE_PERCENT))
+            return;
+
         Creature* attackerCreature = attacker->ToCreature();
         if (!attackerCreature)
             return;
@@ -2080,7 +2281,7 @@ public:
                 {
                     // TRACK DAMAGE: Owner took damage, record timestamp on guardian
                     // This enables defensive cooldowns (immunity buffs) to trigger
-                    sSoulKeeper->_guardianLastDamage[guardian->GetGUID()] = getMSTime();
+                    sSoulKeeper->_guardianLastOwnerDamage[guardian->GetGUID()] = getMSTime();
                     
                     // Guardian defends: attack whoever hit the owner
                     if (guardian->CanCreatureAttack(attacker) && !guardian->IsInCombatWith(attacker))
