@@ -588,6 +588,7 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
         {
             if (Creature* oldGuardian = ObjectAccessor::GetCreature(*player, it->second))
             {
+                DespawnGuardianSummons(oldGuardian);
                 _guardianScaling.erase(oldGuardian->GetGUID());
                 _guardianAITimer.erase(oldGuardian->GetGUID());
                 _guardianLastDamage.erase(oldGuardian->GetGUID());
@@ -1024,8 +1025,8 @@ void SoulKeeper::ScaleSummonedHelper(Creature* helper, Player* owner)
 {
     if (!helper || !owner) return;
 
-    constexpr float helperStatScale = 0.50f;   // Reduce helper tankiness vs main guardian
-    constexpr float helperDamageScale = 1.0f;  // Keep 25% owner DPS baseline
+    constexpr float helperStatScale = 1.0f;   // Same survivability as main guardian
+    constexpr float helperDamageScale = 1.0f; // Keep 25% owner DPS baseline
 
     uint32 ownerLevel = owner->GetLevel();
 
@@ -1215,6 +1216,22 @@ void SoulKeeper::ScaleSummonedHelper(Creature* helper, Player* owner)
 }
 
 // =============================================================================
+// Utility: Despawn all summons owned by a guardian
+// Ensures guardian helper minions vanish when the guardian is dismissed/dead.
+// =============================================================================
+void SoulKeeper::DespawnGuardianSummons(Creature* guardian)
+{
+    if (!guardian)
+        return;
+
+    guardian->RemoveAllControlled(false);
+
+    // Fallback for AIs that track their own summon lists
+    if (guardian->IsAIEnabled)
+        guardian->AI()->SummonedCreatureDespawnAll();
+}
+
+// =============================================================================
 // Core Logic: Dismiss Guardian
 // Only allowed out of combat to prevent exploit swapping
 // =============================================================================
@@ -1238,6 +1255,9 @@ void SoulKeeper::DismissGuardian(Player* player)
         {
             // SAVE COOLDOWNS before despawn (prevent dismiss/summon exploit!)
             SaveGuardianCooldowns(guardian, player);
+
+            // Despawn guardian-owned helpers
+            DespawnGuardianSummons(guardian);
             
             // Clean up scaling data
             _guardianScaling.erase(guardian->GetGUID());
@@ -1281,6 +1301,9 @@ void SoulKeeper::ReturnGuardian(Player* player)
         {
             // SAVE COOLDOWNS before despawn (prevent dismiss/summon exploit!)
             SaveGuardianCooldowns(guardian, player);
+
+            // Despawn guardian-owned helpers
+            DespawnGuardianSummons(guardian);
             
             // Clean up scaling data
             _guardianScaling.erase(guardian->GetGUID());
@@ -1318,6 +1341,7 @@ void SoulKeeper::OnGuardianDeath(Creature* guardian)
     if (it != _activeGuardians.end() && it->second == guardian->GetGUID())
     {
         // Our guardian died - clean up
+        DespawnGuardianSummons(guardian);
         _guardianScaling.erase(guardian->GetGUID());
         _guardianAITimer.erase(guardian->GetGUID());
         _guardianLastDamage.erase(guardian->GetGUID());
@@ -1438,6 +1462,7 @@ public:
         {
             if (Creature* guardian = ObjectAccessor::GetCreature(*player, it->second))
             {
+                sSoulKeeper->DespawnGuardianSummons(guardian);
                 sSoulKeeper->SaveGuardianCooldowns(guardian, player);
                 sSoulKeeper->_guardianScaling.erase(guardian->GetGUID());
                 sSoulKeeper->_guardianAITimer.erase(guardian->GetGUID());

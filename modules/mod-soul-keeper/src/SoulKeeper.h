@@ -134,6 +134,7 @@ public:
     void RenameGuardian(Player* player, std::string const& newName);
     void ScaleGuardian(Creature* guardian, Player* owner);
     void ScaleSummonedHelper(Creature* helper, Player* owner);
+    void DespawnGuardianSummons(Creature* guardian);
     
     // Cooldown Persistence (prevent dismiss/summon exploit)
     void SaveGuardianCooldowns(Creature* guardian, Player* owner);
