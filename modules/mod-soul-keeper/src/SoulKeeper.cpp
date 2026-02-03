@@ -1019,14 +1019,14 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
 // =============================================================================
 // Core Logic: Helper Summon Scaling (Guardian-spawned minions)
 // Scales guardian helpers to match owner power level without overriding summon spell data.
-// Damage/heal scaling follows the same 25% owner DPS baseline as guardians.
+// Damage/heal scaling follows 50% of guardian baseline (12.5% owner DPS).
 // =============================================================================
 void SoulKeeper::ScaleSummonedHelper(Creature* helper, Player* owner)
 {
     if (!helper || !owner) return;
 
     constexpr float helperStatScale = 1.0f;   // Same survivability as main guardian
-    constexpr float helperDamageScale = 1.0f; // Keep 25% owner DPS baseline
+    constexpr float helperDamageScale = 0.5f; // Half guardian DPS baseline (12.5% owner DPS)
 
     uint32 ownerLevel = owner->GetLevel();
 
