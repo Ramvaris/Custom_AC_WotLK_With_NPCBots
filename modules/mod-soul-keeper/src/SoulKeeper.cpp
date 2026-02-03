@@ -1016,6 +1016,205 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
 }
 
 // =============================================================================
+// Core Logic: Helper Summon Scaling (Guardian-spawned minions)
+// Scales guardian helpers to match owner power level without overriding summon spell data.
+// Damage/heal scaling follows the same 25% owner DPS baseline as guardians.
+// =============================================================================
+void SoulKeeper::ScaleSummonedHelper(Creature* helper, Player* owner)
+{
+    if (!helper || !owner) return;
+
+    constexpr float helperStatScale = 0.50f;   // Reduce helper tankiness vs main guardian
+    constexpr float helperDamageScale = 1.0f;  // Keep 25% owner DPS baseline
+
+    uint32 ownerLevel = owner->GetLevel();
+
+    // Ensure helper level matches owner for hit/resist calculations
+    helper->SetLevel(ownerLevel);
+
+    // Standard pet AoE damage reduction
+    helper->AddAura(SPELL_PET_AVOIDANCE, helper);
+
+    // Keep helper aligned to owner faction (prevents hostile helpers)
+    helper->SetFaction(owner->GetFaction());
+
+    // === HEALTH: scaled down relative to guardian ===
+    uint32 ownerHealth = (uint32)(owner->GetMaxHealth() * 0.8f * helperStatScale);
+    uint32 finalHealth = std::max(ownerHealth, (uint32)(ownerLevel * 20u * helperStatScale));
+    helper->SetStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE, (float)finalHealth);
+    helper->SetCreateHealth(finalHealth);
+    helper->SetMaxHealth(finalHealth);
+    helper->SetHealth(finalHealth);
+
+    // === MANA: scaled down relative to guardian ===
+    if (helper->GetPowerType() == POWER_MANA)
+    {
+        uint32 ownerMana = (uint32)(owner->GetMaxPower(POWER_MANA) * 0.7f * helperStatScale);
+        uint32 finalMana = std::max(ownerMana, (uint32)(ownerLevel * 15u * helperStatScale));
+        helper->SetStatFlatModifier(UNIT_MOD_MANA, BASE_VALUE, (float)finalMana);
+        helper->SetCreateMana(finalMana);
+        helper->SetMaxPower(POWER_MANA, finalMana);
+        helper->SetPower(POWER_MANA, finalMana);
+    }
+    else
+    {
+        helper->SetMaxPower(POWER_ENERGY, 100);
+        helper->SetPower(POWER_ENERGY, 100);
+    }
+
+    // === ARMOR: scaled down relative to guardian ===
+    int32 ownerArmor = (int32)(owner->GetArmor() * 0.35f * helperStatScale);
+    helper->SetStatFlatModifier(UNIT_MOD_ARMOR, BASE_VALUE, (float)ownerArmor);
+    helper->SetArmor(ownerArmor);
+
+    // === RESISTANCES: scaled down relative to guardian ===
+    for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
+    {
+        int32 ownerResist = owner->GetResistance(SpellSchools(school));
+        int32 helperResist = (int32)(ownerResist * 0.4f * helperStatScale);
+        helper->SetStatFlatModifier(UnitMods(UNIT_MOD_RESISTANCE_START + school), BASE_VALUE, (float)helperResist);
+        helper->SetResistance(SpellSchools(school), helperResist);
+    }
+
+    // === DAMAGE SCALING ===
+    float meleeAP  = owner->GetTotalAttackPowerValue(BASE_ATTACK);
+    float rangedAP = owner->GetTotalAttackPowerValue(RANGED_ATTACK);
+    float maxSP    = 0.0f;
+    for (int i = SPELL_SCHOOL_HOLY; i < MAX_SPELL_SCHOOL; ++i)
+    {
+        float sp = (float)owner->SpellBaseDamageBonusDone((SpellSchoolMask)(1 << i));
+        if (sp > maxSP) maxSP = sp;
+    }
+
+    float targetDPS;
+    float expectedMelee;
+    float expectedRanged;
+    float expectedSpell;
+
+    if (ownerLevel <= 10)
+    {
+        targetDPS = 1.5f;
+        expectedMelee = 50.0f;   expectedRanged = 45.0f;   expectedSpell = 30.0f;
+    }
+    else if (ownerLevel <= 20)
+    {
+        targetDPS = 5.0f;
+        expectedMelee = 130.0f;  expectedRanged = 115.0f;  expectedSpell = 80.0f;
+    }
+    else if (ownerLevel <= 30)
+    {
+        targetDPS = 12.0f;
+        expectedMelee = 240.0f;  expectedRanged = 215.0f;  expectedSpell = 150.0f;
+    }
+    else if (ownerLevel <= 40)
+    {
+        targetDPS = 25.0f;
+        expectedMelee = 450.0f;  expectedRanged = 400.0f;  expectedSpell = 280.0f;
+    }
+    else if (ownerLevel <= 50)
+    {
+        targetDPS = 45.0f;
+        expectedMelee = 720.0f;  expectedRanged = 640.0f;  expectedSpell = 450.0f;
+    }
+    else if (ownerLevel <= 60)
+    {
+        targetDPS = 85.0f;
+        expectedMelee = 1120.0f; expectedRanged = 1000.0f; expectedSpell = 700.0f;
+    }
+    else if (ownerLevel <= 70)
+    {
+        targetDPS = 175.0f;
+        expectedMelee = 1920.0f; expectedRanged = 1700.0f; expectedSpell = 1200.0f;
+    }
+    else
+    {
+        targetDPS = 750.0f;
+        expectedMelee = 4500.0f; expectedRanged = 4000.0f; expectedSpell = 2800.0f;
+    }
+
+    float meleeRatio  = meleeAP / expectedMelee;
+    float rangedRatio = rangedAP / expectedRanged;
+    float spellRatio  = maxSP / expectedSpell;
+
+    float gearRatio;
+    if (meleeRatio >= rangedRatio && meleeRatio >= spellRatio)
+        gearRatio = meleeRatio;
+    else if (rangedRatio >= meleeRatio && rangedRatio >= spellRatio)
+        gearRatio = rangedRatio;
+    else
+        gearRatio = spellRatio;
+
+    gearRatio = std::max(0.5f, gearRatio);
+
+    float totalDPS = targetDPS * gearRatio * helperDamageScale;
+
+    // Ensure a sane attack time for helpers with no base speed
+    if (helper->GetAttackTime(BASE_ATTACK) == 0)
+        helper->SetAttackTime(BASE_ATTACK, 2000);
+    if (helper->GetAttackTime(OFF_ATTACK) == 0)
+        helper->SetAttackTime(OFF_ATTACK, 2000);
+    if (helper->GetAttackTime(RANGED_ATTACK) == 0)
+        helper->SetAttackTime(RANGED_ATTACK, 2000);
+
+    float meleeAttackTime = (float)helper->GetAttackTime(BASE_ATTACK);
+    if (meleeAttackTime <= 0.0f) meleeAttackTime = 2000.0f;
+    float meleeDamagePerHit = totalDPS * (meleeAttackTime / 1000.0f);
+
+    float offhandAttackTime = (float)helper->GetAttackTime(OFF_ATTACK);
+    if (offhandAttackTime <= 0.0f) offhandAttackTime = meleeAttackTime;
+    float offhandDamagePerHit = (totalDPS * 0.5f) * (offhandAttackTime / 1000.0f);
+
+    float rangedAttackTime = (float)helper->GetAttackTime(RANGED_ATTACK);
+    if (rangedAttackTime <= 0.0f) rangedAttackTime = 2000.0f;
+    float rangedDamagePerHit = totalDPS * (rangedAttackTime / 1000.0f);
+
+    helper->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER, BASE_VALUE, 0.0f);
+    helper->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER, TOTAL_VALUE, 0.0f);
+    helper->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, BASE_VALUE, 0.0f);
+    helper->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, 0.0f);
+    helper->SetStatFlatModifier(UNIT_MOD_DAMAGE_MAINHAND, BASE_VALUE, 0.0f);
+    helper->SetStatFlatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_VALUE, 0.0f);
+    helper->SetStatFlatModifier(UNIT_MOD_DAMAGE_OFFHAND, BASE_VALUE, 0.0f);
+    helper->SetStatFlatModifier(UNIT_MOD_DAMAGE_OFFHAND, TOTAL_VALUE, 0.0f);
+    helper->SetStatFlatModifier(UNIT_MOD_DAMAGE_RANGED, BASE_VALUE, 0.0f);
+    helper->SetStatFlatModifier(UNIT_MOD_DAMAGE_RANGED, TOTAL_VALUE, 0.0f);
+
+    helper->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, meleeDamagePerHit * 0.9f);
+    helper->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, meleeDamagePerHit * 1.1f);
+    helper->UpdateAttackPowerAndDamage(false);
+    helper->UpdateDamagePhysical(BASE_ATTACK);
+
+    if (helper->GetAttackTime(OFF_ATTACK) > 0)
+    {
+        helper->SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, offhandDamagePerHit * 0.9f);
+        helper->SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, offhandDamagePerHit * 1.1f);
+        helper->UpdateDamagePhysical(OFF_ATTACK);
+    }
+
+    helper->SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, rangedDamagePerHit * 0.9f);
+    helper->SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, rangedDamagePerHit * 1.1f);
+    helper->UpdateAttackPowerAndDamage(true);
+    helper->UpdateDamagePhysical(RANGED_ATTACK);
+
+    helper->SetStatFloatValue(UNIT_FIELD_MINDAMAGE, meleeDamagePerHit * 0.9f);
+    helper->SetStatFloatValue(UNIT_FIELD_MAXDAMAGE, meleeDamagePerHit * 1.1f);
+    helper->SetStatFloatValue(UNIT_FIELD_MINRANGEDDAMAGE, rangedDamagePerHit * 0.9f);
+    helper->SetStatFloatValue(UNIT_FIELD_MAXRANGEDDAMAGE, rangedDamagePerHit * 1.1f);
+    helper->SetMaxHealth(finalHealth);
+    helper->SetHealth(finalHealth);
+
+    // Mark as player-created for loot credit propagation
+    helper->m_CreatedByPlayer = true;
+
+    // Store scaling info for spell/DoT/HoT hooks
+    GuardianScalingInfo scalingInfo;
+    scalingInfo.gearRatio = gearRatio * helperDamageScale;
+    scalingInfo.creatureLevel = helper->GetCreatureTemplate()->maxlevel;
+    scalingInfo.ownerLevel = ownerLevel;
+    _guardianScaling[helper->GetGUID()] = scalingInfo;
+}
+
+// =============================================================================
 // Core Logic: Dismiss Guardian
 // Only allowed out of combat to prevent exploit swapping
 // =============================================================================
@@ -1224,6 +1423,35 @@ public:
     {
         // Pre-load souls on login for faster menu access
         sSoulKeeper->LoadSouls(player);
+    }
+
+    void OnPlayerLogout(Player* player) override
+    {
+        if (!player)
+            return;
+
+        uint32 guid = player->GetGUID().GetCounter();
+
+        // Save cooldowns + clean up guardian if still present
+        auto it = sSoulKeeper->_activeGuardians.find(guid);
+        if (it != sSoulKeeper->_activeGuardians.end())
+        {
+            if (Creature* guardian = ObjectAccessor::GetCreature(*player, it->second))
+            {
+                sSoulKeeper->SaveGuardianCooldowns(guardian, player);
+                sSoulKeeper->_guardianScaling.erase(guardian->GetGUID());
+                sSoulKeeper->_guardianAITimer.erase(guardian->GetGUID());
+                sSoulKeeper->_guardianLastDamage.erase(guardian->GetGUID());
+                sSoulKeeper->_guardianLastOwnerDamage.erase(guardian->GetGUID());
+                guardian->DespawnOrUnsummon();
+            }
+            sSoulKeeper->_activeGuardians.erase(it);
+        }
+
+        // Clear per-player caches to prevent memory growth
+        sSoulKeeper->_caughtSouls.erase(guid);
+        sSoulKeeper->_currentGossipPage.erase(guid);
+        sSoulKeeper->_currentSortMode.erase(guid);
     }
 };
 
@@ -1704,6 +1932,21 @@ private:
 
         return false;
     }
+
+    // Check if spell applies any aura effect (used to allow permanent buffs)
+    bool HasAnyAuraEffect(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return false;
+
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        {
+            if (spellInfo->Effects[i].ApplyAuraName != SPELL_AURA_NONE)
+                return true;
+        }
+
+        return false;
+    }
     
     // === HELPER: Get scaled mana cost by owner level ===
     // Prevents lvl 15 creature spells costing peanuts on lvl 77 guardians with huge mana pools.
@@ -1835,7 +2078,10 @@ private:
             if (spellInfo->HasEffect(SPELL_EFFECT_HEAL) || 
                 spellInfo->HasEffect(SPELL_EFFECT_HEAL_PCT) ||
                 spellInfo->HasEffect(SPELL_EFFECT_DISPEL)) continue;
-            if (spellInfo->GetDuration() <= 0) continue;
+
+            int32 duration = spellInfo->GetDuration();
+            if (duration == 0 && !HasAnyAuraEffect(spellInfo))
+                continue;
             
             // IMMUNITY BUFFS: Only cast on SELF when ACTUALLY taking damage!
             // Don't waste the 60s cooldown just because combat started (mob still running to us).
@@ -2329,6 +2575,66 @@ public:
 };
 
 // =============================================================================
+// AllCreatureScript: Scale guardian-spawned helper summons
+// =============================================================================
+class SoulKeeper_AllCreatureScript : public AllCreatureScript
+{
+public:
+    SoulKeeper_AllCreatureScript() : AllCreatureScript("SoulKeeper_AllCreatureScript") { }
+
+    void OnCreatureAddWorld(Creature* creature) override
+    {
+        if (!creature || !creature->IsSummon())
+            return;
+
+        // Avoid double-scaling
+        if (sSoulKeeper->_guardianScaling.find(creature->GetGUID()) != sSoulKeeper->_guardianScaling.end())
+            return;
+
+        ObjectGuid summonerGuid = creature->GetSummonerGUID();
+        if (!summonerGuid)
+            summonerGuid = creature->GetOwnerGUID();
+
+        if (!summonerGuid || !summonerGuid.IsCreature())
+            return;
+
+        Creature* summoner = ObjectAccessor::GetCreature(*creature, summonerGuid);
+        if (!summoner)
+            return;
+
+        ObjectGuid ownerGuid = summoner->GetOwnerGUID();
+        if (!ownerGuid.IsPlayer())
+            return;
+
+        uint32 ownerLow = ownerGuid.GetCounter();
+        auto activeIt = sSoulKeeper->_activeGuardians.find(ownerLow);
+        if (activeIt == sSoulKeeper->_activeGuardians.end() || activeIt->second != summoner->GetGUID())
+            return;
+
+        // Skip special summons that shouldn't be scaled
+        if (creature->IsTotem() || creature->IsTrigger() || creature->IsVehicle() || creature->IsCritter())
+            return;
+
+        Player* owner = ObjectAccessor::GetPlayer(*creature, ownerGuid);
+        if (!owner)
+            return;
+
+        sSoulKeeper->ScaleSummonedHelper(creature, owner);
+    }
+
+    void OnCreatureRemoveWorld(Creature* creature) override
+    {
+        if (!creature)
+            return;
+
+        sSoulKeeper->_guardianScaling.erase(creature->GetGUID());
+        sSoulKeeper->_guardianAITimer.erase(creature->GetGUID());
+        sSoulKeeper->_guardianLastDamage.erase(creature->GetGUID());
+        sSoulKeeper->_guardianLastOwnerDamage.erase(creature->GetGUID());
+    }
+};
+
+// =============================================================================
 // Loader
 // =============================================================================
 void Addmod_soul_keeperScripts()
@@ -2336,4 +2642,5 @@ void Addmod_soul_keeperScripts()
     new SoulKeeper_PlayerScript();
     new SoulKeeper_CommandScript();
     new SoulKeeper_UnitScript();
+    new SoulKeeper_AllCreatureScript();
 }

@@ -133,6 +133,7 @@ public:
     void OnGuardianDeath(Creature* guardian);  // Called when guardian dies
     void RenameGuardian(Player* player, std::string const& newName);
     void ScaleGuardian(Creature* guardian, Player* owner);
+    void ScaleSummonedHelper(Creature* helper, Player* owner);
     
     // Cooldown Persistence (prevent dismiss/summon exploit)
     void SaveGuardianCooldowns(Creature* guardian, Player* owner);
