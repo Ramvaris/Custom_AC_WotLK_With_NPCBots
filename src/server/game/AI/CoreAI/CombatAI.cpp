@@ -75,9 +75,8 @@ void CombatAI::JustDied(Unit* killer)
  */
 void CombatAI::JustEngagedWith(Unit* who)
 {
-    // SOUL KEEPER GUARDIAN MARKER: 81100 (prevents buff spam for our guardians ONLY)
-    constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
-    bool isSoulKeeperGuardian = me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER;
+    // Soul Keeper guardians only (prevents buff spam for Summoned Souls)
+    bool isSoulKeeperGuardian = me->IsSoulKeeperGuardian();
     
     for (SpellVct::iterator i = spells.begin(); i != spells.end(); ++i)
     {
@@ -113,10 +112,9 @@ void CombatAI::UpdateAI(uint32 diff)
         // Don't recast self-buffs already active (Soul Keeper guardians only).
         // Use AITARGET_SELF to correctly identify self-targeted spells (like Enrage)
         // without incorrectly skipping party buffs (AITARGET_BUFF).
-        constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
         bool skipCast = false;
-        
-        if (me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER &&
+
+        if (me->IsSoulKeeperGuardian() &&
             AISpellInfo[spellId].target == AITARGET_SELF && me->HasAura(spellId))
         {
             skipCast = true;
@@ -157,9 +155,8 @@ void CasterAI::JustEngagedWith(Unit* who)
     if (spells.empty())
         return;
 
-    // SOUL KEEPER GUARDIAN MARKER: 81100 (prevents buff spam for our guardians ONLY)
-    constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
-    bool isSoulKeeperGuardian = me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER;
+    // Soul Keeper guardians only (prevents buff spam for Summoned Souls)
+    bool isSoulKeeperGuardian = me->IsSoulKeeperGuardian();
 
     uint32 spell = rand() % spells.size();
     uint32 count = 0;
@@ -204,9 +201,8 @@ void CasterAI::UpdateAI(uint32 diff)
     if (uint32 spellId = events.ExecuteEvent())
     {
         // Don't recast self-buffs already active (Soul Keeper guardians only)
-        constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
         bool skipCast = false;
-        if (me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER &&
+        if (me->IsSoulKeeperGuardian() &&
             AISpellInfo[spellId].target == AITARGET_SELF && me->HasAura(spellId))
         {
             skipCast = true;

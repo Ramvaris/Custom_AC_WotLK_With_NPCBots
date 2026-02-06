@@ -113,6 +113,71 @@ enum BG_AV_OTHER_VALUES
     BG_AV_QUEST_CREDIT_GRAVEYARD = 13756
 };
 
+/**
+ * @brief AV Battle Quest NPCs - Ultimate Units and Assault Forces
+ *
+ * These are the powerful summoned creatures from the AV battle quests:
+ * - Ivus the Forest Lord: Summoned by Alliance after 200 Storm Crystal turn-ins
+ * - Lokholar the Ice Lord: Summoned by Horde after 200 Stormpike Soldier's Blood turn-ins
+ * - Ram Riders / Wolf Riders: Cavalry assault when 25 hides + 25 tames completed
+ */
+enum BG_AV_BattleQuestNPCs
+{
+    AV_NPC_IVUS_THE_FOREST_LORD     = 13419,    // Alliance ultimate unit
+    AV_NPC_LOKHOLAR_THE_ICE_LORD    = 13256,    // Horde ultimate unit
+    AV_NPC_STORMPIKE_RAM_RIDER      = 13576,    // Alliance cavalry
+    AV_NPC_FROSTWOLF_WOLF_RIDER     = 13441,    // Horde cavalry
+    AV_NPC_SEASONED_WOLF_RIDER      = 13576,    // Upgraded cavalry (placeholder)
+};
+
+/**
+ * @brief Thresholds for battle quest events
+ *
+ * These define when side objectives trigger their rewards
+ */
+enum BG_AV_BattleQuestThresholds
+{
+    AV_BOSS_SUMMON_THRESHOLD        = 200,      // 200 crystals/blood to summon Ivus/Lokholar
+    AV_CAVALRY_HIDE_THRESHOLD       = 25,       // 25 hides needed for cavalry
+    AV_CAVALRY_TAME_THRESHOLD       = 25,       // 25 tames needed for cavalry
+    AV_GROUND_ASSAULT_NEAR_MINE     = 28,       // Near mine supplies for ground assault
+    AV_GROUND_ASSAULT_OTHER_MINE    = 7,        // Other mine supplies for ground assault
+};
+
+/**
+ * @brief Turn-in NPC entries for AV battle quests
+ *
+ * Bots physically run to these NPCs to turn in collected items.
+ * Each faction has specific NPCs for armor scraps and boss materials.
+ */
+enum BG_AV_TurninNPCs
+{
+    // Alliance turn-in NPCs
+    AV_NPC_MURGOT_DEEPFORGE         = 13257,    // Armor scraps turn-in (Alliance)
+    AV_NPC_ARCH_DRUID_RENFERAL      = 13442,    // Storm Crystals turn-in (Alliance)
+    // Horde turn-in NPCs
+    AV_NPC_SMITH_REGZAR             = 13176,    // Armor scraps turn-in (Horde)
+    AV_NPC_PRIMALIST_THURLOGA       = 13236,    // Frostwolf Blood turn-in (Horde)
+};
+
+/**
+ * @brief Turn-in NPC positions for bot pathing
+ *
+ * [0] = x, [1] = y, [2] = z, [3] = interaction range
+ */
+constexpr float AV_TURNIN_POS_ALLIANCE_SCRAPS[4]    = { 647.61f, -61.15f, 41.74f, 6.0f };      // Murgot Deepforge
+constexpr float AV_TURNIN_POS_ALLIANCE_BOSS[4]      = { 729.2f, -78.81f, 51.63f, 6.0f };       // Arch Druid Renferal
+constexpr float AV_TURNIN_POS_HORDE_SCRAPS[4]       = { -1251.5f, -316.33f, 62.66f, 6.0f };    // Smith Regzar
+constexpr float AV_TURNIN_POS_HORDE_BOSS[4]         = { -1319.56f, -342.68f, 60.34f, 6.0f };   // Primalist Thurloga
+
+/**
+ * @brief Field of Strife spawn positions for Ivus/Lokholar
+ *
+ * Positioned in the central battleground area where the ultimate units appear
+ * after their summoning ritual is complete
+ */
+constexpr float AV_ULTIMATE_UNIT_SPAWN_POS[4] = { -270.0f, -330.0f, 45.0f, 3.14159f };  // Center Field of Strife
+
 enum BG_AV_ObjectIds
 {
     //cause the moongose-system is a bit different, we don't use the right go-ids for every node.. if we want to be 100% like another big server, we must take one object for every node
@@ -1779,6 +1844,7 @@ public:
     void HandleKillPlayer(Player* player, Player* killer) override;
     void HandleKillUnit(Creature* unit, Player* killer) override;
     void HandleQuestComplete(uint32 questid, Player* player);
+    void HandleQuestCompleteForTeam(uint32 questid, TeamId teamId);  // Bot-friendly version (no player required)
     bool PlayerCanDoMineQuest(int32 GOId, TeamId teamId);
 
     void EndBattleground(TeamId winnerTeamId) override;
@@ -1851,6 +1917,20 @@ private:
     /*general */
     Creature* AddAVCreature(uint16 cinfoid, uint16 type);
 
+    /**
+     * @brief Battle Quest Event Functions
+     *
+     * These functions handle the AV side objectives:
+     * - Ultimate unit summoning (Ivus/Lokholar)
+     * - Cavalry assault spawning
+     * - Ground assault launching
+     * - Bot turn-in processing (active collection system)
+     */
+    void SpawnUltimateUnit(TeamId teamId);
+    void LaunchCavalryAssault(TeamId teamId);
+    void LaunchGroundAssault(TeamId teamId);
+    void ProcessBotTurnins(uint32 diff);
+
     /*variables */
     int32 m_Team_Scores[2] {};
     uint32 m_Team_QuestStatus[2][9] {}; //[x][y] x=team y=questcounter
@@ -1873,6 +1953,16 @@ private:
     float _avReputationRate;
 
     bool m_IsInformedNearVictory[2] {};
+
+    /**
+     * @brief Battle Quest State Tracking
+     *
+     * Tracks the state of AV battle quest events
+     */
+    bool m_UltimateUnitSummoned[2] {};    // [TEAM_ALLIANCE/TEAM_HORDE] = has Ivus/Lokholar been summoned
+    bool m_CavalryDeployed[2] {};         // [TEAM_ALLIANCE/TEAM_HORDE] = have ram/wolf riders been deployed
+    bool m_GroundAssaultLaunched[2] {};   // [TEAM_ALLIANCE/TEAM_HORDE] = has ground assault been launched
+    uint32 m_BotTurninCheckTimer {};      // Throttle turn-in proximity checks (every 2 seconds)
 };
 
 #endif

@@ -798,6 +798,9 @@ public:
     [[nodiscard]] bool IsTotem() const { return m_unitTypeMask & UNIT_MASK_TOTEM; }
     [[nodiscard]] bool IsVehicle() const { return m_unitTypeMask & UNIT_MASK_VEHICLE; }
 
+    // Soul Keeper: identifies Summoned Soul guardians for guarded AI behavior changes
+    [[nodiscard]] bool IsSoulKeeperGuardian() const;
+
     // NPC type methods
     [[nodiscard]] bool IsVendor()       const { return HasNpcFlag(UNIT_NPC_FLAG_VENDOR); }
     [[nodiscard]] bool IsTrainer()      const { return HasNpcFlag(UNIT_NPC_FLAG_TRAINER); }

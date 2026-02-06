@@ -235,7 +235,6 @@ namespace LuaMap
      * @param uint32 zone : id of the zone to set the weather for
      * @param [WeatherType] type : the [WeatherType], see above available weather types
      * @param float grade : the intensity/grade of the [Weather], ranges from 0 to 1
-     * @return bool success : always true (no longer requires weather data in database)
      */
     int SetWeather(lua_State* L, Map* map)
     {
@@ -243,52 +242,10 @@ namespace LuaMap
         uint32 weatherType = ALE::CHECKVAL<uint32>(L, 3);
         float grade = ALE::CHECKVAL<float>(L, 4);
 
-        // Clamp grade to valid range
-        if (grade >= 1.0f)
-            grade = 0.9999f;
-        else if (grade < 0.0f)
-            grade = 0.0f;
-
-        // Convert WeatherType + grade -> WeatherState
-        // This mirrors the logic in Weather::GetWeatherState()
-        WeatherState state = WEATHER_STATE_FINE;
-        if (grade >= 0.27f)
-        {
-            switch ((WeatherType)weatherType)
-            {
-                case WEATHER_TYPE_RAIN:
-                    if (grade < 0.40f)
-                        state = WEATHER_STATE_LIGHT_RAIN;
-                    else if (grade < 0.70f)
-                        state = WEATHER_STATE_MEDIUM_RAIN;
-                    else
-                        state = WEATHER_STATE_HEAVY_RAIN;
-                    break;
-                case WEATHER_TYPE_SNOW:
-                    if (grade < 0.40f)
-                        state = WEATHER_STATE_LIGHT_SNOW;
-                    else if (grade < 0.70f)
-                        state = WEATHER_STATE_MEDIUM_SNOW;
-                    else
-                        state = WEATHER_STATE_HEAVY_SNOW;
-                    break;
-                case WEATHER_TYPE_STORM:
-                    if (grade < 0.40f)
-                        state = WEATHER_STATE_LIGHT_SANDSTORM;
-                    else if (grade < 0.70f)
-                        state = WEATHER_STATE_MEDIUM_SANDSTORM;
-                    else
-                        state = WEATHER_STATE_HEAVY_SANDSTORM;
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        // Use SetZoneWeather which works without weather data in database
-        map->SetZoneWeather(zoneId, state, grade);
-        ALE::Push(L, true);
-        return 1;
+        Weather* weather = map->GetOrGenerateZoneDefaultWeather(zoneId);
+        if (weather)
+            weather->SetWeather((WeatherType)weatherType, grade);
+        return 0;
     }
 
     /**

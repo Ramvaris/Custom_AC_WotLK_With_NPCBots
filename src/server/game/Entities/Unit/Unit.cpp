@@ -5889,13 +5889,32 @@ void Unit::RemoveAllAurasExceptType(AuraType type)
 }*/
 
 // Xinef: We should not remove passive auras on evade, if npc has player owner (scripted one cast auras)
-// Ramires: Soul Keeper guardians (UNIT_CREATED_BY_SPELL = 81100) keep ALL auras on evade for combat fairness
+// Ramires: Soul Keeper guardians keep ALL auras on evade for combat fairness
+bool Unit::IsSoulKeeperGuardian() const
+{
+    constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
+
+    if (GetUInt32Value(UNIT_CREATED_BY_SPELL) != SOUL_KEEPER_GUARDIAN_MARKER)
+        return false;
+
+    if (!IsGuardian())
+        return false;
+
+    ObjectGuid ownerGuid = GetOwnerGUID();
+    if (!ownerGuid || !ownerGuid.IsPlayer())
+        return false;
+
+    return true;
+}
+
+// Xinef: We should not remove passive auras on evade, if npc has player owner (scripted one cast auras)
+// Ramires: Soul Keeper guardians keep ALL auras on evade for combat fairness
 void Unit::RemoveEvadeAuras()
 {
     // Soul Keeper Guardian marker (81100 in UNIT_CREATED_BY_SPELL)
     // Skip ALL aura removal for these guardians to preserve buffs AND debuffs (fairness)
     // This marker is set only by mod-soul-keeper, not Hunter/Warlock pets or other summons
-    if (GetUInt32Value(UNIT_CREATED_BY_SPELL) == 81100)
+    if (IsSoulKeeperGuardian())
         return;
     
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)

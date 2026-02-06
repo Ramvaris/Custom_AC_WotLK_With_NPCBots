@@ -195,9 +195,25 @@ enum BattlegroundStatus
 };
 
 //npcbot
+/**
+ * @brief Battleground Bot data structure
+ *
+ * Holds bot-specific battleground data including team and virtual inventory
+ * for BG-specific collectibles (AV turn-in items, etc.)
+ */
 struct BattlegroundBot
 {
     TeamId Team;                                             // bot's team
+
+    // AV Virtual Inventory - items "collected" by bot for turn-in quests
+    // Bots physically collect these on kills and run to NPCs to turn in
+    uint8 AVArmorScraps {};           // For unit upgrades (turn in at smith)
+    uint8 AVBossMaterials {};         // Storm Crystals / Blood (turn in for Ivus/Lokholar)
+    uint8 AVCavalryHides {};          // Frostwolf/Alterac Ram hides
+    uint8 AVCavalryTames {};          // Tamed wolves/rams
+    uint8 AVMineSuppliesNear {};      // Supplies from team's near mine
+    uint8 AVMineSuppliesOther {};     // Supplies from other mine
+    uint32 AVTurninCooldown {};       // Prevents spam pathing to turn-in NPCs
 };
 //end npcbot
 
@@ -416,6 +432,7 @@ public:
     //npcbot
     typedef std::map<ObjectGuid, BattlegroundBot> BattlegroundBotMap;
     [[nodiscard]] BattlegroundBotMap const& GetBots() const { return m_Bots; }
+    BattlegroundBot* GetBotData(ObjectGuid guid) { auto it = m_Bots.find(guid); return it != m_Bots.end() ? &it->second : nullptr; }
     //end npcbot
     [[nodiscard]] BattlegroundPlayerMap const& GetPlayers() const { return m_Players; }
     [[nodiscard]] uint32 GetPlayersSize() const { return m_Players.size(); }

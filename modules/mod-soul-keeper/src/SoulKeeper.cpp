@@ -1723,6 +1723,10 @@ public:
         if (!ownerGuid || !ownerGuid.IsPlayer())
             return;
 
+        // Extra safety: ensure this is one of our Soul Keeper guardians
+        if (!creature->IsSoulKeeperGuardian())
+            return;
+
         uint32 ownerLow = ownerGuid.GetCounter();
         auto it = sSoulKeeper->_activeGuardians.find(ownerLow);
         if (it == sSoulKeeper->_activeGuardians.end() || it->second != creature->GetGUID())
@@ -1765,6 +1769,10 @@ public:
         // Only act if guardian is owned by player
         ObjectGuid ownerGuid = creature->GetOwnerGUID();
         if (!ownerGuid.IsPlayer()) 
+            return;
+
+        // Extra safety: ensure this is one of our Soul Keeper guardians
+        if (!creature->IsSoulKeeperGuardian())
             return;
         
         ObjectGuid guardianGuid = creature->GetGUID();

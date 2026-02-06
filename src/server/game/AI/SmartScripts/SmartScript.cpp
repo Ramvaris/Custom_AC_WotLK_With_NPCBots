@@ -684,8 +684,7 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
 
             // SOUL KEEPER GUARDIAN: Prevent self-buff spam (e.g., Enrage recasting every tick)
             // If this is a Soul Keeper guardian casting a positive self-buff it already has, skip.
-            constexpr uint32 SOUL_KEEPER_GUARDIAN_MARKER = 81100;
-            bool isSoulKeeperGuardian = me && me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SOUL_KEEPER_GUARDIAN_MARKER;
+            bool isSoulKeeperGuardian = me && me->IsSoulKeeperGuardian();
             if (isSoulKeeperGuardian)
             {
                 SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(e.action.cast.spell);

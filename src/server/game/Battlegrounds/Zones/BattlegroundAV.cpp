@@ -58,6 +58,10 @@ BattlegroundAV::BattlegroundAV()
         m_CaptainBuffTimer[i] = 0;
         m_Mine_Owner[i] = TEAM_NEUTRAL;
         m_Mine_Reclaim_Timer[i] = 0;
+        // Battle quest state initialization
+        m_UltimateUnitSummoned[i] = false;
+        m_CavalryDeployed[i] = false;
+        m_GroundAssaultLaunched[i] = false;
     }
 
     m_Mine_Timer = 0;
@@ -88,6 +92,12 @@ void BattlegroundAV::HandleKillPlayer(Player* player, Player* killer)
 }
 
 //npcbot
+/**
+ * @brief Handle bot killing a player - collect virtual loot for AV turn-in quests
+ *
+ * When bots kill players, they "loot" armor scraps and boss materials (crystals/blood)
+ * which accumulate in their virtual inventory until they run to turn-in NPCs
+ */
 void BattlegroundAV::HandleBotKillPlayer(Creature* killer, Player* victim)
 {
     if (GetStatus() != STATUS_IN_PROGRESS)
@@ -95,7 +105,28 @@ void BattlegroundAV::HandleBotKillPlayer(Creature* killer, Player* victim)
 
     Battleground::HandleBotKillPlayer(killer, victim);
     UpdateScore(victim->GetTeamId(), -1);
+
+    // Collect virtual loot for AV turn-in quests
+    BattlegroundBot* botData = GetBotData(killer->GetGUID());
+    if (botData)
+    {
+        // 60% chance to loot armor scraps (1-2 scraps per kill)
+        if (urand(1, 100) <= 60)
+        {
+            uint8 scraps = urand(1, 2);
+            botData->AVArmorScraps = std::min<uint8>(botData->AVArmorScraps + scraps, 20);  // Cap at 20
+        }
+        // 40% chance to loot boss materials (Storm Crystals / Frostwolf Blood)
+        if (urand(1, 100) <= 40)
+        {
+            botData->AVBossMaterials = std::min<uint8>(botData->AVBossMaterials + 1, 20);
+        }
+    }
 }
+
+/**
+ * @brief Handle bot killing another bot - collect virtual loot for AV turn-in quests
+ */
 void BattlegroundAV::HandleBotKillBot(Creature* killer, Creature* victim)
 {
     if (GetStatus() != STATUS_IN_PROGRESS)
@@ -103,6 +134,23 @@ void BattlegroundAV::HandleBotKillBot(Creature* killer, Creature* victim)
 
     Battleground::HandleBotKillBot(killer, victim);
     UpdateScore(GetBotTeamId(victim->GetGUID()), -1);
+
+    // Collect virtual loot
+    BattlegroundBot* botData = GetBotData(killer->GetGUID());
+    if (botData)
+    {
+        // 60% chance to loot armor scraps
+        if (urand(1, 100) <= 60)
+        {
+            uint8 scraps = urand(1, 2);
+            botData->AVArmorScraps = std::min<uint8>(botData->AVArmorScraps + scraps, 20);
+        }
+        // 40% chance to loot boss materials
+        if (urand(1, 100) <= 40)
+        {
+            botData->AVBossMaterials = std::min<uint8>(botData->AVBossMaterials + 1, 20);
+        }
+    }
 }
 void BattlegroundAV::HandlePlayerKillBot(Creature* victim, Player* killer)
 {
@@ -311,21 +359,21 @@ void BattlegroundAV::HandleQuestComplete(uint32 questid, Player* player)
             m_Team_QuestStatus[teamId][1]++;
             RewardReputationToTeam(teamId, uint32(1 * _avReputationRate), teamId);
             if (m_Team_QuestStatus[teamId][1] == 30)
-                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here", questid);
+                LOG_INFO("bg.battleground", "BG_AV Quest {} - Wing Commander flesh turn-in tier 1 complete for team {}", questid, teamId);
             break;
         case AV_QUEST_A_COMMANDER2:
         case AV_QUEST_H_COMMANDER2:
             m_Team_QuestStatus[teamId][2]++;
             RewardReputationToTeam(teamId, uint32(1 * _avReputationRate), teamId);
             if (m_Team_QuestStatus[teamId][2] == 60)
-                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here", questid);
+                LOG_INFO("bg.battleground", "BG_AV Quest {} - Wing Commander flesh turn-in tier 2 complete for team {}", questid, teamId);
             break;
         case AV_QUEST_A_COMMANDER3:
         case AV_QUEST_H_COMMANDER3:
             m_Team_QuestStatus[teamId][3]++;
             RewardReputationToTeam(teamId, uint32(1 * _avReputationRate), teamId);
             if (m_Team_QuestStatus[teamId][3] == 120)
-                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here", questid);
+                LOG_INFO("bg.battleground", "BG_AV Quest {} - Wing Commander flesh turn-in tier 3 complete (max) for team {}", questid, teamId);
             break;
         case AV_QUEST_A_BOSS1:
         case AV_QUEST_H_BOSS1:
@@ -334,57 +382,393 @@ void BattlegroundAV::HandleQuestComplete(uint32 questid, Player* player)
         case AV_QUEST_A_BOSS2:
         case AV_QUEST_H_BOSS2:
             m_Team_QuestStatus[teamId][4]++;
-            if (m_Team_QuestStatus[teamId][4] >= 200)
-                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here", questid);
+            if (m_Team_QuestStatus[teamId][4] >= AV_BOSS_SUMMON_THRESHOLD && !m_UltimateUnitSummoned[teamId])
+            {
+                LOG_INFO("bg.battleground", "BG_AV Quest {} completed - Summoning Ultimate Unit (Ivus/Lokholar) for team {}", questid, teamId);
+                SpawnUltimateUnit(teamId);
+            }
             break;
         case AV_QUEST_A_NEAR_MINE:
         case AV_QUEST_H_NEAR_MINE:
             m_Team_QuestStatus[teamId][5]++;
-            if (m_Team_QuestStatus[teamId][5] == 28)
+            if (m_Team_QuestStatus[teamId][5] >= AV_GROUND_ASSAULT_NEAR_MINE)
             {
-                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here", questid);
+                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed - Near mine supplies threshold reached", questid);
 
-                if (m_Team_QuestStatus[teamId][6] == 7)
-                    LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here - ground assault ready", questid);
+                if (m_Team_QuestStatus[teamId][6] >= AV_GROUND_ASSAULT_OTHER_MINE && !m_GroundAssaultLaunched[teamId])
+                {
+                    LOG_INFO("bg.battleground", "BG_AV Quest {} completed - Launching ground assault for team {}", questid, teamId);
+                    LaunchGroundAssault(teamId);
+                }
             }
             break;
         case AV_QUEST_A_OTHER_MINE:
         case AV_QUEST_H_OTHER_MINE:
             m_Team_QuestStatus[teamId][6]++;
-            if (m_Team_QuestStatus[teamId][6] == 7)
+            if (m_Team_QuestStatus[teamId][6] >= AV_GROUND_ASSAULT_OTHER_MINE)
             {
-                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here", questid);
+                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed - Other mine supplies threshold reached", questid);
 
-                if (m_Team_QuestStatus[teamId][5] == 20)
-                    LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here - ground assault ready", questid);
+                if (m_Team_QuestStatus[teamId][5] >= AV_GROUND_ASSAULT_NEAR_MINE && !m_GroundAssaultLaunched[teamId])
+                {
+                    LOG_INFO("bg.battleground", "BG_AV Quest {} completed - Launching ground assault for team {}", questid, teamId);
+                    LaunchGroundAssault(teamId);
+                }
             }
             break;
         case AV_QUEST_A_RIDER_HIDE:
         case AV_QUEST_H_RIDER_HIDE:
             m_Team_QuestStatus[teamId][7]++;
-            if (m_Team_QuestStatus[teamId][7] == 25)
+            if (m_Team_QuestStatus[teamId][7] >= AV_CAVALRY_HIDE_THRESHOLD)
             {
-                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here", questid);
+                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed - Cavalry hides threshold reached", questid);
 
-                if (m_Team_QuestStatus[teamId][8] == 25)
-                    LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here - rider assault ready", questid);
+                if (m_Team_QuestStatus[teamId][8] >= AV_CAVALRY_TAME_THRESHOLD && !m_CavalryDeployed[teamId])
+                {
+                    LOG_INFO("bg.battleground", "BG_AV Quest {} completed - Launching cavalry assault for team {}", questid, teamId);
+                    LaunchCavalryAssault(teamId);
+                }
             }
             break;
         case AV_QUEST_A_RIDER_TAME:
         case AV_QUEST_H_RIDER_TAME:
             m_Team_QuestStatus[teamId][8]++;
-            if (m_Team_QuestStatus[teamId][8] == 25)
+            if (m_Team_QuestStatus[teamId][8] >= AV_CAVALRY_TAME_THRESHOLD)
             {
-                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here", questid);
+                LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed - Cavalry tames threshold reached", questid);
 
-                if (m_Team_QuestStatus[teamId][7] == 25)
-                    LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed (need to implement some events here - rider assault ready", questid);
+                if (m_Team_QuestStatus[teamId][7] >= AV_CAVALRY_HIDE_THRESHOLD && !m_CavalryDeployed[teamId])
+                {
+                    LOG_INFO("bg.battleground", "BG_AV Quest {} completed - Launching cavalry assault for team {}", questid, teamId);
+                    LaunchCavalryAssault(teamId);
+                }
             }
             break;
         default:
             LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed but is not interesting at all", questid);
             return; //was no interesting quest at all
             break;
+    }
+}
+
+/**
+ * @brief Bot-friendly quest completion that doesn't require a Player reference
+ *
+ * This version is used by the active bot collection system to credit turn-ins
+ * and trigger threshold events (Ivus/Lokholar, cavalry, ground assault).
+ * It does NOT add items to m_Team_QuestStatus - that's done by the caller.
+ * This function only checks thresholds and triggers spawns.
+ *
+ * @param questid The quest type being completed
+ * @param teamId The team completing the turn-in
+ */
+void BattlegroundAV::HandleQuestCompleteForTeam(uint32 questid, TeamId teamId)
+{
+    if (GetStatus() != STATUS_IN_PROGRESS)
+        return;
+
+    LOG_DEBUG("bg.battleground", "BG_AV Quest {} completed by bot for team {}", questid, teamId);
+
+    switch (questid)
+    {
+        case AV_QUEST_A_SCRAPS1:
+        case AV_QUEST_A_SCRAPS2:
+        case AV_QUEST_H_SCRAPS1:
+        case AV_QUEST_H_SCRAPS2:
+            // Note: Scraps already added by caller in ProcessBotTurnins
+            // Check for upgrade thresholds (500, 1000, 1500)
+            if ((m_Team_QuestStatus[teamId][0] >= 500 && m_Team_QuestStatus[teamId][0] < 520) ||
+                (m_Team_QuestStatus[teamId][0] >= 1000 && m_Team_QuestStatus[teamId][0] < 1020) ||
+                (m_Team_QuestStatus[teamId][0] >= 1500 && m_Team_QuestStatus[teamId][0] < 1520))
+            {
+                LOG_DEBUG("bg.battleground", "BG_AV: Scraps threshold reached - upgrading units for team {}", teamId);
+                for (BG_AV_Nodes i = BG_AV_NODES_FIRSTAID_STATION; i <= BG_AV_NODES_FROSTWOLF_HUT; ++i)
+                    if (m_Nodes[i].OwnerId == teamId && m_Nodes[i].State == POINT_CONTROLLED)
+                    {
+                        DePopulateNode(i);
+                        PopulateNode(i);
+                    }
+            }
+            break;
+        case AV_QUEST_A_BOSS1:
+        case AV_QUEST_H_BOSS1:
+        case AV_QUEST_A_BOSS2:
+        case AV_QUEST_H_BOSS2:
+            // Note: Boss materials already added by caller
+            if (m_Team_QuestStatus[teamId][4] >= AV_BOSS_SUMMON_THRESHOLD && !m_UltimateUnitSummoned[teamId])
+            {
+                LOG_INFO("bg.battleground", "BG_AV: Bot turn-ins triggered ultimate unit spawn for team {}", teamId);
+                SpawnUltimateUnit(teamId);
+            }
+            break;
+        case AV_QUEST_A_NEAR_MINE:
+        case AV_QUEST_H_NEAR_MINE:
+            if (m_Team_QuestStatus[teamId][5] >= AV_GROUND_ASSAULT_NEAR_MINE &&
+                m_Team_QuestStatus[teamId][6] >= AV_GROUND_ASSAULT_OTHER_MINE &&
+                !m_GroundAssaultLaunched[teamId])
+            {
+                LaunchGroundAssault(teamId);
+            }
+            break;
+        case AV_QUEST_A_OTHER_MINE:
+        case AV_QUEST_H_OTHER_MINE:
+            if (m_Team_QuestStatus[teamId][6] >= AV_GROUND_ASSAULT_OTHER_MINE &&
+                m_Team_QuestStatus[teamId][5] >= AV_GROUND_ASSAULT_NEAR_MINE &&
+                !m_GroundAssaultLaunched[teamId])
+            {
+                LaunchGroundAssault(teamId);
+            }
+            break;
+        case AV_QUEST_A_RIDER_HIDE:
+        case AV_QUEST_H_RIDER_HIDE:
+            if (m_Team_QuestStatus[teamId][7] >= AV_CAVALRY_HIDE_THRESHOLD &&
+                m_Team_QuestStatus[teamId][8] >= AV_CAVALRY_TAME_THRESHOLD &&
+                !m_CavalryDeployed[teamId])
+            {
+                LaunchCavalryAssault(teamId);
+            }
+            break;
+        case AV_QUEST_A_RIDER_TAME:
+        case AV_QUEST_H_RIDER_TAME:
+            if (m_Team_QuestStatus[teamId][8] >= AV_CAVALRY_TAME_THRESHOLD &&
+                m_Team_QuestStatus[teamId][7] >= AV_CAVALRY_HIDE_THRESHOLD &&
+                !m_CavalryDeployed[teamId])
+            {
+                LaunchCavalryAssault(teamId);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+/**
+ * @brief Spawns the ultimate unit (Ivus or Lokholar) for the specified team
+ *
+ * This is triggered when 200 Storm Crystals (Alliance) or 200 Stormpike Soldier's Blood (Horde)
+ * have been turned in. The elemental spawns in the Field of Strife and marches towards the enemy base.
+ *
+ * @param teamId TEAM_ALLIANCE spawns Ivus the Forest Lord, TEAM_HORDE spawns Lokholar the Ice Lord
+ */
+void BattlegroundAV::SpawnUltimateUnit(TeamId teamId)
+{
+    if (m_UltimateUnitSummoned[teamId])
+    {
+        LOG_DEBUG("bg.battleground", "BG_AV SpawnUltimateUnit: Ultimate unit already summoned for team {}", teamId);
+        return;
+    }
+
+    m_UltimateUnitSummoned[teamId] = true;
+
+    uint32 npcEntry = (teamId == TEAM_ALLIANCE) ? AV_NPC_IVUS_THE_FOREST_LORD : AV_NPC_LOKHOLAR_THE_ICE_LORD;
+
+    // Spawn in the Field of Strife (center of battleground)
+    // Ivus faces towards Horde (south), Lokholar faces towards Alliance (north)
+    float orientation = (teamId == TEAM_ALLIANCE) ? 4.71239f : 1.5708f;
+
+    if (Creature* ultimateUnit = AddCreature(npcEntry,
+                                              static_cast<uint16>(AV_CPLACE_MAX) + AV_STATICCPLACE_MAX - 2 + teamId, // Use reserved slots at the end
+                                              AV_ULTIMATE_UNIT_SPAWN_POS[0],
+                                              AV_ULTIMATE_UNIT_SPAWN_POS[1],
+                                              AV_ULTIMATE_UNIT_SPAWN_POS[2],
+                                              orientation))
+    {
+        // Set faction for AI targeting (Alliance = 1216 faction, Horde = 1214 faction for AV)
+        ultimateUnit->SetFaction(teamId == TEAM_ALLIANCE ? 1216 : 1214);
+
+        // Play sound to announce the summoning
+        PlaySoundToAll(teamId == TEAM_ALLIANCE ? AV_SOUND_ALLIANCE_GOOD : AV_SOUND_HORDE_GOOD);
+
+        LOG_INFO("bg.battleground", "BG_AV: {} spawned for team {} at ({}, {}, {})",
+                 teamId == TEAM_ALLIANCE ? "Ivus the Forest Lord" : "Lokholar the Ice Lord",
+                 teamId, AV_ULTIMATE_UNIT_SPAWN_POS[0], AV_ULTIMATE_UNIT_SPAWN_POS[1], AV_ULTIMATE_UNIT_SPAWN_POS[2]);
+    }
+    else
+    {
+        LOG_ERROR("bg.battleground", "BG_AV: Failed to spawn ultimate unit {} for team {}", npcEntry, teamId);
+        m_UltimateUnitSummoned[teamId] = false; // Reset so it can be tried again
+    }
+}
+
+/**
+ * @brief Launches the cavalry assault for the specified team
+ *
+ * This is triggered when 25 hides and 25 tamed mounts have been turned in.
+ * Spawns a squad of mounted assault troops.
+ *
+ * @param teamId TEAM_ALLIANCE spawns Ram Riders, TEAM_HORDE spawns Wolf Riders
+ */
+void BattlegroundAV::LaunchCavalryAssault(TeamId teamId)
+{
+    if (m_CavalryDeployed[teamId])
+    {
+        LOG_DEBUG("bg.battleground", "BG_AV LaunchCavalryAssault: Cavalry already deployed for team {}", teamId);
+        return;
+    }
+
+    m_CavalryDeployed[teamId] = true;
+
+    // Spawn positions for cavalry - offset from ultimate unit spawn point
+    float baseX = AV_ULTIMATE_UNIT_SPAWN_POS[0];
+    float baseY = AV_ULTIMATE_UNIT_SPAWN_POS[1] + (teamId == TEAM_ALLIANCE ? -30.0f : 30.0f);
+    float baseZ = AV_ULTIMATE_UNIT_SPAWN_POS[2];
+
+    uint32 npcEntry = (teamId == TEAM_ALLIANCE) ? AV_NPC_STORMPIKE_RAM_RIDER : AV_NPC_FROSTWOLF_WOLF_RIDER;
+
+    // Spawn 5 cavalry units in a formation
+    for (uint8 i = 0; i < 5; ++i)
+    {
+        float offsetX = (i % 3) * 5.0f - 5.0f;
+        float offsetY = (i / 3) * 5.0f;
+
+        AddCreature(npcEntry,
+                    static_cast<uint16>(AV_CPLACE_MAX) + AV_STATICCPLACE_MAX + 10 + teamId * 10 + i, // Unique slots
+                    baseX + offsetX,
+                    baseY + offsetY,
+                    baseZ,
+                    teamId == TEAM_ALLIANCE ? 4.71239f : 1.5708f);
+    }
+
+    PlaySoundToAll(teamId == TEAM_ALLIANCE ? AV_SOUND_ALLIANCE_GOOD : AV_SOUND_HORDE_GOOD);
+
+    LOG_INFO("bg.battleground", "BG_AV: Cavalry assault ({}) launched for team {}",
+             teamId == TEAM_ALLIANCE ? "Ram Riders" : "Wolf Riders", teamId);
+}
+
+/**
+ * @brief Launches the ground assault for the specified team
+ *
+ * This is triggered when mine supplies have been collected (28 from near mine, 7 from far mine).
+ * Sends additional ground troops to reinforce the assault.
+ *
+ * @param teamId The team launching the ground assault
+ */
+void BattlegroundAV::LaunchGroundAssault(TeamId teamId)
+{
+    if (m_GroundAssaultLaunched[teamId])
+    {
+        LOG_DEBUG("bg.battleground", "BG_AV LaunchGroundAssault: Ground assault already launched for team {}", teamId);
+        return;
+    }
+
+    m_GroundAssaultLaunched[teamId] = true;
+
+    // For ground assault, we upgrade the defenses at controlled graveyards
+    // This simulates the reinforcement effect from mine supplies
+    for (BG_AV_Nodes i = BG_AV_NODES_FIRSTAID_STATION; i <= BG_AV_NODES_FROSTWOLF_HUT; ++i)
+    {
+        if (m_Nodes[i].OwnerId == teamId && m_Nodes[i].State == POINT_CONTROLLED)
+        {
+            DePopulateNode(i);
+            PopulateNode(i);
+        }
+    }
+
+    PlaySoundToAll(teamId == TEAM_ALLIANCE ? AV_SOUND_ALLIANCE_GOOD : AV_SOUND_HORDE_GOOD);
+
+    LOG_INFO("bg.battleground", "BG_AV: Ground assault launched for team {} - node defenses refreshed", teamId);
+}
+
+/**
+ * @brief Processes bot turn-ins for AV battle quests
+ *
+ * Active collection system: Bots that have accumulated virtual items (armor scraps,
+ * boss materials, etc.) from kills will turn them in when near the appropriate NPCs.
+ * This creates realistic behavior where bots physically participate in the turn-in economy.
+ *
+ * Turn-in NPCs by faction:
+ *   Alliance: Murgot Deepforge (scraps), Arch Druid Renferal (boss materials)
+ *   Horde: Smith Regzar (scraps), Primalist Thurloga (boss materials)
+ *
+ * @param diff Time delta in ms
+ */
+void BattlegroundAV::ProcessBotTurnins(uint32 diff)
+{
+    // Throttle proximity checks to every 2 seconds
+    if (m_BotTurninCheckTimer > diff)
+    {
+        m_BotTurninCheckTimer -= diff;
+        return;
+    }
+    m_BotTurninCheckTimer = 2000;
+
+    for (auto& [guid, botData] : m_Bots)
+    {
+        // Skip if bot has nothing to turn in
+        if (botData.AVArmorScraps == 0 && botData.AVBossMaterials == 0)
+            continue;
+
+        // Skip if on cooldown (prevents spam)
+        if (botData.AVTurninCooldown > 0)
+        {
+            botData.AVTurninCooldown = botData.AVTurninCooldown > 2000 ? botData.AVTurninCooldown - 2000 : 0;
+            continue;
+        }
+
+        Creature* bot = GetBgMap()->GetCreature(guid);
+        if (!bot || !bot->IsAlive())
+            continue;
+
+        float botX = bot->GetPositionX();
+        float botY = bot->GetPositionY();
+        float botZ = bot->GetPositionZ();
+
+        // Get turn-in positions based on team
+        const float* scrapsPos = (botData.Team == TEAM_ALLIANCE) ? AV_TURNIN_POS_ALLIANCE_SCRAPS : AV_TURNIN_POS_HORDE_SCRAPS;
+        const float* bossPos = (botData.Team == TEAM_ALLIANCE) ? AV_TURNIN_POS_ALLIANCE_BOSS : AV_TURNIN_POS_HORDE_BOSS;
+
+        // Check proximity to scraps turn-in NPC
+        if (botData.AVArmorScraps > 0)
+        {
+            float distScraps = std::sqrt(
+                (botX - scrapsPos[0]) * (botX - scrapsPos[0]) +
+                (botY - scrapsPos[1]) * (botY - scrapsPos[1]) +
+                (botZ - scrapsPos[2]) * (botZ - scrapsPos[2]));
+
+            if (distScraps <= scrapsPos[3]) // Within interaction range
+            {
+                uint8 turninAmount = botData.AVArmorScraps;
+                botData.AVArmorScraps = 0;
+                botData.AVTurninCooldown = 30000; // 30 second cooldown
+
+                // Credit the scraps to the team
+                // m_Team_QuestStatus[teamId][0] = current scraps count
+                m_Team_QuestStatus[botData.Team][0] += turninAmount;
+
+                // Call HandleQuestCompleteForTeam to trigger any threshold events
+                HandleQuestCompleteForTeam(botData.Team == TEAM_ALLIANCE ? AV_QUEST_A_SCRAPS2 : AV_QUEST_H_SCRAPS2, botData.Team);
+
+                LOG_DEBUG("bg.battleground", "BG_AV Bot {} turned in {} armor scraps for team {}",
+                          bot->GetName(), turninAmount, botData.Team);
+                continue; // Only one turn-in per cycle
+            }
+        }
+
+        // Check proximity to boss materials turn-in NPC
+        if (botData.AVBossMaterials > 0)
+        {
+            float distBoss = std::sqrt(
+                (botX - bossPos[0]) * (botX - bossPos[0]) +
+                (botY - bossPos[1]) * (botY - bossPos[1]) +
+                (botZ - bossPos[2]) * (botZ - bossPos[2]));
+
+            if (distBoss <= bossPos[3]) // Within interaction range
+            {
+                uint8 turninAmount = botData.AVBossMaterials;
+                botData.AVBossMaterials = 0;
+                botData.AVTurninCooldown = 30000;
+
+                // Credit boss materials to the team
+                // m_Team_QuestStatus[teamId][4] = current boss material count (crystals/blood)
+                m_Team_QuestStatus[botData.Team][4] += turninAmount;
+
+                // Call HandleQuestCompleteForTeam to trigger Ivus/Lokholar spawn if threshold met
+                HandleQuestCompleteForTeam(botData.Team == TEAM_ALLIANCE ? AV_QUEST_A_BOSS2 : AV_QUEST_H_BOSS2, botData.Team);
+
+                LOG_DEBUG("bg.battleground", "BG_AV Bot {} turned in {} boss materials for team {}",
+                          bot->GetName(), turninAmount, botData.Team);
+            }
+        }
     }
 }
 
@@ -516,6 +900,9 @@ void BattlegroundAV::PostUpdateImpl(uint32 diff)
 {
     if (GetStatus() == STATUS_IN_PROGRESS)
     {
+        // Process bot turn-ins (active AV collection system)
+        ProcessBotTurnins(diff);
+
         for (uint8 i = 0; i <= 1; i++) //0=alliance, 1=horde
         {
             if (!m_CaptainAlive[i])
