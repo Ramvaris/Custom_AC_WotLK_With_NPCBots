@@ -4,11 +4,9 @@
 # Solo Sustain Module Configuration
 # Author: Ramvaris
 # 
-# Passive life and mana leech based on player damage dealt.
-# Player heals themselves AND their pets/guardians from their own damage.
-# 
-# Design: Player deals damage → Player heals → Pet/Guardian also heals
-# Pets/Guardians do NOT trigger leech from their own damage.
+# Passive life and mana leech based on ALL damage dealt.
+# ALL sources sustain: direct hits, DoT ticks, pet/guardian damage.
+# Player + their minions all receive healing from the leech.
 ########################################
 
 # Enable/Disable the module

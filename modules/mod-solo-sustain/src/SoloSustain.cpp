@@ -2,11 +2,9 @@
  * Solo Sustain Module
  * Author: Ramvaris
  * 
- * Passive life and mana leech based on player damage dealt.
- * Player heals themselves AND their active pets/guardians from their own damage.
- * 
- * Design: Player deals damage → Player heals → Pet/Guardian also heals
- * Pets/Guardians do NOT trigger leech from their own damage.
+ * Passive life and mana leech based on damage dealt by player AND their minions.
+ * ALL damage sources sustain the player: direct hits, DoT ticks, pet melee/spells.
+ * Player's pets and guardians also receive healing from the leech.
  */
 
 #include "ScriptMgr.h"
@@ -51,8 +49,16 @@ public:
         if (!_config.enabled || !attacker || !victim || victim == attacker || damage == 0)
             return;
         
-        // ONLY player damage triggers leech (not pet/guardian damage)
+        // Resolve the actual player: For direct damage, attacker IS the player.
+        // For pet/guardian damage, attacker is the pet — resolve via GetOwner().
+        // For DoT/HoT ticks, attacker is always the caster (player).
         Player* player = attacker->ToPlayer();
+        if (!player)
+        {
+            // Pet/Guardian damage: resolve owner for pet sustain
+            if (Unit* owner = attacker->GetOwner())
+                player = owner->ToPlayer();
+        }
         if (!player || !player->IsAlive())
             return;
         
