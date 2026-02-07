@@ -20,7 +20,6 @@
 constexpr uint32 DEFAULT_HEAL_SPELL_ID = 81009;
 constexpr uint32 DEFAULT_MANA_SPELL_ID = 81012;
 constexpr uint32 FALLBACK_HEAL_SPELL_ID = 15286;
-constexpr uint32 FALLBACK_MANA_SPELL_ID = 57669;
 
 struct SoloSustainConfig
 {
@@ -93,8 +92,7 @@ public:
         }
         
         // === HEAL PET (if enabled) ===
-        // SILENT: Direct health/mana modification — no combat log entries.
-        // Only the player's heal/mana shows in scrolling battle text.
+        // Uses HealBySpell/EnergizeBySpell for proper combat log + scrolling battle text.
         if (_config.petEnabled)
         {
             if (Pet* pet = player->GetPet())
@@ -106,23 +104,22 @@ public:
                     uint32 petHealAmount = static_cast<uint32>(healAmount * petHealthMult);
                     uint32 petManaAmount = static_cast<uint32>(manaAmount * petManaMult);
                     
-                    if (petHealAmount > 0)
+                    if (petHealAmount > 0 && healSpellInfo)
                     {
-                        uint32 newHp = std::min(pet->GetHealth() + petHealAmount, pet->GetMaxHealth());
-                        pet->SetHealth(newHp);
+                        HealInfo petHeal(pet, pet, petHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
+                        pet->HealBySpell(petHeal);
                     }
                     
                     if (petManaAmount > 0 && pet->GetMaxPower(POWER_MANA) > 0)
                     {
-                        uint32 newMana = std::min(pet->GetPower(POWER_MANA) + petManaAmount, pet->GetMaxPower(POWER_MANA));
-                        pet->SetPower(POWER_MANA, newMana);
+                        pet->EnergizeBySpell(pet, _config.manaSpellId, petManaAmount, POWER_MANA);
                     }
                 }
             }
         }
         
         // === HEAL GUARDIANS (if enabled) ===
-        // SILENT: Direct health/mana modification — no combat log entries.
+        // Uses HealBySpell/EnergizeBySpell for proper combat log + scrolling battle text.
         if (_config.guardianEnabled && !player->m_Controlled.empty())
         {
             float guardHealthMult = _config.guardianHealthMultiplier[playerClass];
@@ -139,16 +136,15 @@ public:
                 if (!controlled->IsGuardian())
                     continue;
                 
-                if (guardHealAmount > 0)
+                if (guardHealAmount > 0 && healSpellInfo)
                 {
-                    uint32 newHp = std::min(controlled->GetHealth() + guardHealAmount, controlled->GetMaxHealth());
-                    controlled->SetHealth(newHp);
+                    HealInfo guardHeal(controlled, controlled, guardHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
+                    controlled->HealBySpell(guardHeal);
                 }
                 
                 if (guardManaAmount > 0 && controlled->GetMaxPower(POWER_MANA) > 0)
                 {
-                    uint32 newMana = std::min(controlled->GetPower(POWER_MANA) + guardManaAmount, controlled->GetMaxPower(POWER_MANA));
-                    controlled->SetPower(POWER_MANA, newMana);
+                    controlled->EnergizeBySpell(controlled, _config.manaSpellId, guardManaAmount, POWER_MANA);
                 }
             }
         }
