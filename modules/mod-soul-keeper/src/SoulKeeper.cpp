@@ -789,9 +789,13 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
 // - Mana: 70% of owner
 // - Armor: 35% of owner
 // - Resistances: 40% of owner (all schools)
-// - Damage: max(MeleeAP, RangedAP, SpellPower) / 14 = bonusDPS
+// - Damage: max(MeleeAP, RangedAP, SpellPower) ratio → targetDPS → per-hit via attack speed
+// - Spells: Same DPS formula, normalized to max(castTime, attackSpeed) per hit
+// - DoTs/HoTs: 15% of DPS/HPS * tickInterval (supplemental, not primary)
+// - Shields: 3.0s of HPS (one big hit worth of absorb)
 // - Avoidance: Standard 75% AoE damage reduction
 // - Level: Set to owner level (critical for spell hit/resist calculations!)
+// - STR: Zeroed (prevents Guardian AP formula from adding unintended melee bonus)
 // =============================================================================
 void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
 {
@@ -856,6 +860,13 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
         guardian->SetStatFlatModifier(UnitMods(UNIT_MOD_RESISTANCE_START + school), BASE_VALUE, (float)guardianResist);
         guardian->SetResistance(SpellSchools(school), guardianResist);
     }
+
+    // === ZERO STR/AGI: Prevent Guardian::UpdateAttackPowerAndDamage from adding unintended AP ===
+    // Guardian AP formula: val = 2 * STR - 20. Setting STR=10 gives AP=0.
+    // Without this, melee damage = our weapon damage + creature-template-STR-based AP,
+    // making some guardians hit harder than others based on their template stats.
+    guardian->SetStat(STAT_STRENGTH, 10);
+    guardian->SetStat(STAT_AGILITY, 0);
 
     // === DAMAGE SCALING ===
     // Get owner's stats (melee AP, ranged AP, spell power)
@@ -980,39 +991,49 @@ void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
     // === MAINHAND WEAPON DAMAGE ===
     guardian->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, meleeDamagePerHit * 0.9f);
     guardian->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, meleeDamagePerHit * 1.1f);
+    // NOTE: Guardian::UpdateAttackPowerAndDamage(false) recalculates AP from STR.
+    // With STR=10 (above), AP = 2*10-20 = 0, so no unintended AP bonus.
     guardian->UpdateAttackPowerAndDamage(false);
     guardian->UpdateDamagePhysical(BASE_ATTACK);
     
     // === OFFHAND WEAPON DAMAGE (for dual-wielders) ===
-    // Check if creature actually has offhand capability
+    // NOTE: Guardian::UpdateDamagePhysical(OFF_ATTACK) is a no-op (returns for attType > BASE_ATTACK).
+    // We set weapon damage here for CalculateDamage() calls, then override via SetStatFloatValue below.
     if (guardian->GetAttackTime(OFF_ATTACK) > 0)
     {
         guardian->SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, offhandDamagePerHit * 0.9f);
         guardian->SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, offhandDamagePerHit * 1.1f);
-        guardian->UpdateDamagePhysical(OFF_ATTACK);
     }
     
     // === RANGED WEAPON DAMAGE ===
+    // NOTE: Guardian::UpdateAttackPowerAndDamage(true) returns immediately for ranged (no-op).
+    // Guardian::UpdateDamagePhysical(RANGED_ATTACK) also returns for attType > BASE_ATTACK.
+    // We set weapon damage here for CalculateDamage() calls, then override via SetStatFloatValue below.
     guardian->SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, rangedDamagePerHit * 0.9f);
     guardian->SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, rangedDamagePerHit * 1.1f);
-    guardian->UpdateAttackPowerAndDamage(true);  // true = ranged
-    guardian->UpdateDamagePhysical(RANGED_ATTACK);
     
     // Verify final values are set (safety net for client display)
     guardian->SetStatFloatValue(UNIT_FIELD_MINDAMAGE, meleeDamagePerHit * 0.9f);
     guardian->SetStatFloatValue(UNIT_FIELD_MAXDAMAGE, meleeDamagePerHit * 1.1f);
     guardian->SetStatFloatValue(UNIT_FIELD_MINRANGEDDAMAGE, rangedDamagePerHit * 0.9f);
     guardian->SetStatFloatValue(UNIT_FIELD_MAXRANGEDDAMAGE, rangedDamagePerHit * 1.1f);
+    if (guardian->GetAttackTime(OFF_ATTACK) > 0)
+    {
+        guardian->SetStatFloatValue(UNIT_FIELD_MINOFFHANDDAMAGE, offhandDamagePerHit * 0.9f);
+        guardian->SetStatFloatValue(UNIT_FIELD_MAXOFFHANDDAMAGE, offhandDamagePerHit * 1.1f);
+    }
     guardian->SetMaxHealth(finalHealth);
     guardian->SetHealth(finalHealth);
 
     // === SPELL DAMAGE SCALING INFO ===
-    // Store pre-calculated gear ratio for spell damage scaling in hooks.
+    // Store pre-calculated gear ratio and attack speed for spell damage scaling in hooks.
     // Spell hooks use gearRatio directly (already normalized, no division needed).
+    // baseAttackTimeMs is used as minimum normalization (prevents ranged spell underdamage).
     GuardianScalingInfo scalingInfo;
-    scalingInfo.gearRatio = gearRatio;  // Pre-calculated, ready to use
+    scalingInfo.gearRatio = gearRatio;
     scalingInfo.creatureLevel = guardian->GetCreatureTemplate()->maxlevel;
     scalingInfo.ownerLevel = ownerLevel;
+    scalingInfo.baseAttackTimeMs = guardian->GetAttackTime(BASE_ATTACK);
     _guardianScaling[guardian->GetGUID()] = scalingInfo;
 }
 
@@ -1078,6 +1099,10 @@ void SoulKeeper::ScaleSummonedHelper(Creature* helper, Player* owner)
     }
 
     // === DAMAGE SCALING ===
+    // Zero STR to prevent AP contamination (same reason as ScaleGuardian)
+    helper->SetStat(STAT_STRENGTH, 10);
+    helper->SetStat(STAT_AGILITY, 0);
+
     float meleeAP  = owner->GetTotalAttackPowerValue(BASE_ATTACK);
     float rangedAP = owner->GetTotalAttackPowerValue(RANGED_ATTACK);
     float maxSP    = 0.0f;
@@ -1185,22 +1210,26 @@ void SoulKeeper::ScaleSummonedHelper(Creature* helper, Player* owner)
     helper->UpdateAttackPowerAndDamage(false);
     helper->UpdateDamagePhysical(BASE_ATTACK);
 
+    // NOTE: Guardian::UpdateDamagePhysical for OFF/RANGED is a no-op.
+    // We set weapon damage for CalculateDamage() and override display via SetStatFloatValue.
     if (helper->GetAttackTime(OFF_ATTACK) > 0)
     {
         helper->SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, offhandDamagePerHit * 0.9f);
         helper->SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, offhandDamagePerHit * 1.1f);
-        helper->UpdateDamagePhysical(OFF_ATTACK);
     }
 
     helper->SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, rangedDamagePerHit * 0.9f);
     helper->SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, rangedDamagePerHit * 1.1f);
-    helper->UpdateAttackPowerAndDamage(true);
-    helper->UpdateDamagePhysical(RANGED_ATTACK);
 
     helper->SetStatFloatValue(UNIT_FIELD_MINDAMAGE, meleeDamagePerHit * 0.9f);
     helper->SetStatFloatValue(UNIT_FIELD_MAXDAMAGE, meleeDamagePerHit * 1.1f);
     helper->SetStatFloatValue(UNIT_FIELD_MINRANGEDDAMAGE, rangedDamagePerHit * 0.9f);
     helper->SetStatFloatValue(UNIT_FIELD_MAXRANGEDDAMAGE, rangedDamagePerHit * 1.1f);
+    if (helper->GetAttackTime(OFF_ATTACK) > 0)
+    {
+        helper->SetStatFloatValue(UNIT_FIELD_MINOFFHANDDAMAGE, offhandDamagePerHit * 0.9f);
+        helper->SetStatFloatValue(UNIT_FIELD_MAXOFFHANDDAMAGE, offhandDamagePerHit * 1.1f);
+    }
     helper->SetMaxHealth(finalHealth);
     helper->SetHealth(finalHealth);
 
@@ -1212,6 +1241,7 @@ void SoulKeeper::ScaleSummonedHelper(Creature* helper, Player* owner)
     scalingInfo.gearRatio = gearRatio * helperDamageScale;
     scalingInfo.creatureLevel = helper->GetCreatureTemplate()->maxlevel;
     scalingInfo.ownerLevel = ownerLevel;
+    scalingInfo.baseAttackTimeMs = helper->GetAttackTime(BASE_ATTACK);
     _guardianScaling[helper->GetGUID()] = scalingInfo;
 }
 
@@ -2220,15 +2250,20 @@ public:
 
     // === SPELL DAMAGE SCALING ===
     // Uses same level-bracket DPS formula as melee.
-    // SpellDamage = DPS * castTimeSeconds (instant = 1.0s GCD equivalent)
+    // SpellDamage = DPS * max(castTime, attackSpeed) — ensures ranged Shoot spells
+    // hit AT LEAST as hard as a melee auto-attack swing.
     // Target: 25% of owner DPS at all levels
     void ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage, SpellInfo const* spellInfo) override
     {
         if (!attacker || !target || damage <= 0)
             return;
 
-        // Percent-based damage already scales with target/weapon - do not override
-        if (spellInfo && spellInfo->HasEffect(SPELL_EFFECT_WEAPON_PERCENT_DAMAGE))
+        // Weapon-based damage uses our scaled weapon damage directly — do not override.
+        // These spells read from UNIT_FIELD_MINDAMAGE/MAXDAMAGE (which we already set).
+        if (spellInfo && (spellInfo->HasEffect(SPELL_EFFECT_WEAPON_PERCENT_DAMAGE) ||
+                          spellInfo->HasEffect(SPELL_EFFECT_WEAPON_DAMAGE) ||
+                          spellInfo->HasEffect(SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL) ||
+                          spellInfo->HasEffect(SPELL_EFFECT_NORMALIZED_WEAPON_DMG)))
             return;
 
         Creature* attackerCreature = attacker->ToCreature();
@@ -2259,15 +2294,23 @@ public:
         // Use pre-calculated gear ratio directly (no more division)
         float totalDPS = targetDPS * info.gearRatio;
         
-        // Spell damage = DPS * cast time
-        // Instant spells (0ms cast) count as 1.0s matching GCD
-        float castTimeSeconds = 1.0f;
+        // === ATTACK SPEED NORMALIZATION ===
+        // Use creature's base attack speed as MINIMUM cast time normalization.
+        // This ensures ranged Shoot spells (instant/short-cast) hit AT LEAST
+        // as hard as a melee auto-attack swing. Longer-cast spells still get
+        // proportionally more damage (rewarding the cast time investment).
+        //
+        // Without this: instant Shoot = totalDPS * 1.0, melee swing = totalDPS * 2.0 → 50% DPS
+        // With this: instant Shoot = totalDPS * 2.0, melee swing = totalDPS * 2.0 → equal DPS
+        float attackTimeSeconds = info.baseAttackTimeMs / 1000.0f;
+        if (attackTimeSeconds <= 0.0f) attackTimeSeconds = 2.0f;
+        
+        float castTimeSeconds = attackTimeSeconds; // Default: match melee swing damage
         if (spellInfo)
         {
             float rawCastTime = spellInfo->CalcCastTime() / 1000.0f;
-            if (rawCastTime > 0.0f)
-                castTimeSeconds = rawCastTime;
-            // else: instant spell, keep 1.0s default
+            if (rawCastTime > attackTimeSeconds)
+                castTimeSeconds = rawCastTime; // Longer cast = proportionally more damage
         }
         
         damage = (int32)(totalDPS * castTimeSeconds);

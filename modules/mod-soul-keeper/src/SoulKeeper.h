@@ -91,6 +91,7 @@ public:
         float gearRatio;          // Pre-calculated gear quality ratio (0.5 minimum, scales up)
         uint32 creatureLevel;     // Original creature template level (for scaling direction)
         uint32 ownerLevel;        // Owner level at summon time
+        uint32 baseAttackTimeMs;  // Creature's melee attack speed (for spell damage normalization)
     };
     std::unordered_map<ObjectGuid, GuardianScalingInfo> _guardianScaling;
 
