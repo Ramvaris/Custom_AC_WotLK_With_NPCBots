@@ -682,15 +682,13 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
             if (e.action.cast.targetsLimit)
                 Acore::Containers::RandomResize(targets, e.action.cast.targetsLimit);
 
-            // SOUL KEEPER GUARDIAN: Prevent self-buff spam (e.g., Enrage recasting every tick)
-            // If this is a Soul Keeper guardian casting a positive self-buff it already has, skip.
+            // SOUL KEEPER GUARDIAN: Force aura-not-present check for ALL positive spells.
+            // Prevents native AI buff/enrage spam (e.g., Enrage recasting every tick,
+            // Kurzen Medicine Man perma-renewing Power Word: Fortitude).
+            // We resolve this per-target in the loop below, not with a blanket break.
             bool isSoulKeeperGuardian = me && me->IsSoulKeeperGuardian();
-            if (isSoulKeeperGuardian)
-            {
-                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(e.action.cast.spell);
-                if (spellInfo && spellInfo->IsPositive() && !spellInfo->GetMaxRange(false) && me->HasAura(e.action.cast.spell))
-                    break; // Self-buff already active, skip entire action
-            }
+            SpellInfo const* skSpellInfo = isSoulKeeperGuardian ? sSpellMgr->GetSpellInfo(e.action.cast.spell) : nullptr;
+            bool forceAuraCheck = isSoulKeeperGuardian && skSpellInfo && skSpellInfo->IsPositive();
 
             bool failedSpellCast = false, successfulSpellCast = false;
 
@@ -709,8 +707,8 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
                 }
                 else if (me)
                 {
-                    // If target has the aura, skip
-                    if ((e.action.cast.castFlags & SMARTCAST_AURA_NOT_PRESENT) && target->ToUnit()->HasAura(e.action.cast.spell))
+                    // If target already has the aura, skip (DB flag OR Soul Keeper guardian positive spell)
+                    if (((e.action.cast.castFlags & SMARTCAST_AURA_NOT_PRESENT) || forceAuraCheck) && target->ToUnit()->HasAura(e.action.cast.spell))
                         continue;
 
                     // If the threatlist is a singleton, cancel

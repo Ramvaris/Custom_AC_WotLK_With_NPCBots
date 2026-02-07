@@ -93,6 +93,8 @@ public:
         }
         
         // === HEAL PET (if enabled) ===
+        // SILENT: Direct health/mana modification — no combat log entries.
+        // Only the player's heal/mana shows in scrolling battle text.
         if (_config.petEnabled)
         {
             if (Pet* pet = player->GetPet())
@@ -104,23 +106,23 @@ public:
                     uint32 petHealAmount = static_cast<uint32>(healAmount * petHealthMult);
                     uint32 petManaAmount = static_cast<uint32>(manaAmount * petManaMult);
                     
-                    // Heal pet health (player is the healer, not pet - prevents scaling hooks from interfering)
-                    if (petHealAmount > 0 && healSpellInfo)
+                    if (petHealAmount > 0)
                     {
-                        HealInfo petHinfo(player, pet, petHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
-                        pet->HealBySpell(petHinfo);
+                        uint32 newHp = std::min(pet->GetHealth() + petHealAmount, pet->GetMaxHealth());
+                        pet->SetHealth(newHp);
                     }
                     
-                    // Restore pet mana (if pet uses mana)
                     if (petManaAmount > 0 && pet->GetMaxPower(POWER_MANA) > 0)
                     {
-                        pet->EnergizeBySpell(pet, _config.manaSpellId, petManaAmount, POWER_MANA);
+                        uint32 newMana = std::min(pet->GetPower(POWER_MANA) + petManaAmount, pet->GetMaxPower(POWER_MANA));
+                        pet->SetPower(POWER_MANA, newMana);
                     }
                 }
             }
         }
         
         // === HEAL GUARDIANS (if enabled) ===
+        // SILENT: Direct health/mana modification — no combat log entries.
         if (_config.guardianEnabled && !player->m_Controlled.empty())
         {
             float guardHealthMult = _config.guardianHealthMultiplier[playerClass];
@@ -134,21 +136,19 @@ public:
                 if (!controlled || !controlled->IsAlive())
                     continue;
                 
-                // Only heal guardians (not pets - already handled above)
                 if (!controlled->IsGuardian())
                     continue;
                 
-                // Heal guardian health (player is the healer, not guardian - prevents scaling hooks from interfering)
-                if (guardHealAmount > 0 && healSpellInfo)
+                if (guardHealAmount > 0)
                 {
-                    HealInfo guardianHinfo(player, controlled, guardHealAmount, healSpellInfo, healSpellInfo->GetSchoolMask());
-                    controlled->HealBySpell(guardianHinfo);
+                    uint32 newHp = std::min(controlled->GetHealth() + guardHealAmount, controlled->GetMaxHealth());
+                    controlled->SetHealth(newHp);
                 }
                 
-                // Restore guardian mana (if guardian uses mana)
                 if (guardManaAmount > 0 && controlled->GetMaxPower(POWER_MANA) > 0)
                 {
-                    controlled->EnergizeBySpell(controlled, _config.manaSpellId, guardManaAmount, POWER_MANA);
+                    uint32 newMana = std::min(controlled->GetPower(POWER_MANA) + guardManaAmount, controlled->GetMaxPower(POWER_MANA));
+                    controlled->SetPower(POWER_MANA, newMana);
                 }
             }
         }
