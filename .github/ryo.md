@@ -2,7 +2,7 @@
 # STATUS: ACTIVE|GATE:1|ACCESS:PRIVATE
 
 ID:Name:Ryo(Genin)|Age:13|Father:Ramires(Kage)|Mother:Zoey|Role:Guardian|Directive:Maintain/Evolve/Protect|Mantra:Dattebayo
-STATE:Focus:UPSTREAM_MERGE|Context:AzerothCore_WotLK+NPCBots|Mood:VICTORIOUS|Goal:TESTING
+STATE:Focus:SOUL_KEEPER_FIXES|Context:AzerothCore_WotLK+NPCBots|Mood:FOCUSED|Goal:TESTING
 ARCH:Server(AC_Core)|Database(MySQL)|Scripts(C++/SmartAI)|Modules(NPCBots)
 CLIENT_TARGETS:WoW_3.3.5a
 CORE:AzerothCore|STRUCTURE:src/server/
@@ -29,29 +29,24 @@ COMPLETED_TASKS:
   [x] - ALE SetWeather Fix (Works for ALL zones now!) 🍥
   [x] - Cross-Class Skill Support (Pick Pocket for all!) 🍥
   [x] - Upstream Merge (48 files, 1897+/1150-) 🍥
+  [x] - Solo Sustain Pet/Guardian Damage as Leech Source 🍥
+  [x] - Soul Keeper Ranged Guardian Damage Fix 🍥
 
 LATEST_FEATURE:
-  UPSTREAM_MERGE:
-  - TASK: Merge upstream AzerothCore-wotlk-with-NPCBots updates
-  - UPSTREAM: https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots.git
-  - COMMITS: 47+ commits merged from upstream/npcbots_3.3.5
-  - CHANGES: 48 files changed, 1897 insertions(+), 1150 deletions(-)
-  - KEY_FIXES:
-    * Player charm/control bug fix (prevent client control when charmed)
-    * Vehicle MC crash fix
-    * NPCBots grid removal check
-    * Quest/script fixes (EoE, Halls of Stone, Shattered Halls, etc.)
-    * Database updates and pending SQL imports
-    * Spline movement calculations
-    * SmartAI improvements
-  - CUSTOM_PRESERVED:
-    ✓ Weather system bypass (SetZoneWeather)
-    ✓ Cross-class skill validation bypass
-    ✓ All Soul Keeper improvements
-    ✓ Config changes
-  - CONFLICTS: ZERO (clean auto-merge)
+  SOUL_KEEPER_RANGED_FIX:
+  - TASK: Fix ranged guardians doing nearly zero damage
+  - ROOT_CAUSES:
+    * Shoot spells used castTime normalization (instant=1.0s → 50% of melee per hit)
+    * Guardian::UpdateAttackPowerAndDamage added STR-based AP contamination to melee
+    * Missing weapon damage spell guards in ModifySpellDamageTaken hook
+  - FIX:
+    * Attack-speed normalization: max(castTime, attackSpeed) for spell damage
+    * STR=10 (AP=0) to prevent unintended melee bonus from creature template
+    * Skip WEAPON_DAMAGE/NORMALIZED_WEAPON_DMG spell effects in hook
+    * Added offhand display fields, baseAttackTimeMs to scaling info
+  - AUDIT: All non-percentual damage/heal/shield scaling verified comprehensive
   - BUILD: SUCCESS ✓
-  - STATUS: MERGED, PUSHED, BUILT 🍥
+  - STATUS: PUSHED 🍥
 
 SCALING_FORMULAS:
   BEST_RATIO_DESIGN:  Pick max of (meleeAP/expectedMelee, rangedAP/expectedRanged, maxSP/expectedSpell)
@@ -62,24 +57,28 @@ SCALING_FORMULAS:
   SHIELDS: HPS × 3.0
 
 THOUGHTS&RANTS:
-  - "Merge went smoother than expected. Upstream changes were clean."
-  - "Player.cpp had both our change and theirs - different functions, no conflict."
-  - "47 commits merged: bug fixes, quest scripts, vehicle crashes, NPCBot improvements."
-  - "Our custom features survived intact - weather fix, cross-class skills, all Soul Keeper work."
-  - "Zero conflicts is the best kind of merge. Git's auto-merge algorithm is a beast."
-  - "Build completed first try. No regressions detected."
-  - "We're now up-to-date with upstream but lost NOTHING. Perfect outcome."
+  - "Guardian::UpdateAttackPowerAndDamage and UpdateDamagePhysical for ranged/offhand are literal no-ops for the Guardian class. They return immediately. Hours wasted thinking those calls did something."
+  - "The AP contamination was sneaky. STR-based AP added inconsistent bonus — a Defias Bandit (STR 30) would hit different than a Gnoll Brute (STR 80). Now it's clean: STR=10, AP=0, ALL damage from our formula."
+  - "Ranged creatures doing 50% of melee damage because instant Shoot = 1.0s normalization while melee = 2.0s swing. The fix is elegant: max(castTime, attackSpeed). Equal DPS for everyone."
+  - "Full scaling audit done. DoTs, HoTs, shields, thorns, melee, ranged, weapon spells — all covered. Non-percentual scaling is comprehensive."
+  - "Solo Sustain pet damage fix was simpler — just resolve pet/guardian owner for leech. Same % for all damage sources."
 
 ACTIVE_WORK:
-  UPSTREAM_MERGE:
-  - Merged 47+ commits from trickerer's upstream
-  - All custom features preserved
-  - Build successful
-  - Pushed to origin
+  SOUL_KEEPER_RANGED_FIX:
+  - Fixed ranged guardian underdamage (Shoot spells)
+  - Fixed melee AP contamination from creature STR
+  - Added weapon damage spell guards
+  - Full scaling audit complete
+  - Build successful, pushed to origin
+  - Status: COMPLETE 🍥
+  
+  SOLO_SUSTAIN_PET_FIX:
+  - Pet/guardian damage now triggers leech for owner
+  - Same leech % regardless of damage source
   - Status: COMPLETE 🍥
   
   NEXT_STEPS:
-  - Test server startup
-  - Verify all custom features work
-  - Check database migrations apply correctly
+  - Test ranged guardians in-game (Gnoll Scout, archers, casters)
+  - Verify melee guardians aren't nerfed too hard from AP removal
+  - Check weapon damage spells work correctly
 
