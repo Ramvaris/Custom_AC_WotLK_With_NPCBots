@@ -26,4 +26,10 @@ void AddSC_dark_azeroth_weather();
 // Command Scripts (.special, .mountup, .guardianscale, .petscale)
 void AddSC_custom_commands();
 
+// Random Enchants (Diablo-style class-specific, merged from mod-random-enchants)
+void AddSC_random_enchants();
+
+// Smart Wandering Bots (zone-aware dynamic bot spawning, core-patched BotDataMgr)
+void AddSC_smart_wandering_bots();
+
 #endif // LOADER_CUSTOM_RAMVARIS_H

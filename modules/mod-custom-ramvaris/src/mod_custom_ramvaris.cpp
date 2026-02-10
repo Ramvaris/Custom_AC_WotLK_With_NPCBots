@@ -24,6 +24,12 @@ void AddSC_dark_azeroth_weather();
 // Command Scripts
 void AddSC_custom_commands();
 
+// Random Enchants (merged from mod-random-enchants)
+void AddSC_random_enchants();
+
+// Smart Wandering Bots (zone-aware, core-patched BotDataMgr)
+void AddSC_smart_wandering_bots();
+
 void Addmod_custom_ramvarisScripts()
 {
     AddSC_spell_human_stoneform();
@@ -32,4 +38,6 @@ void Addmod_custom_ramvarisScripts()
     AddSC_player_login_grants();
     AddSC_dark_azeroth_weather();
     AddSC_custom_commands();
+    AddSC_random_enchants();
+    AddSC_smart_wandering_bots();
 }

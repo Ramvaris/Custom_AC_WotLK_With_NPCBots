@@ -223,9 +223,41 @@ void BotDataMgr::DespawnWandererBot(uint32 entry)
         if (bot->GetBotAI())
             bot->GetBotAI()->canUpdate = false;
         _botsWanderCreaturesToDespawn.insert(entry);
+        return;
     }
-    else
-        BOT_LOG_ERROR("npcbots", "DespawnWandererBot(): trying to despawn non-existing wanderer bot {} '{}'!", entry, bot ? bot->GetName().c_str() : "unknown");
+
+    // Smart Wandering: check spawn queue for bots not yet registered.
+    // Handles rapid zone changes where bots are queued but not yet spawned.
+    for (auto it = _botsWanderCreaturesToSpawn.begin(); it != _botsWanderCreaturesToSpawn.end(); ++it)
+    {
+        if (it->first == entry)
+        {
+            _botsWanderCreaturesToSpawn.erase(it);
+
+            // Recycle the bot's resources exactly like the despawn-queue cleanup in Update()
+            auto ctitr = _botsWanderCreatureTemplates.find(entry);
+            if (ctitr != _botsWanderCreatureTemplates.end())
+            {
+                uint32 origEntry = ctitr->second.KillCredit[0];
+                auto exitr = _botsExtras.find(entry);
+                if (exitr != _botsExtras.end())
+                    _spareBotIdsPerClassMap[exitr->second->bclass].insert(origEntry);
+            }
+            if (auto ditr = _botsData.find(entry); ditr != _botsData.end())
+                { delete ditr->second; _botsData.erase(ditr); }
+            if (auto eitr = _botsExtras.find(entry); eitr != _botsExtras.end())
+                { delete eitr->second; _botsExtras.erase(eitr); }
+            if (auto aitr = _botsAppearanceData.find(entry); aitr != _botsAppearanceData.end())
+                { delete aitr->second; _botsAppearanceData.erase(aitr); }
+            _botsWanderCreatureEquipmentTemplates.erase(entry);
+            _botsWanderCreatureTemplates.erase(entry);
+
+            BOT_LOG_DEBUG("npcbots", "Cancelled pending spawn of wanderer bot {}", entry);
+            return;
+        }
+    }
+
+    BOT_LOG_ERROR("npcbots", "DespawnWandererBot(): trying to despawn non-existing wanderer bot {} '{}'!", entry, bot ? bot->GetName().c_str() : "unknown");
 }
 
 struct WanderingBotsGenerator
@@ -291,7 +323,8 @@ private:
 
     bool GenerateWanderingBotToSpawn(std::pair<uint8, uint32> const& spareBotPair, uint8 desired_bracket,
         NodeVec const& spawns_a, NodeVec const& spawns_h, NodeVec const& spawns_n,
-        bool immediate, PvPDifficultyEntry const* bracketEntry, NpcBotRegistry* registry)
+        bool immediate, PvPDifficultyEntry const* bracketEntry, NpcBotRegistry* registry,
+        std::vector<uint32>* outEntries = nullptr)
     {
         CreatureTemplateContainer const* all_templates = sObjectMgr->GetCreatureTemplates();
 
@@ -399,6 +432,10 @@ private:
         else
             _botsWanderCreaturesToSpawn.push_back({ next_bot_id, spawnLoc });
 
+        // Smart Wandering: track spawned entry for caller
+        if (outEntries)
+            outEntries->push_back(next_bot_id);
+
         _spareBotIdsPerClassMap.at(bot_class).erase(orig_entry);
         if (_spareBotIdsPerClassMap.at(bot_class).empty())
             _spareBotIdsPerClassMap.erase(bot_class);
@@ -438,7 +475,8 @@ public:
         return count;
     }
 
-    bool GenerateWanderingBotsToSpawn(uint32 count, int32 map_id, int32 team, bool immediate, PvPDifficultyEntry const* bracketEntry, NpcBotRegistry* registry, uint32& spawned)
+    bool GenerateWanderingBotsToSpawn(uint32 count, int32 map_id, int32 team, bool immediate, PvPDifficultyEntry const* bracketEntry, NpcBotRegistry* registry, uint32& spawned,
+        int32 zoneFilter = -1, std::vector<uint32>* outEntries = nullptr)
     {
         using NodeVec = std::vector<WanderNode const*>;
 
@@ -449,25 +487,38 @@ public:
         for (NodeVec* vec : { &spawns_a, &spawns_h, &spawns_n })
             vec->reserve(WanderNode::GetWPMapsCount() * 20u);
 
-        WanderNode::DoForAllWPs([map_id = map_id, &spawns_a, &spawns_h, &spawns_n](WanderNode const* wp) {
-            MapEntry const* mapEntry = sMapStore.LookupEntry(wp->GetMapId());
-            if ((map_id == -1) ? mapEntry->IsWorldMap() : (int32(mapEntry->MapID) == map_id))
+        // Smart Wandering: zone-specific node collection via purpose-built API
+        auto collectSpawnNodes = [&spawns_a, &spawns_h, &spawns_n](WanderNode const* wp) {
+            if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_SPAWN))
             {
-                if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_SPAWN))
+                if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_ALLIANCE_ONLY))
+                    spawns_a.push_back(wp);
+                else if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_HORDE_ONLY))
+                    spawns_h.push_back(wp);
+                else
                 {
-                    if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_ALLIANCE_ONLY))
-                        spawns_a.push_back(wp);
-                    else if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_HORDE_ONLY))
-                        spawns_h.push_back(wp);
-                    else
-                    {
-                        spawns_a.push_back(wp);
-                        spawns_h.push_back(wp);
-                        spawns_n.push_back(wp);
-                    }
+                    spawns_a.push_back(wp);
+                    spawns_h.push_back(wp);
+                    spawns_n.push_back(wp);
                 }
             }
-        });
+        };
+
+        if (zoneFilter != -1)
+        {
+            // Smart Wandering: only collect nodes in the target zone
+            WanderNode::DoForAllZoneWPs(uint32(zoneFilter), [&collectSpawnNodes](WanderNode const* wp) {
+                collectSpawnNodes(wp);
+            });
+        }
+        else
+        {
+            WanderNode::DoForAllWPs([map_id = map_id, &collectSpawnNodes](WanderNode const* wp) {
+                MapEntry const* mapEntry = sMapStore.LookupEntry(wp->GetMapId());
+                if ((map_id == -1) ? mapEntry->IsWorldMap() : (int32(mapEntry->MapID) == map_id))
+                    collectSpawnNodes(wp);
+            });
+        }
 
         bool found_maxlevel_node_a = false;
         bool found_maxlevel_node_h = false;
@@ -507,8 +558,19 @@ public:
 
         if (team == -1)
         {
-            if (!found_maxlevel_node_a || !found_maxlevel_node_h || !found_maxlevel_node_n)
-                return false;
+            // Smart Wandering: zone-specific spawning relaxes the all-factions requirement
+            // A faction-specific zone (e.g. Elwynn) may only have Alliance+neutral nodes
+            if (zoneFilter == -1)
+            {
+                if (!found_maxlevel_node_a || !found_maxlevel_node_h || !found_maxlevel_node_n)
+                    return false;
+            }
+            else
+            {
+                // Zone mode: just need ANY spawn nodes at all
+                if (spawns_a.empty() && spawns_h.empty() && spawns_n.empty())
+                    return false;
+            }
 
             //make a full copy
             for (auto const& kv : _spareBotIdsPerClassMap)
@@ -598,7 +660,7 @@ public:
             int8 tries = 100;
             do {
                 --tries;
-                if (GenerateWanderingBotToSpawn(teamSpareBotIdsPerClass.back(), bracket, spawns_a, spawns_h, spawns_n, immediate, bracketEntry, registry))
+                if (GenerateWanderingBotToSpawn(teamSpareBotIdsPerClass.back(), bracket, spawns_a, spawns_h, spawns_n, immediate, bracketEntry, registry, outEntries))
                 {
                     ++i;
                     ++spawned;
@@ -608,7 +670,17 @@ public:
             } while (tries >= 0);
 
             if (tries < 0)
+            {
+                // Smart Wandering: zone mode tolerates failures — some bots may not
+                // fit the zone's level range (e.g. DK needs 55+ but zone is 1-20).
+                // Skip that bot and continue with the next one.
+                if (zoneFilter != -1)
+                {
+                    teamSpareBotIdsPerClass.pop_back();
+                    continue;
+                }
                 return false;
+            }
         }
 
         CharacterDatabase.Execute("UPDATE worldstates SET value = {} WHERE entry = {}", next_bot_id, uint32(BOT_GIVER_ENTRY));
@@ -715,6 +787,27 @@ void BotDataMgr::Update(uint32 diff)
 
         return;
     }
+}
+
+/// Smart Wandering API: Spawn wandering bots at WanderNodes in a specific zone.
+/// Uses the existing WanderingBotsGenerator infrastructure with zone-filtered node collection.
+/// Returns the number of bots successfully queued for spawning.
+uint32 BotDataMgr::SpawnWanderingBotsInZone(uint32 zoneId, uint32 count, std::vector<uint32>* outEntries)
+{
+    if (sBotGen->GetSpareBotsCount() == 0 || count == 0)
+        return 0;
+
+    uint32 spawned = 0;
+    // team=-1 means all factions (natural distribution based on spare bot pool)
+    // immediate=false (queued, 500ms stagger spawn via Update)
+    sBotGen->GenerateWanderingBotsToSpawn(count, -1, -1, false, nullptr, nullptr, spawned, static_cast<int32>(zoneId), outEntries);
+    return spawned;
+}
+
+/// Smart Wandering API: Get total available (unspawned) wandering bot count from the spare pool.
+uint32 BotDataMgr::GetAvailableWanderingBotCount()
+{
+    return sBotGen->GetSpareBotsCount();
 }
 
 std::shared_mutex* BotDataMgr::GetLock()

@@ -136,6 +136,7 @@ public:
     void ScaleGuardian(Creature* guardian, Player* owner);
     void ScaleSummonedHelper(Creature* helper, Player* owner);
     void DespawnGuardianSummons(Creature* guardian);
+    void DespawnGuardianForTravel(Player* player); // Despawn guardian on teleport/taxi/portal
     
     // Cooldown Persistence (prevent dismiss/summon exploit)
     void SaveGuardianCooldowns(Creature* guardian, Player* owner);

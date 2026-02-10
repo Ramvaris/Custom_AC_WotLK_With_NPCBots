@@ -138,3 +138,62 @@ CustomRamvaris.PetScale.Enable = 0
 #
 
 CustomRamvaris.PetStayOnMount.Enable = 0
+
+#
+# CustomRamvaris.RandomEnchants.Enable
+#     Diablo-style random enchantments on looted/crafted/quest/roll gear.
+#     Scans SpellItemEnchantment DBC at startup for pure stat enchants,
+#     builds class-specific pools (primary stats per class + all secondaries).
+#     Up to 3 enchants per item via cascading 70%/65%/60% chance, quality-tiered.
+#     Stat design: Hybrid classes get ALL primary stats, Spirit only for Priest,
+#     no Attack Power / Ranged AP, compressed spellpower, all WotLK secondaries.
+#     Uses PROP_ENCHANTMENT_SLOT_0/1/2 (7/8/9) — never conflicts with player enchants.
+#     Merged from mod-random-enchants with complete rewrite and class-specific filtering.
+#     [NO DB] — pure C++ from DBC data, no SQL tables needed!
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.RandomEnchants.Enable = 0
+
+#
+# CustomRamvaris.SmartWanderingBots.Enable
+#     Zone-aware dynamic bot spawning — the performance-friendly alternative to
+#     global wandering bots. Spawns MinAmount–MaxAmount bots ONLY in the player's
+#     current zone and despawns them on zone change.
+#     REQUIRES NpcBot.WanderingBots.Continents.Count = 0 in npcbots.conf!
+#     Without this, the normal global system runs alongside smart bots.
+#     Core patch: extends BotDataMgr with zone-specific spawn/despawn API.
+#     [NO DB] — uses existing WanderNode system, no custom data needed!
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.SmartWanderingBots.Enable = 0
+
+#
+# CustomRamvaris.SmartWanderingBots.MinAmount
+#     Minimum number of bots to spawn when entering a new zone.
+#     Actual count is randomized between MinAmount and MaxAmount.
+#     Some zones may have fewer WanderNodes than requested — spawns what fits.
+#     Default: 5
+#
+
+CustomRamvaris.SmartWanderingBots.MinAmount = 5
+
+#
+# CustomRamvaris.SmartWanderingBots.MaxAmount
+#     Maximum number of bots to spawn when entering a new zone.
+#     Keep this low for single-player servers — performance is king.
+#     Default: 15
+#
+
+CustomRamvaris.SmartWanderingBots.MaxAmount = 15
+
+#
+# CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown
+#     Cooldown in seconds between zone-change spawns.
+#     Prevents rapid spawn/despawn flapping when riding along zone borders.
+#     Set higher (60+) for extra stability, lower (10) for faster response.
+#     Default: 30
+#
+
+CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown = 30

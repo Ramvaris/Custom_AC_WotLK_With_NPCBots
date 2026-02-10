@@ -22,12 +22,14 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
   - **Charm State Cleanup** - Stale charmer GUIDs are force-cleared on world removal instead of crashing
   - **Minion Ownership Safety** - Owner GUID mismatches in controlled sets are logged and skipped, not crashed
   - **Warlock Bot Life Tap Fix** - Prevents NPCBot warlocks from killing themselves with Life Tap (capped health cost + alive guard)
+  - **Aura Duration Zero-Tick Fix** - Prevents periodic aura ticks from firing when duration has already reached zero (changed `>= 0` to `> 0` in AuraEffect::Update). Fixes debuffs visually at 0s but still ticking for several seconds under server load.
 - Potential old world flying (needs also a fitting client side spell or a lua script that allows the client to mount up)
 - Some QoL stuff
 -> Looting of mobs that were killed by a players pet without the player doing damage to it
 -> All Ore- and Flower-Nodes respawn in 120 seconds instead of 24 hours to 7 days.
 - **Working Language Comprehension** - NPCs speaking Orcish/Thalassian/etc. are actually readable if your character knows the language (via skill or aura). Non-speakers get the original scrambled text with proper language tags. No Client-Mod neccesary.
 - **Pet Stay on Mount** - Pets stay summoned when mounting up instead of being dismissed. They run alongside the player. Config-gated (`CustomRamvaris.PetStayOnMount.Enable`).
+- **Soul Keeper Guardian Travel Safety** - Guardians are automatically despawned on cross-map teleport and taxi flights, preventing orphaned guardians on old maps. Cooldowns are preserved for re-summoning.
 - Some AC modules from other people integrated and kept up-to-date
 
 Notice: I also have some LUA-Script / MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' if you can pay massive amounts of gold, QoL Spells for any race/class on login (Aspect of the Uber Cheetah / 40% / No Dazzle, Levitation over water and mounted that does not dispel, Detect Invisibility (To see all the easter eggs) with endless duration, Stealth without Movement Speed Reduction, the Druid waterform), Human Reputation Bonus for everyone on Login, 70% of the time bad weather (Weather Effects on all parts of the world, like in Stormwind, etc., Storms, Snow, Desert Wind, etc.), an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
@@ -43,7 +45,6 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 | **mod-solo-lfg** | Enables solo queuing for dungeons via LFG | [azerothcore/mod-solo-lfg](https://github.com/azerothcore/mod-solo-lfg) |
 | **mod-guildhouse** | Personal guild housing system | [azerothcore/mod-guildhouse](https://github.com/azerothcore/mod-guildhouse) |
 | **mod-instance-reset** | Extended instance reset options | [azerothcore/mod-instance-reset](https://github.com/azerothcore/mod-instance-reset) |
-| **mod-random-enchants** | Random enchantments on loot drops | [azerothcore/mod-random-enchants](https://github.com/azerothcore/mod-random-enchants) |
 | **mod-reagent-bank** | Additional storage for crafting reagents | [azerothcore/mod-reagent-bank](https://github.com/azerothcore/mod-reagent-bank) |
 | **mod-skip-dk-starting-area** | Skip the Death Knight starting zone | [azerothcore/mod-skip-dk-starting-area](https://github.com/azerothcore/mod-skip-dk-starting-area) |
 | **mod-ale** | AzerothCore Lua Engine for scripting | [azerothcore/mod-eluna](https://github.com/azerothcore/mod-eluna) |
@@ -146,6 +147,8 @@ All of Ramvaris' private server Lua customizations ported to C++ for performance
 - **`.guardianscale`** — Double Soul Keeper guardian visual scale each use (caps at 5x)
 - **`.petscale`** — Double any pet visual scale each use (Hunter/Warlock/DK, caps at 5x)
 - **Pet Stay on Mount** — Core patch: pets stay summoned when mounting up instead of being dismissed
+- **Random Enchants** — Diablo-style class-specific random enchants on looted/crafted/quest gear. Pure C++ from DBC data — no SQL tables. Scans SpellItemEnchantment DBC at startup, builds class-appropriate stat pools. Hybrid classes get ALL primary stats, Spirit only for Priest, no AP/RAP, compressed spellpower, all WotLK secondaries. Up to 3 enchants per item (70%/65%/60% cascading chance). Uses PROP_ENCHANTMENT_SLOT_0/1/2 — never conflicts with player enchants. Merged from mod-random-enchants with complete rewrite.
+- **Smart Wandering Bots** — Zone-aware dynamic bot spawning instead of global. Spawns MinAmount–MaxAmount bots ONLY in the player's current zone, despawns on zone change. Core patch extends BotDataMgr with zone-specific spawn/despawn API. 30s cooldown prevents zone-border flapping. Per-player tracking for multi-player support. The performance fix for servers with NPCBots.
 
 **Config:**
 ```ini
@@ -153,6 +156,11 @@ CustomRamvaris.Enable = 1                    # Master switch (ON, but all featur
 CustomRamvaris.DarkAzeroth.Enable = 0        # Example: no custom DB needed
 CustomRamvaris.MountUp.Enable = 0            # Example: .mountup works without custom DB
 CustomRamvaris.PetStayOnMount.Enable = 0     # Core patch: pets run alongside mounted player
+CustomRamvaris.RandomEnchants.Enable = 0     # Diablo-style class-specific random enchants
+CustomRamvaris.SmartWanderingBots.Enable = 0 # Zone-aware bot spawning (set NpcBot.WanderingBots.Continents.Count=0!)
+CustomRamvaris.SmartWanderingBots.MinAmount = 5
+CustomRamvaris.SmartWanderingBots.MaxAmount = 15
+CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown = 30
 ```
 
 ### 🌿 Database Tweaks

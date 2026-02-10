@@ -1255,6 +1255,34 @@ void SoulKeeper::ScaleSummonedHelper(Creature* helper, Player* owner)
 }
 
 // =============================================================================
+// Utility: Despawn guardian when the player travels (teleport, taxi, portal)
+// Silently cleans up the guardian and tracking data. No combat check — travel
+// is involuntary (hearthstone, flight path, dungeon queue, etc.)
+// =============================================================================
+void SoulKeeper::DespawnGuardianForTravel(Player* player)
+{
+    if (!player)
+        return;
+
+    uint32 guid = player->GetGUID().GetCounter();
+    auto it = _activeGuardians.find(guid);
+    if (it == _activeGuardians.end())
+        return;
+
+    if (Creature* guardian = ObjectAccessor::GetCreature(*player, it->second))
+    {
+        SaveGuardianCooldowns(guardian, player);
+        DespawnGuardianSummons(guardian);
+        _guardianScaling.erase(guardian->GetGUID());
+        _guardianAITimer.erase(guardian->GetGUID());
+        _guardianLastDamage.erase(guardian->GetGUID());
+        _guardianLastOwnerDamage.erase(guardian->GetGUID());
+        guardian->DespawnOrUnsummon();
+    }
+    _activeGuardians.erase(it);
+}
+
+// =============================================================================
 // Utility: Despawn all summons owned by a guardian
 // Ensures guardian helper minions vanish when the guardian is dismissed/dead.
 // =============================================================================
@@ -1486,6 +1514,41 @@ public:
     {
         // Pre-load souls on login for faster menu access
         sSoulKeeper->LoadSouls(player);
+    }
+
+    // =========================================================================
+    // Guardian Despawn on Teleport / Cross-Map Travel
+    // Guardians are TempSummon creatures — they can't follow across maps.
+    // Hearthstone, portals, GM teleport, dungeon/BG entry — all fire this hook
+    // BEFORE the teleport happens, so the guardian is still accessible.
+    // =========================================================================
+    bool OnPlayerBeforeTeleport(Player* player, uint32 mapid, float /*x*/, float /*y*/, float /*z*/, float /*orientation*/, uint32 /*options*/, Unit* /*target*/) override
+    {
+        if (!player)
+            return true;
+
+        // Only despawn if teleporting to a DIFFERENT map (same-map is fine)
+        if (player->GetMapId() == mapid)
+            return true;
+
+        sSoulKeeper->DespawnGuardianForTravel(player);
+        return true;
+    }
+
+    // =========================================================================
+    // Guardian Despawn on Taxi / Flight Path
+    // Paid flight paths move the player at extreme speed — guardians can't
+    // follow. Despawn when player enters a taxi flight. This does NOT affect
+    // player-controlled flying mounts (Ramires wants pets to stay on mounts).
+    // =========================================================================
+    void OnPlayerUpdateZone(Player* player, uint32 /*newZone*/, uint32 /*newArea*/) override
+    {
+        if (!player)
+            return;
+
+        // If the player is on a taxi (paid flight path), despawn guardian
+        if (player->IsInFlight())
+            sSoulKeeper->DespawnGuardianForTravel(player);
     }
 
     void OnPlayerLogout(Player* player) override

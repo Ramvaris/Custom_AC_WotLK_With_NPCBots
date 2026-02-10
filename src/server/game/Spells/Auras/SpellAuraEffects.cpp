@@ -915,7 +915,10 @@ void AuraEffect::ApplySpellMod(Unit* target, bool apply)
 
 void AuraEffect::Update(uint32 diff, Unit* caster)
 {
-    if (m_isPeriodic && (GetBase()->GetDuration() >= 0 || GetBase()->IsPassive() || GetBase()->IsPermanent()))
+    // Only process periodic ticks if the aura has remaining duration (> 0), is passive, or is permanent.
+    // Using > 0 (not >= 0) prevents ticks from firing when duration has already reached zero,
+    // which caused ghost DoTs that visually expired but kept dealing damage for extra ticks.
+    if (m_isPeriodic && (GetBase()->GetDuration() > 0 || GetBase()->IsPassive() || GetBase()->IsPermanent()))
     {
         uint32 totalTicks = GetTotalTicks();
 
