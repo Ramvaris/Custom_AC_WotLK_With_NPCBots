@@ -23,7 +23,7 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 - **Working Language Comprehension** - NPCs speaking Orcish/Thalassian/etc. are actually readable if your character knows the language (via skill or aura). Non-speakers get the original scrambled text with proper language tags. No Client-Mod neccesary.
 - Some AC modules from other people integrated and kept up-to-date
 
-Notice: I also have some LUA-Script / MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' for massive amounts of gold, QoL Spells for any race/class on login (Aspect of the Uber Cheetah / 40% / No Dazzle, Levitation over water and mounted that does not dispel, Detect Invisibility (To see all the easter eggs) with endless duration, Stealth without Movement Speed Reduction, the Druid waterform), Human Reputation Bonus for everyone on Login, 70% of the time bad weather (Weather Effects on all parts of the world, like in Stormwind, etc., Storms, Snow, Desert Wind, etc.), an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
+Notice: I also have some LUA-Script / MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' if you can pay massive amounts of gold, QoL Spells for any race/class on login (Aspect of the Uber Cheetah / 40% / No Dazzle, Levitation over water and mounted that does not dispel, Detect Invisibility (To see all the easter eggs) with endless duration, Stealth without Movement Speed Reduction, the Druid waterform), Human Reputation Bonus for everyone on Login, 70% of the time bad weather (Weather Effects on all parts of the world, like in Stormwind, etc., Storms, Snow, Desert Wind, etc.), an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
 
 ### Included Modules
 
@@ -114,28 +114,7 @@ All guardian output scales with YOUR gear and level - no overpowered captured bo
 
 #### ⚡ Performance Optimizations
 
-**Bot Filtering (`IsNPCBot()` checks):**
-Both **Soul Keeper** and **Solo Sustain** modules implement comprehensive NPC bot filtering to prevent massive performance degradation when running with 100+ bots:
-
-| Hook | Performance Impact Without Filtering | Fix Applied |
-|------|--------------------------------------|-------------|
-| `OnDamage` (Solo Sustain) | ~1,000 events/sec × HealBySpell × 3 + iterations = 10,000+ calls/sec | Skip if player is bot |
-| `OnDamage` (Soul Keeper) | ~1,000 events/sec × AI()->AttackStart + map lookups | Skip if attacker OR victim is bot |
-| `OnUnitUpdate` (Soul Keeper) | 100 guardians × 24 spell checks × 20 auras = 48,000 iterations/sec | Skip guardians owned by bots |
-| `ScaleGuardian` (Soul Keeper) | Bot guardians entering scaling system → ALL damage/heal hooks fire | Skip scaling entirely for bot owners |
-
-**Result:** CPU usage with 100+ bots reduced from **181%** (nearly 2 full cores) to expected **30-50%**, eliminating object/NPC streaming lag.
-
-**Defense in Depth:** Multiple layers of bot filtering ensure near-zero overhead:
-1. **OnDamage** early exit if player is bot
-2. **OnUnitUpdate** early exit if guardian owner is bot
-3. **ScaleGuardian** skips adding bot guardians to scaling map → automatic skip for ALL other hooks
-
-**Why This Matters:**
-- Module hooks fire for EVERY damage event in the world (melee, spells, DoTs)
-- With 100 bots fighting, that's thousands of hook invocations per second
-- Each invocation = function calls, map lookups, aura iterations
-- Bot filtering cuts this to near-zero for bot entities while preserving full functionality for real players
+**Latest:** Fixed critical performance regression with 100+ NPCBots active — custom module hooks now filter bot entities early, preserving full functionality for real players while eliminating unnecessary processing overhead.
 
 #### Solo Sustain Features
 - **Passive leech** - No need to cast spells, just deal damage!

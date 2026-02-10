@@ -63,25 +63,18 @@ THOUGHTS&RANTS:
   - "Ranged creatures doing 50% of melee damage because instant Shoot = 1.0s normalization while melee = 2.0s swing. The fix is elegant: max(castTime, attackSpeed). Equal DPS for everyone."
   - "Full scaling audit done. DoTs, HoTs, shields, thorns, melee, ranged, weapon spells — all covered. Non-percentual scaling is comprehensive."
   - "Solo Sustain pet damage fix was simpler — just resolve pet/guardian owner for leech. Same % for all damage sources."
-  - "THE PERFORMANCE DEATH SPIRAL: 100 bots × OnDamage hooks × (HealBySpell + guardian iteration + aura checks) = 50,000+ calls/second! No wonder NPCs took forever to show up. The hooks were processing EVERY bot like they were players. Added IsNPCBot() checks — took 5 minutes to fix what could've killed the server. This is why profiling matters."
-  - "Soul Keeper OnUnitUpdate was doing 48,000 aura iterations PER SECOND with 100 bot guardians. Each guardian = 3× spell type (heal/buff/dispel) × 8 slots × ~20 auras. Multiply by 100 guardians and you get a server meltdown. Bot filtering cut this to near-zero for bot guardians."
+  - "THE PERFORMANCE DEATH SPIRAL: 100 bots × OnDamage hooks × (HealBySpell + guardian iteration + aura checks) = 50,000+ calls/second! Added IsNPCBot() checks — took 5 minutes to fix what could've killed the server."
+  - "NPCBots audit complete. 54 Cell::VisitObjects in bot_ai.cpp ALONE. 200yd grid searches for Sindragosa. O(n²) BuffAndHealGroup. All by-design, all upstream — touching it = merge hell. The Blademaster mirror image crash is a raw-pointer-in-BasicEvent nightmare with set-modification-during-iteration in UnsummonAll. Warlock Life Tap can self-kill via uncapped ModifyHealth(-damage). Both upstream, both risky to fix. Ramires already disabled BM — smart move."
 
 ACTIVE_WORK:
-  - None - performance death spiral fix COMMITTED successfully! 🍥
-  
-READY_FOR_TESTING:
-  MODULE_BOT_FILTERING_OPTIMIZATIONS:
-  - Git commit: 0adf1cc6b "perf: Add bot filtering to Soul Keeper & Solo Sustain modules"
-  - Build: SUCCESS ✓ (warnings only, 7.6s compile time)
-  - Files changed: 4 (SoloSustain.cpp, SoulKeeper.cpp, README.md, ryo.md)
-  - Defenses: 4-layer bot filtering (OnDamage×2, OnUnitUpdate, ScaleGuardian)
-  - Expected CPU drop: 181% → 30-50% with 100+ bots
-  - Requires: Worldserver restart
-  
-NEXT_STEPS:
-  - Stop worldserver: screen -S worldserver -X quit
-  - Start worldserver: ./acore.sh run-worldserver
-  - Monitor: htop to verify CPU drops to normal levels
-  - Test: Object/NPC streaming responsiveness with 100 bots active
-  - Verify: Full module functionality for real players unchanged
+  - None 🍥
+
+NPCBOTS_AUDIT_FINDINGS:
+  UPSTREAM_ISSUES_DO_NOT_TOUCH:
+  - Blademaster Mirror Image: raw Creature* in BasicEvents + set modification during UnsummonAll iteration → crashes (DISABLED by Ramires)
+  - Warlock Life Tap: uncapped ModifyHealth(-damage) can self-kill → "dead while casting" state
+  - bot_ai.cpp: 54× Cell::VisitObjects, 200yd Sindragosa search, O(n²) BuffAndHealGroup — all by-design
+  - botmgr.cpp: Actually well-structured, CalculateAoeSpots runs once per player
+  - botwanderful.cpp: Just waypoint graph data, runtime wandering is in botdatamgr
+  - VERDICT: Performance hogs are inherent to NPCBots design (grid searches scale with bot count). No safe fixes without risking upstream merge conflicts.
 
