@@ -800,6 +800,15 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
 void SoulKeeper::ScaleGuardian(Creature* guardian, Player* owner)
 {
     if (!guardian || !owner) return;
+    
+    // === BOT FILTERING ===
+    // CRITICAL PERFORMANCE FIX: Skip scaling for bot-owned guardians!
+    // If we add bot guardians to _guardianScaling map, ALL damage/heal/aura hooks
+    // will fire for them (thousands of times per second with 100+ bots).
+    // By skipping scaling entirely, bot guardians use default creature stats
+    // and ALL hooks automatically skip them (they check the scaling map).
+    if (owner->IsNPCBot())
+        return;
 
     uint32 ownerLevel = owner->GetLevel();
 
@@ -1800,6 +1809,15 @@ public:
         ObjectGuid ownerGuid = creature->GetOwnerGUID();
         if (!ownerGuid.IsPlayer()) 
             return;
+        
+        // === BOT FILTERING ===
+        // CRITICAL PERFORMANCE FIX: Skip guardians owned by NPC bots!
+        // With 100+ bots each having guardians, OnUnitUpdate fires hundreds of times per second.
+        // Each = 3× spell iteration × 8 slots × 20 aura checks = ~48,000 aura iterations/second!
+        // Only process guardians of REAL players to prevent server death spiral.
+        Player* ownerPlayer = ObjectAccessor::GetPlayer(*creature, ownerGuid);
+        if (ownerPlayer && ownerPlayer->IsNPCBot())
+            return;
 
         // Extra safety: ensure this is one of our Soul Keeper guardians
         if (!creature->IsSoulKeeperGuardian())
@@ -2568,6 +2586,14 @@ public:
     void OnDamage(Unit* attacker, Unit* victim, uint32& /*damage*/) override
     {
         if (!attacker || !victim)
+            return;
+        
+        // === BOT FILTERING ===
+        // CRITICAL PERFORMANCE FIX: Skip NPC bots entirely!
+        // With 100+ bots fighting, OnDamage fires THOUSANDS of times per second.
+        // Each call = AI()->AttackStart + map lookups = massive overhead.
+        // Only process REAL players to prevent server death spiral.
+        if (attacker->IsNPCBot() || victim->IsNPCBot())
             return;
 
         // === CASE 1: Owner ATTACKS something → Guardian assists ===

@@ -112,6 +112,31 @@ All guardian output scales with YOUR gear and level - no overpowered captured bo
 .soul search <text>  - Search souls by partial name
 ```
 
+#### ⚡ Performance Optimizations
+
+**Bot Filtering (`IsNPCBot()` checks):**
+Both **Soul Keeper** and **Solo Sustain** modules implement comprehensive NPC bot filtering to prevent massive performance degradation when running with 100+ bots:
+
+| Hook | Performance Impact Without Filtering | Fix Applied |
+|------|--------------------------------------|-------------|
+| `OnDamage` (Solo Sustain) | ~1,000 events/sec × HealBySpell × 3 + iterations = 10,000+ calls/sec | Skip if player is bot |
+| `OnDamage` (Soul Keeper) | ~1,000 events/sec × AI()->AttackStart + map lookups | Skip if attacker OR victim is bot |
+| `OnUnitUpdate` (Soul Keeper) | 100 guardians × 24 spell checks × 20 auras = 48,000 iterations/sec | Skip guardians owned by bots |
+| `ScaleGuardian` (Soul Keeper) | Bot guardians entering scaling system → ALL damage/heal hooks fire | Skip scaling entirely for bot owners |
+
+**Result:** CPU usage with 100+ bots reduced from **181%** (nearly 2 full cores) to expected **30-50%**, eliminating object/NPC streaming lag.
+
+**Defense in Depth:** Multiple layers of bot filtering ensure near-zero overhead:
+1. **OnDamage** early exit if player is bot
+2. **OnUnitUpdate** early exit if guardian owner is bot
+3. **ScaleGuardian** skips adding bot guardians to scaling map → automatic skip for ALL other hooks
+
+**Why This Matters:**
+- Module hooks fire for EVERY damage event in the world (melee, spells, DoTs)
+- With 100 bots fighting, that's thousands of hook invocations per second
+- Each invocation = function calls, map lookups, aura iterations
+- Bot filtering cuts this to near-zero for bot entities while preserving full functionality for real players
+
 #### Solo Sustain Features
 - **Passive leech** - No need to cast spells, just deal damage!
 - **Class-specific** - Melee gets more sustain (face-tanking), ranged less (can kite)

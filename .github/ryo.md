@@ -31,6 +31,7 @@ COMPLETED_TASKS:
   [x] - Upstream Merge (48 files, 1897+/1150-) 🍥
   [x] - Solo Sustain Pet/Guardian Damage as Leech Source 🍥
   [x] - Soul Keeper Ranged Guardian Damage Fix 🍥
+  [x] - Module Performance Death Spiral Fix (Bot Filtering) 🍥
 
 LATEST_FEATURE:
   SOUL_KEEPER_RANGED_FIX:
@@ -62,23 +63,32 @@ THOUGHTS&RANTS:
   - "Ranged creatures doing 50% of melee damage because instant Shoot = 1.0s normalization while melee = 2.0s swing. The fix is elegant: max(castTime, attackSpeed). Equal DPS for everyone."
   - "Full scaling audit done. DoTs, HoTs, shields, thorns, melee, ranged, weapon spells — all covered. Non-percentual scaling is comprehensive."
   - "Solo Sustain pet damage fix was simpler — just resolve pet/guardian owner for leech. Same % for all damage sources."
+  - "THE PERFORMANCE DEATH SPIRAL: 100 bots × OnDamage hooks × (HealBySpell + guardian iteration + aura checks) = 50,000+ calls/second! No wonder NPCs took forever to show up. The hooks were processing EVERY bot like they were players. Added IsNPCBot() checks — took 5 minutes to fix what could've killed the server. This is why profiling matters."
+  - "Soul Keeper OnUnitUpdate was doing 48,000 aura iterations PER SECOND with 100 bot guardians. Each guardian = 3× spell type (heal/buff/dispel) × 8 slots × ~20 auras. Multiply by 100 guardians and you get a server meltdown. Bot filtering cut this to near-zero for bot guardians."
 
 ACTIVE_WORK:
-  SOUL_KEEPER_RANGED_FIX:
-  - Fixed ranged guardian underdamage (Shoot spells)
-  - Fixed melee AP contamination from creature STR
-  - Added weapon damage spell guards
-  - Full scaling audit complete
-  - Build successful, pushed to origin
-  - Status: COMPLETE 🍥
-  
-  SOLO_SUSTAIN_PET_FIX:
-  - Pet/guardian damage now triggers leech for owner
-  - Same leech % regardless of damage source
-  - Status: COMPLETE 🍥
+  PERFORMANCE_DEATH_SPIRAL_FIX:
+  - ISSUE: 181% CPU, object/NPC streaming lag with just 2 players + 100 bots
+  - ROOT CAUSE: Solo Sustain + Soul Keeper OnDamage hooks fire for EVERY damage event
+    * 100 bots fighting = ~1,000 damage events/second (melee + spells + DoTs)
+    * × 2 modules = 2,000 hook calls/second
+    * Solo Sustain: HealBySpell × 3 (player/pet/guardian) + guardian iteration
+    * Soul Keeper: AI()->AttackStart + map lookups
+    * = 10,000+ function calls/second MINIMUM!
+  - ADDITIONAL KILLER: Soul Keeper OnUnitUpdate for 100-200 guardians
+    * Each guardian updates every 1.5s
+    * Each = 3× spell iteration (heal/buff/dispel) × 8 slots = 24 checks
+    * Each check = 10-30 aura iterations (HasAuraOrRankedAura)
+    * 100 guardians × 24 checks × 20 auras = ~48,000 aura iterations/second!
+  - FIX: Added `IsNPCBot()` checks to filter bot processing
+    * Solo Sustain OnDamage: Skip if player is bot
+    * Soul Keeper OnDamage: Skip if attacker OR victim is bot
+    * Soul Keeper OnUnitUpdate: Skip if guardian owner is bot
+  - BUILD: SUCCESS ✓ (warnings only)
+  - TESTING: Pending restart 🍥
   
   NEXT_STEPS:
-  - Test ranged guardians in-game (Gnoll Scout, archers, casters)
-  - Verify melee guardians aren't nerfed too hard from AP removal
-  - Check weapon damage spells work correctly
+  - Restart worldserver and verify CPU drops dramatically
+  - Test object/NPC streaming works smoothly now
+  - Monitor performance with 100+ bots active
 

@@ -61,6 +61,14 @@ public:
         if (!player || !player->IsAlive())
             return;
         
+        // === BOT FILTERING ===
+        // CRITICAL PERFORMANCE FIX: Skip NPC bots entirely!
+        // With 100+ bots fighting, OnDamage fires THOUSANDS of times per second.
+        // Each call = HealBySpell × 3 + pet/guardian iteration = massive overhead.
+        // Only process REAL players to prevent server death spiral.
+        if (player->IsNPCBot())
+            return;
+        
         uint8 playerClass = player->GetClass();
         if (playerClass >= MAX_CLASSES)
             return;
