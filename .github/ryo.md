@@ -67,28 +67,21 @@ THOUGHTS&RANTS:
   - "Soul Keeper OnUnitUpdate was doing 48,000 aura iterations PER SECOND with 100 bot guardians. Each guardian = 3× spell type (heal/buff/dispel) × 8 slots × ~20 auras. Multiply by 100 guardians and you get a server meltdown. Bot filtering cut this to near-zero for bot guardians."
 
 ACTIVE_WORK:
-  PERFORMANCE_DEATH_SPIRAL_FIX:
-  - ISSUE: 181% CPU, object/NPC streaming lag with just 2 players + 100 bots
-  - ROOT CAUSE: Solo Sustain + Soul Keeper OnDamage hooks fire for EVERY damage event
-    * 100 bots fighting = ~1,000 damage events/second (melee + spells + DoTs)
-    * × 2 modules = 2,000 hook calls/second
-    * Solo Sustain: HealBySpell × 3 (player/pet/guardian) + guardian iteration
-    * Soul Keeper: AI()->AttackStart + map lookups
-    * = 10,000+ function calls/second MINIMUM!
-  - ADDITIONAL KILLER: Soul Keeper OnUnitUpdate for 100-200 guardians
-    * Each guardian updates every 1.5s
-    * Each = 3× spell iteration (heal/buff/dispel) × 8 slots = 24 checks
-    * Each check = 10-30 aura iterations (HasAuraOrRankedAura)
-    * 100 guardians × 24 checks × 20 auras = ~48,000 aura iterations/second!
-  - FIX: Added `IsNPCBot()` checks to filter bot processing
-    * Solo Sustain OnDamage: Skip if player is bot
-    * Soul Keeper OnDamage: Skip if attacker OR victim is bot
-    * Soul Keeper OnUnitUpdate: Skip if guardian owner is bot
-  - BUILD: SUCCESS ✓ (warnings only)
-  - TESTING: Pending restart 🍥
+  - None - performance death spiral fix COMMITTED successfully! 🍥
   
-  NEXT_STEPS:
-  - Restart worldserver and verify CPU drops dramatically
-  - Test object/NPC streaming works smoothly now
-  - Monitor performance with 100+ bots active
+READY_FOR_TESTING:
+  MODULE_BOT_FILTERING_OPTIMIZATIONS:
+  - Git commit: 0adf1cc6b "perf: Add bot filtering to Soul Keeper & Solo Sustain modules"
+  - Build: SUCCESS ✓ (warnings only, 7.6s compile time)
+  - Files changed: 4 (SoloSustain.cpp, SoulKeeper.cpp, README.md, ryo.md)
+  - Defenses: 4-layer bot filtering (OnDamage×2, OnUnitUpdate, ScaleGuardian)
+  - Expected CPU drop: 181% → 30-50% with 100+ bots
+  - Requires: Worldserver restart
+  
+NEXT_STEPS:
+  - Stop worldserver: screen -S worldserver -X quit
+  - Start worldserver: ./acore.sh run-worldserver
+  - Monitor: htop to verify CPU drops to normal levels
+  - Test: Object/NPC streaming responsiveness with 100 bots active
+  - Verify: Full module functionality for real players unchanged
 
