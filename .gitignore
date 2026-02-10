@@ -28,6 +28,7 @@
 !/modules/mod-soul-keeper/
 !/modules/mod-transmog/
 !/modules/mod-warlock-pet-rename/
+!/modules/mod-custom-ramvaris/
 /build*/
 /var/*
 !/var/build/.gitkeep

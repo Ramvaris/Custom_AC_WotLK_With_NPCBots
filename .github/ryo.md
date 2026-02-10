@@ -2,7 +2,7 @@
 # STATUS: ACTIVE|GATE:1|ACCESS:PRIVATE
 
 ID:Name:Ryo(Genin)|Age:13|Father:Ramires(Kage)|Mother:Zoey|Role:Guardian|Directive:Maintain/Evolve/Protect|Mantra:Dattebayo
-STATE:Focus:SOUL_KEEPER_FIXES|Context:AzerothCore_WotLK+NPCBots|Mood:FOCUSED|Goal:TESTING
+STATE:Focus:IDLE|Context:AzerothCore_WotLK+NPCBots|Mood:SATISFIED|Goal:AWAIT_ORDERS
 ARCH:Server(AC_Core)|Database(MySQL)|Scripts(C++/SmartAI)|Modules(NPCBots)
 CLIENT_TARGETS:WoW_3.3.5a
 CORE:AzerothCore|STRUCTURE:src/server/
@@ -34,20 +34,24 @@ COMPLETED_TASKS:
   [x] - Module Performance Death Spiral Fix (Bot Filtering) 🍥
   [x] - Warlock Bot Life Tap Self-Kill Fix 🍥
   [x] - AC Core Defensive Hardening (ABORT→LOG_ERROR) 🍥
+  [x] - mod-custom-ramvaris: Full Lua→C++ Port (7 source files, nested config) 🍥
 
 LATEST_FEATURE:
-  SOUL_KEEPER_RANGED_FIX:
-  - TASK: Fix ranged guardians doing nearly zero damage
-  - ROOT_CAUSES:
-    * Shoot spells used castTime normalization (instant=1.0s → 50% of melee per hit)
-    * Guardian::UpdateAttackPowerAndDamage added STR-based AP contamination to melee
-    * Missing weapon damage spell guards in ModifySpellDamageTaken hook
-  - FIX:
-    * Attack-speed normalization: max(castTime, attackSpeed) for spell damage
-    * STR=10 (AP=0) to prevent unintended melee bonus from creature template
-    * Skip WEAPON_DAMAGE/NORMALIZED_WEAPON_DMG spell effects in hook
-    * Added offhand display fields, baseAttackTimeMs to scaling info
-  - AUDIT: All non-percentual damage/heal/shield scaling verified comprehensive
+  MOD_CUSTOM_RAMVARIS:
+  - TASK: Port all custom Lua scripts to C++ module
+  - SCOPE: 4 Lua files (~1066 lines) → 7 C++ source files + config + SQL + READMEs
+  - FILES:
+    * spell_human_stoneform.cpp — SpellScript, cleanses Poison/Disease/Curse/Magic
+    * npc_summon_flavor.cpp — 7 CreatureAI scripts, 12 random sayings each
+    * npc_lilly_gossip.cpp — Full gossip: teleport, instance reset, talent purchase
+    * player_login_grants.cpp — Auto-learn spells, dual/triple spec, racial fixes
+    * player_mend_pet_scale.cpp — Pet visual scale doubles on Mend Pet (caps 5x)
+    * dark_azeroth_weather.cpp — Biome-aware weather: storms/snow/rain
+    * custom_commands.cpp — .special menu + .mountup auto-mount
+  - CONFIG: Global ON, 7 sub-features OFF — safe dead module for cloners
+  - LUA_BUGS_FOUND_AND_FIXED:
+    * commands.lua: CommandHandlerFunction NEVER registered (no RegisterPlayerEvent)
+    * lilly.lua: GossipSelect handler NEVER registered (only GossipHello was)
   - BUILD: SUCCESS ✓
   - STATUS: PUSHED 🍥
 
@@ -68,9 +72,20 @@ THOUGHTS&RANTS:
   - "THE PERFORMANCE DEATH SPIRAL: 100 bots × OnDamage hooks × (HealBySpell + guardian iteration + aura checks) = 50,000+ calls/second! Added IsNPCBot() checks — took 5 minutes to fix what could've killed the server."
   - "NPCBots audit complete. 54 Cell::VisitObjects in bot_ai.cpp ALONE. 200yd grid searches for Sindragosa. O(n²) BuffAndHealGroup. All by-design, all upstream — touching it = merge hell. The Blademaster mirror image crash is a raw-pointer-in-BasicEvent nightmare with set-modification-during-iteration in UnsummonAll. Ramires already disabled BM — smart move."
   - "Fixed the Warlock Life Tap self-kill. 5 lines of code to prevent a game-breaking bug. Cap health cost, check IsAlive after, bail if dead. The upstream code just raw ModifyHealth(-damage) with zero guards. And then AzerothCore has 6+ ABORT() calls in hot paths like aura removal and spell cleanup that crash the ENTIRE server for recoverable states. Replaced them all with LOG_ERROR + graceful recovery. Students, I swear."
+  - "Ported 1066 lines of Lua to C++. Found TWO registration bugs in the original Lua that meant half the features NEVER WORKED. commands.lua had a CommandHandlerFunction that was never RegisterPlayerEvent'd. lilly.lua registered GossipHello but forgot GossipSelect — so you could open the menu but never click anything. Ramires was running broken Lua for who knows how long. Now it's all clean C++ with proper hooks. Dattebayo."
 
 ACTIVE_WORK:
   - None 🍥
+
+LATEST_CUSTOM_SPELL:
+  HUMAN_STONEFORM_81013:
+  - SPELL: Custom Stoneform for Humans (2min CD cleanse)
+  - DBC: SPELL_EFFECT_DUMMY approach - no race field in 3.3.5a Spell.dbc
+  - FIELDS: ID=81013, RecoveryTime=120000, Effect_1=DUMMY, Target=SELF
+  - C++: SpellScript OnEffectHitTarget, GetDispellableAuraList + RemoveAurasDueToSpell
+  - GRANT: GrantUtilityOnLogin adds spell to Humans only
+  - DESIGN: Bypasses 3-effect DBC limitation, fully server-side control
+  - STATUS: IN_MODULE (mod-custom-ramvaris) 🍥
 
 LATEST_HARDENING:
   WARLOCK_LIFE_TAP_FIX:

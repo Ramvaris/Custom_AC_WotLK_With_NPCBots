@@ -56,6 +56,7 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 |--------|-------------|
 | **mod-soul-keeper** | Capture creature souls and summon them as intelligent guardians - Collect 'em all! |
 | **mod-solo-sustain** | Damage-based life/mana leech for solo play - Recount/MSBT compatible! |
+| **mod-custom-ramvaris** | Private server customizations — custom spells, NPC gossip, dark weather, utility commands |
 
 #### Soul Keeper Features
 **Soul Capture & Summoning:**
@@ -129,6 +130,25 @@ All guardian output scales with YOUR gear and level - no overpowered captured bo
 - **Combat log visible** - Shows as "Vampiric Embrace" (heal) and "Replenishment" (mana)
 - **Fully configurable** - Tune percentages per class in `solo_sustain.conf`
 - **Standard client compatible** - No custom spells needed, works with any 3.3.5a client
+
+#### Custom Ramvaris Module
+All of Ramvaris' private server Lua customizations ported to C++ for performance. Global toggle ON, all sub-features OFF by default — safe dead module for cloners.
+
+**Features:**
+- **Human Stoneform** (Spell 81013) — Custom racial cleanse removing Poison, Disease, Curse, Magic (2min CD)
+- **NPC Summon Flavor Text** — 8 custom NPCs with 12 random witty sayings each when summoned
+- **Lilly Helper NPC** — Full gossip: city/dungeon/POI teleports, instance reset, talent point purchase
+- **Login Spell Grants** — Auto-learn utility spells, profession dual/triple spec unlock, racial fixes
+- **Mend Pet Scale** — Doubles hunter pet visual scale on each Mend Pet cast (caps at 5x, cosmetic)
+- **Dark Azeroth Weather** — Biome-aware bad weather: storms in deserts, snow in tundra, rain elsewhere
+- **Custom Commands** — `.special` (NPC summon menu, bank, mail) and `.mountup` (auto-mount by skill)
+
+**Config:**
+```ini
+CustomRamvaris.Enable = 1              # Master switch (ON, but all features OFF by default)
+CustomRamvaris.DarkAzeroth.Enable = 0  # Example: no custom DB needed
+CustomRamvaris.Commands.Enable = 0     # Example: .mountup works without custom DB
+```
 
 ### 🌿 Database Tweaks
 

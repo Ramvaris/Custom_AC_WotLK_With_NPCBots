@@ -1,0 +1,109 @@
+###################################################################################################
+# Ramvaris Custom MOD
+# CUSTOM MODULE — PRIVATE SERVER ONLY
+# This configuration does nothing on standard AzerothCore servers.
+# Safe to ignore for cloners. All sub-features OFF by default.
+###################################################################################################
+
+[worldserver]
+
+###################################################################################################
+# GLOBAL TOGGLE
+#
+# CustomRamvaris.Enable
+#     Master switch for the entire mod-custom-ramvaris module.
+#     If disabled, ALL features below are inactive regardless of their individual toggles.
+#     Default: 1 (ON — module loads, but all sub-features are OFF by default)
+#
+###################################################################################################
+
+CustomRamvaris.Enable = 1
+
+###################################################################################################
+# FEATURE TOGGLES
+#
+# Each feature can be independently enabled/disabled.
+# Global toggle must be ON for any feature to work.
+# Features marked [NO DB] work without custom database entries.
+# Features marked [CUSTOM DB] require custom creature_template / DBC data.
+#
+###################################################################################################
+
+#
+# CustomRamvaris.HumanStoneform.Enable
+#     Human Stoneform racial (Spell ID 81013) — cleanses Poison, Disease, Curse, Magic.
+#     Requires custom DBC entry for spell 81013 (SPELL_EFFECT_DUMMY, 2min CD).
+#     [CUSTOM DB] — needs spell 81013 in DBC
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.HumanStoneform.Enable = 0
+
+#
+# CustomRamvaris.NpcFlavorText.Enable
+#     NPC summon flavor text — random witty sayings when custom NPCs are summoned.
+#     Affects: Ling (290011), Ashari (299902), Squeak (299901), Cromi (300000),
+#              Ciel (299903), Rename (200002), Warpweaver (190011).
+#     Lilly (299900) flavor text is controlled by LillyGossip toggle below.
+#     [CUSTOM DB] — needs custom creature_template entries + ScriptNames
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.NpcFlavorText.Enable = 0
+
+#
+# CustomRamvaris.LillyGossip.Enable
+#     Lilly helper NPC (299900) — teleportation, instance reset, talent point purchase.
+#     Also includes Lilly's summon flavor text.
+#     [CUSTOM DB] — needs custom creature_template entry 299900 + ScriptName
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.LillyGossip.Enable = 0
+
+#
+# CustomRamvaris.LoginSpellGrants.Enable
+#     Auto-learn utility spells and profession specializations on login.
+#     Grants: custom spells (81002, 81003, 81005, 81007, 81008, 81013),
+#             Diplomacy for all, Pick Pocket for all, Draenei racial fixes,
+#             BE Warrior Arcane Torrent, profession dual/triple spec unlock.
+#     [CUSTOM DB] — needs custom DBC spell entries
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.LoginSpellGrants.Enable = 0
+
+#
+# CustomRamvaris.MendPetScale.Enable
+#     Doubles pet visual scale on each Mend Pet cast (caps at 5x).
+#     Pure cosmetic fun — makes hunter pets grow with each heal.
+#     [NO DB] — works with vanilla client
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.MendPetScale.Enable = 0
+
+#
+# CustomRamvaris.DarkAzeroth.Enable
+#     Dark Azeroth — biome-aware bad weather across all zones.
+#     Hot zones get thunderstorms, cold zones get snow, others get rain.
+#     5% sunny, 25% light, 30% medium, 40% heavy weather.
+#     Triggers on login and zone change.
+#     [NO DB] — works with vanilla client, no custom data needed!
+#     Hint: If WEATHER in Stormwind and other cities is wanted, you need to update the WEATHER entry for those zones in the SQL database
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.DarkAzeroth.Enable = 0
+
+#
+# CustomRamvaris.Commands.Enable
+#     Custom player commands: .special and .mountup
+#     .special — gossip menu to summon custom NPCs, open bank/mail
+#     .mountup — auto-mount based on riding skill, dismount if mounted
+#     [NO DB] — .mountup works with vanilla client
+#     [CUSTOM DB] — .special NPC summons need custom creature_template entries
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.Commands.Enable = 0
