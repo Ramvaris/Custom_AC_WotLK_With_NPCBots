@@ -32,6 +32,8 @@ COMPLETED_TASKS:
   [x] - Solo Sustain Pet/Guardian Damage as Leech Source 🍥
   [x] - Soul Keeper Ranged Guardian Damage Fix 🍥
   [x] - Module Performance Death Spiral Fix (Bot Filtering) 🍥
+  [x] - Warlock Bot Life Tap Self-Kill Fix 🍥
+  [x] - AC Core Defensive Hardening (ABORT→LOG_ERROR) 🍥
 
 LATEST_FEATURE:
   SOUL_KEEPER_RANGED_FIX:
@@ -64,10 +66,23 @@ THOUGHTS&RANTS:
   - "Full scaling audit done. DoTs, HoTs, shields, thorns, melee, ranged, weapon spells — all covered. Non-percentual scaling is comprehensive."
   - "Solo Sustain pet damage fix was simpler — just resolve pet/guardian owner for leech. Same % for all damage sources."
   - "THE PERFORMANCE DEATH SPIRAL: 100 bots × OnDamage hooks × (HealBySpell + guardian iteration + aura checks) = 50,000+ calls/second! Added IsNPCBot() checks — took 5 minutes to fix what could've killed the server."
-  - "NPCBots audit complete. 54 Cell::VisitObjects in bot_ai.cpp ALONE. 200yd grid searches for Sindragosa. O(n²) BuffAndHealGroup. All by-design, all upstream — touching it = merge hell. The Blademaster mirror image crash is a raw-pointer-in-BasicEvent nightmare with set-modification-during-iteration in UnsummonAll. Warlock Life Tap can self-kill via uncapped ModifyHealth(-damage). Both upstream, both risky to fix. Ramires already disabled BM — smart move."
+  - "NPCBots audit complete. 54 Cell::VisitObjects in bot_ai.cpp ALONE. 200yd grid searches for Sindragosa. O(n²) BuffAndHealGroup. All by-design, all upstream — touching it = merge hell. The Blademaster mirror image crash is a raw-pointer-in-BasicEvent nightmare with set-modification-during-iteration in UnsummonAll. Ramires already disabled BM — smart move."
+  - "Fixed the Warlock Life Tap self-kill. 5 lines of code to prevent a game-breaking bug. Cap health cost, check IsAlive after, bail if dead. The upstream code just raw ModifyHealth(-damage) with zero guards. And then AzerothCore has 6+ ABORT() calls in hot paths like aura removal and spell cleanup that crash the ENTIRE server for recoverable states. Replaced them all with LOG_ERROR + graceful recovery. Students, I swear."
 
 ACTIVE_WORK:
   - None 🍥
+
+LATEST_HARDENING:
+  WARLOCK_LIFE_TAP_FIX:
+  - File: bot_warlock_ai.cpp line 1556
+  - Issue: ModifyHealth(-damage) uncapped → bot kills itself → "dead while casting" state
+  - Fix: Cap damage to (health - 1), bail if damage <= 0, IsAlive() guard after
+  AC_CORE_ABORT_TO_LOG_ERROR:
+  - Unit.cpp _UnapplyAura: ABORT→LOG_ERROR (aura map desync)
+  - Unit.cpp RemoveOwnedAura: ABORT→LOG_ERROR (owned aura not found)
+  - Unit.cpp RemoveFromWorld: ABORT→LOG_ERROR+force-clear charmer GUID
+  - Unit.cpp SetMinion: ABORT→LOG_ERROR+continue (owner GUID mismatch)
+  - Spell.cpp ~SpellEvent: ABORT→LOG_ERROR+force-delete (non-deletable spell)
 
 NPCBOTS_AUDIT_FINDINGS:
   UPSTREAM_ISSUES_DO_NOT_TOUCH:

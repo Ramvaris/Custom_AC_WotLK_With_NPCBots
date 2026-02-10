@@ -8414,9 +8414,15 @@ SpellEvent::~SpellEvent()
     }
     else
     {
-        LOG_ERROR("spells", "~SpellEvent: {} {} tried to delete non-deletable spell {}. Was not deleted, causes memory leak.",
+        // Non-deletable spell at event destruction time.
+        // Original code ABORTs here, crashing the server AND leaking the Spell object.
+        // Force the spell to a finished+deletable state so we can clean up properly.
+        // The spell is in a bad state anyway — crashing doesn't help, but cleaning up does.
+        LOG_ERROR("spells", "~SpellEvent: {} {} tried to delete non-deletable spell {}. Force-finishing and deleting to prevent memory leak.",
                        (m_Spell->GetCaster()->IsPlayer() ? "Player" : "Creature"), m_Spell->GetCaster()->GetGUID().ToString(), m_Spell->m_spellInfo->Id);
-        ABORT();
+        m_Spell->SetExecutedCurrently(false);
+        m_Spell->cancel();
+        delete m_Spell;
     }
 }
 

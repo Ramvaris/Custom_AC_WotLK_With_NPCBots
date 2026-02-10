@@ -15,7 +15,13 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 
 - Custom Soul Collector Mod (My Own Invention, with the help of my AI Agent Ryo) [Does NOT work without some AC core file mods done here!]
 - Custom Solo Sustain Mod for life/mana leech (damage-based, class-specific, Recount/MSBT compatible)
-- A number of 'defensive crash protectors' for the server
+- A number of 'defensive crash protectors' for the server:
+  - **SmartAI Recursion Gate** - Prevents stack overflow from infinite SmartAI script loops (depth-limited with logging)
+  - **Aura System Hardening** - Converts fatal ABORT() calls to graceful LOG_ERROR recovery when aura maps desync
+  - **Spell Event Safety** - Non-deletable spell events are force-cleaned up instead of crashing + leaking memory
+  - **Charm State Cleanup** - Stale charmer GUIDs are force-cleared on world removal instead of crashing
+  - **Minion Ownership Safety** - Owner GUID mismatches in controlled sets are logged and skipped, not crashed
+  - **Warlock Bot Life Tap Fix** - Prevents NPCBot warlocks from killing themselves with Life Tap (capped health cost + alive guard)
 - Potential old world flying (needs also a fitting client side spell or a lua script that allows the client to mount up)
 - Some QoL stuff
 -> Looting of mobs that were killed by a players pet without the player doing damage to it

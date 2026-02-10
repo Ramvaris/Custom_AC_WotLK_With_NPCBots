@@ -5110,7 +5110,12 @@ void Unit::_UnapplyAura(AuraApplication* aurApp, AuraRemoveMode removeMode)
         else
             ++iter;
     }
-    ABORT();
+
+    // Aura map desync: application not found in m_appliedAuras.
+    // Original code ABORTs here, crashing the server for a recoverable state.
+    // Log the issue and gracefully bail — the aura is already effectively gone.
+    LOG_ERROR("entities.unit", "Unit::_UnapplyAura: AuraApplication for spell {} not found in m_appliedAuras on unit {} (GUID: {}). Skipping removal.",
+        spellId, GetEntry(), GetGUID().ToString());
 }
 
 void Unit::_RemoveNoStackAurasDueToAura(Aura* aura, bool owned)
@@ -5197,7 +5202,11 @@ void Unit::RemoveOwnedAura(Aura* aura, AuraRemoveMode removeMode)
         }
     }
 
-    ABORT();
+    // Aura map desync: owned aura not found in m_ownedAuras.
+    // Original code ABORTs here, crashing the server for a recoverable state.
+    // The aura is already removed or was never properly added — log and move on.
+    LOG_ERROR("entities.unit", "Unit::RemoveOwnedAura: Aura for spell {} not found in m_ownedAuras on unit {} (GUID: {}). Skipping removal.",
+        spellId, GetEntry(), GetGUID().ToString());
 }
 
 Aura* Unit::GetOwnedAura(uint32 spellId, ObjectGuid casterGUID, ObjectGuid itemCasterGUID, uint8 reqEffMask, Aura* except) const
@@ -11755,9 +11764,14 @@ void Unit::SetMinion(Minion* minion, bool apply)
                     //ASSERT((*itr)->GetOwnerGUID() == GetGUID());
                     if ((*itr)->GetOwnerGUID() != GetGUID())
                     {
-                        OutDebugInfo();
-                        (*itr)->OutDebugInfo();
-                        ABORT();
+                        // Owner GUID mismatch in controlled set. This indicates a stale entry
+                        // from a previous ownership change or a charm/summon race condition.
+                        // Original code ABORTs here, but the mismatch is recoverable —
+                        // skip this entry and try the next minion in the controlled set.
+                        LOG_ERROR("entities.unit", "Unit::SetMinion: Controlled unit {} (GUID: {}) has owner GUID {} but expected {} during minion removal. Skipping.",
+                            (*itr)->GetEntry(), (*itr)->GetGUID().ToString(),
+                            (*itr)->GetOwnerGUID().ToString(), GetGUID().ToString());
+                        continue;
                     }
                     ASSERT((*itr)->IsCreature());
 
@@ -17104,8 +17118,12 @@ void Unit::RemoveFromWorld()
 
         if (GetCharmerGUID())
         {
-            LOG_FATAL("entities.unit", "Unit {} has charmer guid when removed from world", GetEntry());
-            ABORT();
+            // Charm state wasn't cleaned up before world removal.
+            // Original code ABORTs here, but the charm can be force-cleared
+            // to allow clean removal without crashing the entire server.
+            LOG_ERROR("entities.unit", "Unit {} (GUID: {}) has charmer GUID {} when removed from world. Force-clearing charm state.",
+                GetEntry(), GetGUID().ToString(), GetCharmerGUID().ToString());
+            SetGuidValue(UNIT_FIELD_CHARMEDBY, ObjectGuid::Empty);
         }
 
         if (Unit* owner = GetOwner())

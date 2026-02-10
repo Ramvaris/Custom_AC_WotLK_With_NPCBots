@@ -1553,10 +1553,21 @@ public:
                 if (me->GetLevel() >= 15)
                     manaGain = int32(float(manaGain) * 1.2f);
 
+                // Safety: Cap damage so Life Tap can never kill the bot.
+                // Between the pre-cast health check and SpellHit, the bot can take
+                // incoming damage (DoTs, AoE, Hellfire), making health lower than
+                // the Life Tap cost. Uncapped ModifyHealth(-damage) would set HP to 0,
+                // leaving a "dead but acting" warlock that casts from the grave.
+                if (damage >= static_cast<int32>(me->GetHealth()))
+                    damage = static_cast<int32>(me->GetHealth()) - 1;
+                if (damage <= 0)
+                    return;
+
                 me->ModifyHealth(-damage);
-                //CastSpellExtraArgs args;
-                //args.AddSpellBP0(manaGain);
-                //me->CastSpell(me, LIFE_TAP_ENERGIZE, args);
+
+                if (!me->IsAlive())
+                    return;
+
                 me->CastCustomSpell(me, LIFE_TAP_ENERGIZE, &manaGain, nullptr, nullptr, false);
 
                 //Mana Feed
