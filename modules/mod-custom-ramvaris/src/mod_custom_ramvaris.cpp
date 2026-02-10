@@ -17,7 +17,6 @@ void AddSC_npc_lilly_gossip();
 
 // Player Scripts
 void AddSC_player_login_grants();
-void AddSC_player_mend_pet_scale();
 
 // World Scripts
 void AddSC_dark_azeroth_weather();
@@ -31,7 +30,6 @@ void Addmod_custom_ramvarisScripts()
     AddSC_npc_summon_flavor();
     AddSC_npc_lilly_gossip();
     AddSC_player_login_grants();
-    AddSC_player_mend_pet_scale();
     AddSC_dark_azeroth_weather();
     AddSC_custom_commands();
 }

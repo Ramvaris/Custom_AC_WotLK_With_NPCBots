@@ -27,6 +27,7 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 -> Looting of mobs that were killed by a players pet without the player doing damage to it
 -> All Ore- and Flower-Nodes respawn in 120 seconds instead of 24 hours to 7 days.
 - **Working Language Comprehension** - NPCs speaking Orcish/Thalassian/etc. are actually readable if your character knows the language (via skill or aura). Non-speakers get the original scrambled text with proper language tags. No Client-Mod neccesary.
+- **Pet Stay on Mount** - Pets stay summoned when mounting up instead of being dismissed. They run alongside the player. Config-gated (`CustomRamvaris.PetStayOnMount.Enable`).
 - Some AC modules from other people integrated and kept up-to-date
 
 Notice: I also have some LUA-Script / MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' if you can pay massive amounts of gold, QoL Spells for any race/class on login (Aspect of the Uber Cheetah / 40% / No Dazzle, Levitation over water and mounted that does not dispel, Detect Invisibility (To see all the easter eggs) with endless duration, Stealth without Movement Speed Reduction, the Druid waterform), Human Reputation Bonus for everyone on Login, 70% of the time bad weather (Weather Effects on all parts of the world, like in Stormwind, etc., Storms, Snow, Desert Wind, etc.), an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
@@ -139,15 +140,19 @@ All of Ramvaris' private server Lua customizations ported to C++ for performance
 - **NPC Summon Flavor Text** — 8 custom NPCs with 12 random witty sayings each when summoned
 - **Lilly Helper NPC** — Full gossip: city/dungeon/POI teleports, instance reset, talent point purchase
 - **Login Spell Grants** — Auto-learn utility spells, profession dual/triple spec unlock, racial fixes
-- **Mend Pet Scale** — Doubles hunter pet visual scale on each Mend Pet cast (caps at 5x, cosmetic)
 - **Dark Azeroth Weather** — Biome-aware bad weather: storms in deserts, snow in tundra, rain elsewhere
-- **Custom Commands** — `.special` (NPC summon menu, bank, mail) and `.mountup` (auto-mount by skill)
+- **`.special`** — Gossip menu to summon custom NPCs, open bank, open mailbox
+- **`.mountup`** — Auto-mount based on riding skill (flying in Outland/Northrend, ground elsewhere)
+- **`.guardianscale`** — Double Soul Keeper guardian visual scale each use (caps at 5x)
+- **`.petscale`** — Double any pet visual scale each use (Hunter/Warlock/DK, caps at 5x)
+- **Pet Stay on Mount** — Core patch: pets stay summoned when mounting up instead of being dismissed
 
 **Config:**
 ```ini
-CustomRamvaris.Enable = 1              # Master switch (ON, but all features OFF by default)
-CustomRamvaris.DarkAzeroth.Enable = 0  # Example: no custom DB needed
-CustomRamvaris.Commands.Enable = 0     # Example: .mountup works without custom DB
+CustomRamvaris.Enable = 1                    # Master switch (ON, but all features OFF by default)
+CustomRamvaris.DarkAzeroth.Enable = 0        # Example: no custom DB needed
+CustomRamvaris.MountUp.Enable = 0            # Example: .mountup works without custom DB
+CustomRamvaris.PetStayOnMount.Enable = 0     # Core patch: pets run alongside mounted player
 ```
 
 ### 🌿 Database Tweaks

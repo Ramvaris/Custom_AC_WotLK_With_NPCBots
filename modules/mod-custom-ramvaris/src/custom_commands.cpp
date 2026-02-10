@@ -1,18 +1,22 @@
 /*
- * Custom Player Commands — .special and .mountup
- * Config: CustomRamvaris.Commands.Enable
+ * Custom Player Commands — .special, .mountup, .guardianscale, .petscale
+ * Config: CustomRamvaris.SpecialCommand.Enable, CustomRamvaris.MountUp.Enable,
+ *         CustomRamvaris.GuardianScale.Enable, CustomRamvaris.PetScale.Enable
  *
- * .special — Opens a gossip menu to summon custom NPCs, open bank, open mailbox.
- *            NPCs spawn as temporary summons for 60 seconds.
- * .mountup — Auto-mount based on riding skill and current zone.
- *            If already mounted: dismount and cast 81003 (custom speed buff).
- *            Supports flying (Outland, Northrend with Cold Weather Flying, etc.)
+ * .special     — Opens a gossip menu to summon custom NPCs, open bank, open mailbox.
+ *                NPCs spawn as temporary summons for 60 seconds.
+ * .mountup     — Auto-mount based on riding skill and current zone.
+ *                If already mounted: dismount and cast 81003 (custom speed buff).
+ * .guardianscale — Doubles Soul Keeper guardian visual scale (caps at 5x base).
+ * .petscale    — Doubles any pet visual scale (Hunter/Warlock/DK, caps at 5x base).
  */
 
 #include "ScriptMgr.h"
 #include "Chat.h"
 #include "ChatCommand.h"
 #include "Player.h"
+#include "Pet.h"
+#include "Unit.h"
 #include "WorldSession.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
@@ -37,6 +41,8 @@ enum CustomCommandConstants
     MOUNT_SPELL_310_FLY         = 42668,    // Artisan flying mount
     MOUNT_SPELL_150_FLY         = 42667,    // Expert flying mount
     MOUNT_SPELL_100_GROUND      = 42683,    // Epic ground mount
+
+    MAX_VISUAL_SCALE            = 5,        // Cap for .guardianscale / .petscale
 };
 
 struct SummonableNPC
@@ -59,10 +65,28 @@ static const SummonableNPC SummonMap[] =
 
 static constexpr uint32 SUMMON_MAP_SIZE = sizeof(SummonMap) / sizeof(SummonMap[0]);
 
-static bool IsCommandsEnabled()
+static bool IsSpecialEnabled()
 {
     return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
-           sConfigMgr->GetOption<bool>("CustomRamvaris.Commands.Enable", false);
+           sConfigMgr->GetOption<bool>("CustomRamvaris.SpecialCommand.Enable", false);
+}
+
+static bool IsMountUpEnabled()
+{
+    return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
+           sConfigMgr->GetOption<bool>("CustomRamvaris.MountUp.Enable", false);
+}
+
+static bool IsGuardianScaleEnabled()
+{
+    return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
+           sConfigMgr->GetOption<bool>("CustomRamvaris.GuardianScale.Enable", false);
+}
+
+static bool IsPetScaleEnabled()
+{
+    return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
+           sConfigMgr->GetOption<bool>("CustomRamvaris.PetScale.Enable", false);
 }
 
 // ============================================================================
@@ -88,7 +112,7 @@ static void SendDynamicGossipText(Player* player, std::string const& text, uint3
 }
 
 // ============================================================================
-// CommandScript — .special and .mountup registration
+// CommandScript — .special, .mountup, .guardianscale, .petscale registration
 // ============================================================================
 class custom_commandscript : public CommandScript
 {
@@ -99,8 +123,10 @@ public:
     {
         static ChatCommandTable commandTable =
         {
-            { "special", HandleSpecialCommand, SEC_PLAYER, Console::No },
-            { "mountup", HandleMountupCommand, SEC_PLAYER, Console::No },
+            { "special",       HandleSpecialCommand,       SEC_PLAYER, Console::No },
+            { "mountup",       HandleMountupCommand,       SEC_PLAYER, Console::No },
+            { "guardianscale", HandleGuardianScaleCommand, SEC_PLAYER, Console::No },
+            { "petscale",      HandlePetScaleCommand,      SEC_PLAYER, Console::No },
         };
         return commandTable;
     }
@@ -108,7 +134,7 @@ public:
     // --- .special command ---
     static bool HandleSpecialCommand(ChatHandler* handler)
     {
-        if (!IsCommandsEnabled())
+        if (!IsSpecialEnabled())
         {
             handler->SendSysMessage("This command is not enabled on this server.");
             return true;
@@ -136,7 +162,7 @@ public:
     // --- .mountup command ---
     static bool HandleMountupCommand(ChatHandler* handler)
     {
-        if (!IsCommandsEnabled())
+        if (!IsMountUpEnabled())
         {
             handler->SendSysMessage("This command is not enabled on this server.");
             return true;
@@ -191,6 +217,92 @@ public:
 
         return true;
     }
+
+    // --- .guardianscale command ---
+    // Doubles the visual scale of the player's active Soul Keeper guardian (caps at 5x base).
+    // Only works on Soul Keeper guardians (IsSoulKeeperGuardian check).
+    static bool HandleGuardianScaleCommand(ChatHandler* handler)
+    {
+        if (!IsGuardianScaleEnabled())
+        {
+            handler->SendSysMessage("This command is not enabled on this server.");
+            return true;
+        }
+
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return false;
+
+        // Find the player's Soul Keeper guardian in their controlled units
+        Unit* skGuardian = nullptr;
+        for (Unit* controlled : player->m_Controlled)
+        {
+            if (controlled && controlled->IsAlive() && controlled->IsSoulKeeperGuardian())
+            {
+                skGuardian = controlled;
+                break;
+            }
+        }
+
+        if (!skGuardian)
+        {
+            handler->SendSysMessage("You don't have an active Soul Keeper guardian.");
+            return true;
+        }
+
+        float currentScale = skGuardian->GetObjectScale();
+        float newScale = currentScale * 2.0f;
+        if (newScale > static_cast<float>(MAX_VISUAL_SCALE))
+            newScale = static_cast<float>(MAX_VISUAL_SCALE);
+
+        if (currentScale >= static_cast<float>(MAX_VISUAL_SCALE))
+        {
+            handler->PSendSysMessage("Guardian is already at maximum scale (%.0fx).", currentScale);
+            return true;
+        }
+
+        skGuardian->SetObjectScale(newScale);
+        handler->PSendSysMessage("Guardian scale: %.1fx -> %.1fx", currentScale, newScale);
+        return true;
+    }
+
+    // --- .petscale command ---
+    // Doubles the visual scale of any active pet (Hunter/Warlock/DK).
+    // Uses IsPet() check — works for all proper pet types, NOT guardians.
+    static bool HandlePetScaleCommand(ChatHandler* handler)
+    {
+        if (!IsPetScaleEnabled())
+        {
+            handler->SendSysMessage("This command is not enabled on this server.");
+            return true;
+        }
+
+        Player* player = handler->GetPlayer();
+        if (!player)
+            return false;
+
+        Pet* pet = player->GetPet();
+        if (!pet)
+        {
+            handler->SendSysMessage("You don't have an active pet.");
+            return true;
+        }
+
+        float currentScale = pet->GetObjectScale();
+        float newScale = currentScale * 2.0f;
+        if (newScale > static_cast<float>(MAX_VISUAL_SCALE))
+            newScale = static_cast<float>(MAX_VISUAL_SCALE);
+
+        if (currentScale >= static_cast<float>(MAX_VISUAL_SCALE))
+        {
+            handler->PSendSysMessage("Pet is already at maximum scale (%.0fx).", currentScale);
+            return true;
+        }
+
+        pet->SetObjectScale(newScale);
+        handler->PSendSysMessage("Pet scale: %.1fx -> %.1fx", currentScale, newScale);
+        return true;
+    }
 };
 
 // ============================================================================
@@ -203,7 +315,7 @@ public:
 
     void OnPlayerGossipSelect(Player* player, uint32 /*menu_id*/, uint32 sender, uint32 action) override
     {
-        if (!IsCommandsEnabled())
+        if (!IsSpecialEnabled())
             return;
         if (sender != SPECIAL_GOSSIP_SENDER)
             return;

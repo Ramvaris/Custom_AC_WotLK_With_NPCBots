@@ -20,13 +20,10 @@ void AddSC_npc_lilly_gossip();
 // Player Scripts (login spell grants, profession unlocks, racial adjustments)
 void AddSC_player_login_grants();
 
-// Player Scripts (Mend Pet scale handler)
-void AddSC_player_mend_pet_scale();
-
 // World Scripts (Dark Azeroth — biome-aware bad weather system)
 void AddSC_dark_azeroth_weather();
 
-// Command Scripts (.special, .mountup)
+// Command Scripts (.special, .mountup, .guardianscale, .petscale)
 void AddSC_custom_commands();
 
 #endif // LOADER_CUSTOM_RAMVARIS_H

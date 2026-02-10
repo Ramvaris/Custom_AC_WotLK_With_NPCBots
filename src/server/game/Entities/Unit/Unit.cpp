@@ -29,6 +29,7 @@
 #include "ChatTextBuilder.h"
 #include "Common.h"
 #include "ConditionMgr.h"
+#include "Config.h"
 #include "Creature.h"
 #include "CreatureAIImpl.h"
 #include "CreatureGroups.h"
@@ -14487,6 +14488,13 @@ void Unit::Mount(uint32 mount, uint32 VehicleId, uint32 creatureEntry)
             // don't unsummon pet in arena but SetFlag UNIT_FLAG_STUNNED to disable pet's interface
             if (bg && bg->isArena())
                 pet->SetUnitFlag(UNIT_FLAG_STUNNED);
+            // [CUSTOM] Keep pets summoned while mounted — they run alongside the player.
+            // Config: CustomRamvaris.PetStayOnMount.Enable (default OFF — vanilla behavior)
+            else if (sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
+                     sConfigMgr->GetOption<bool>("CustomRamvaris.PetStayOnMount.Enable", false))
+            {
+                // Pet stays in-world — no-op. Pet follows via its movement generator.
+            }
             else
                 player->UnsummonPetTemporaryIfAny();
         }

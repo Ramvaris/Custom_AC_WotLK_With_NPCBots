@@ -74,16 +74,6 @@ CustomRamvaris.LillyGossip.Enable = 0
 CustomRamvaris.LoginSpellGrants.Enable = 0
 
 #
-# CustomRamvaris.MendPetScale.Enable
-#     Doubles pet visual scale on each Mend Pet cast (caps at 5x).
-#     Pure cosmetic fun — makes hunter pets grow with each heal.
-#     [NO DB] — works with vanilla client
-#     Default: 0 (OFF)
-#
-
-CustomRamvaris.MendPetScale.Enable = 0
-
-#
 # CustomRamvaris.DarkAzeroth.Enable
 #     Dark Azeroth — biome-aware bad weather across all zones.
 #     Hot zones get thunderstorms, cold zones get snow, others get rain.
@@ -97,13 +87,54 @@ CustomRamvaris.MendPetScale.Enable = 0
 CustomRamvaris.DarkAzeroth.Enable = 0
 
 #
-# CustomRamvaris.Commands.Enable
-#     Custom player commands: .special and .mountup
-#     .special — gossip menu to summon custom NPCs, open bank/mail
-#     .mountup — auto-mount based on riding skill, dismount if mounted
-#     [NO DB] — .mountup works with vanilla client
-#     [CUSTOM DB] — .special NPC summons need custom creature_template entries
+# CustomRamvaris.SpecialCommand.Enable
+#     .special command — gossip menu to summon custom NPCs, open bank, open mailbox.
+#     NPCs spawn as temporary summons for 60 seconds.
+#     [CUSTOM DB] — NPC summons need custom creature_template entries
 #     Default: 0 (OFF)
 #
 
-CustomRamvaris.Commands.Enable = 0
+CustomRamvaris.SpecialCommand.Enable = 0
+
+#
+# CustomRamvaris.MountUp.Enable
+#     .mountup command — auto-mount based on riding skill and current zone.
+#     If already mounted: dismount and cast speed buff (81003).
+#     Supports flying (Outland, Northrend with Cold Weather Flying, etc.)
+#     [NO DB] — works with vanilla client
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.MountUp.Enable = 0
+
+#
+# CustomRamvaris.GuardianScale.Enable
+#     .guardianscale command — doubles Soul Keeper guardian visual scale (caps at 5x).
+#     Only affects Soul Keeper guardians (IsSoulKeeperGuardian check).
+#     [NO DB] — works with vanilla client
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.GuardianScale.Enable = 0
+
+#
+# CustomRamvaris.PetScale.Enable
+#     .petscale command — doubles any pet visual scale (Hunter/Warlock/DK).
+#     Only affects proper pets (IsPet check), not guardians or totems.
+#     [NO DB] — works with vanilla client
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.PetScale.Enable = 0
+
+#
+# CustomRamvaris.PetStayOnMount.Enable
+#     Keeps pets summoned when the player mounts up instead of dismissing them.
+#     Pets will run alongside the mounted player. Only affects mounting — other
+#     dismiss triggers (vehicle, teleport, logout) are unchanged.
+#     Core patch to Unit::Mount() — reverts to vanilla behavior when OFF.
+#     [NO DB] — works with vanilla client
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.PetStayOnMount.Enable = 0

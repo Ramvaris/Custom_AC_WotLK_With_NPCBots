@@ -15,9 +15,12 @@ Global toggle ON, all sub-features OFF by default. Safe to ignore or delete for 
 | **NPC Summon Flavor Text** | `NpcFlavorText.Enable` | Yes — custom creature_template |
 | **Lilly Helper NPC** (gossip) | `LillyGossip.Enable` | Yes — custom creature 299900 |
 | **Login Spell Grants** | `LoginSpellGrants.Enable` | Yes — custom DBC spells |
-| **Mend Pet Scale** | `MendPetScale.Enable` | No |
 | **Dark Azeroth Weather** | `DarkAzeroth.Enable` | No |
-| **Custom Commands** (.special, .mountup) | `Commands.Enable` | .mountup: No / .special: Yes |
+| **.special** (NPC summon menu) | `SpecialCommand.Enable` | Yes — custom creature_template |
+| **.mountup** (auto-mount) | `MountUp.Enable` | No |
+| **.guardianscale** (SK guardian size) | `GuardianScale.Enable` | No |
+| **.petscale** (pet size) | `PetScale.Enable` | No |
+| **Pet Stay on Mount** | `PetStayOnMount.Enable` | No — core patch |
 
 ## Config Structure
 
@@ -30,9 +33,12 @@ CustomRamvaris.HumanStoneform.Enable = 0
 CustomRamvaris.NpcFlavorText.Enable = 0
 CustomRamvaris.LillyGossip.Enable = 0
 CustomRamvaris.LoginSpellGrants.Enable = 0
-CustomRamvaris.MendPetScale.Enable = 0
 CustomRamvaris.DarkAzeroth.Enable = 0
-CustomRamvaris.Commands.Enable = 0
+CustomRamvaris.SpecialCommand.Enable = 0
+CustomRamvaris.MountUp.Enable = 0
+CustomRamvaris.GuardianScale.Enable = 0
+CustomRamvaris.PetScale.Enable = 0
+CustomRamvaris.PetStayOnMount.Enable = 0
 ```
 
 ## Feature Details
@@ -63,8 +69,8 @@ On login, automatically grants utility spells and unlocks profession dual/triple
 Handles Draenei racial fixes (Gift of the Naaru universal version), Blood Elf Warrior Arcane Torrent,
 Diplomacy for all, Pick Pocket for all.
 
-### Mend Pet Scale
-Doubles hunter pet visual scale on each Mend Pet (136) cast, caps at 5x. Pure cosmetic fun.
+### Mend Pet Scale (REMOVED)
+Replaced by `.guardianscale` and `.petscale` commands — see below.
 
 ### Dark Azeroth Weather
 Biome-aware bad weather system — hot zones get thunderstorms, cold zones get snow, others get rain.
@@ -73,10 +79,18 @@ Biome-aware bad weather system — hot zones get thunderstorms, cold zones get s
 ### Custom Commands
 - `.special` — Gossip menu to summon NPCs, open bank, open mailbox
 - `.mountup` — Auto-mount based on riding skill (flying in Outland/Northrend, ground elsewhere)
+- `.guardianscale` — Doubles Soul Keeper guardian visual scale each use (caps at 5x base). Only works on Soul Keeper guardians.
+- `.petscale` — Doubles any pet visual scale each use (Hunter/Warlock/DK pets, caps at 5x base)
+
+### Pet Stay on Mount
+Core patch: pets stay summoned when the player mounts up instead of being dismissed.
+Pets run alongside the mounted player. Only affects mount-up — other dismiss triggers
+(vehicle entry, teleport, logout) work as normal. Reverts to vanilla behavior when OFF.
 
 ## SQL Setup
 
-Run `data/sql/db-world/custom_ramvaris_scriptnames.sql` to set ScriptNames on custom NPCs.
+SQL runs automatically via AzerothCore's UpdateFetcher system.
+Files in `data/sql/db-world/base/` are applied on first server start.
 UPDATEs are harmless if the NPC entries don't exist in your DB.
 
 ## Lua Archive
