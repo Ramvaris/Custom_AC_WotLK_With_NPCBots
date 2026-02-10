@@ -36,31 +36,32 @@ COMPLETED_TASKS:
   [x] - AC Core Defensive Hardening (ABORT→LOG_ERROR) 🍥
   [x] - mod-custom-ramvaris: Full Lua→C++ Port (7 source files, nested config) 🍥
   [x] - mod-custom-ramvaris v2: Split toggles, .guardianscale/.petscale, Pet Stay on Mount 🍥
+  [x] - Server Performance Tuning: MapUpdate threads, MinWorldUpdateTime, DB worker threads 🍥
 
 LATEST_FEATURE:
-  MOD_CUSTOM_RAMVARIS_V2:
-  - TASK: Split command toggles, new scale commands, pet stay on mount, SQL auto-run, perf audit
+  SERVER_PERFORMANCE_TUNING:
+  - TASK: Diagnose 210% CPU on worldserver, optimize without breaking functionality
+  - DIAGNOSIS:
+    * 8 MapUpdate threads at 20-40% CPU each = ~220% CPU combined
+    * 120 wandering bots across 4 continents keeping hundreds of grids permanently loaded
+    * MinWorldUpdateTime=1 letting world loop tight-spin at up to 1000 Hz
+    * Main thread 10%, other 10 threads (DB/network) near 0%
+    * Pet revive delay: architectural — async DB round-trip (4 SELECT queries serially)
+      when pet corpse despawns after 60s. Fast path (corpse exists) is instant.
   - CHANGES:
-    * SQL moved to data/sql/db-world/base/ — auto-runs via AC UpdateFetcher
-    * .special and .mountup split into independent config toggles
-    * .guardianscale — doubles Soul Keeper guardian scale (caps 5x, IsSoulKeeperGuardian check)
-    * .petscale — doubles any pet scale (Hunter/Warlock/DK, caps 5x)
-    * MendPetScale REMOVED — replaced by .guardianscale and .petscale commands
-    * Pet Stay on Mount — core patch to Unit::Mount(), config-gated
-    * Config now has 10 independent toggles (was 7)
-  - PERF_AUDIT:
-    * Soul Keeper: Clean. Bot-filtered, timer-gated, O(1) hot paths.
-    * Solo Sustain: Clean. Single OnDamage hook, bot-filtered.
-    * Custom Ramvaris: Clean. Login/zone-change only, no hot paths.
-    * VERDICT: None of our modules cause object stream-in issues.
-  - BUILD: PENDING
-  - STATUS: SHIPPING 🍥
-  - CONFIG: Global ON, 7 sub-features OFF — safe dead module for cloners
-  - LUA_BUGS_FOUND_AND_FIXED:
-    * commands.lua: CommandHandlerFunction NEVER registered (no RegisterPlayerEvent)
-    * lilly.lua: GossipSelect handler NEVER registered (only GossipHello was)
-  - BUILD: SUCCESS ✓
-  - STATUS: PUSHED 🍥
+    * MinWorldUpdateTime: 1 → 10 (100 Hz still buttery smooth, prevents tight-loop)
+    * MapUpdate.Threads: 8 → 2 (solo server, 8 threads was massive overkill)
+    * CharacterDatabase.WorkerThreads: 1 → 2 (reduces pet revive DB queue latency)
+    * NpcBot.WanderingBots.Continents.Count: kept at 120 per Ramires's choice
+  - PET_REVIVE_DELAY_ANALYSIS:
+    * Two code paths in EffectResurrectPet (SpellEffects.cpp:5447)
+    * Fast path: Pet corpse still exists → instant revive (setDeathState, restore HP)
+    * Slow path: Pet corpse despawned → SummonPet → LoadPetFromDB → async DB
+      4 SELECT queries (declined_name, aura, spell, spell_cooldown) serially
+      Results polled next WorldSession::Update tick → visible 0.5-1s gap
+    * NOT fixable without core architecture changes (async query pattern is fundamental)
+  - BUILD: N/A (config-only changes, no recompile needed)
+  - STATUS: APPLIED 🍥
 
 SCALING_FORMULAS:
   BEST_RATIO_DESIGN:  Pick max of (meleeAP/expectedMelee, rangedAP/expectedRanged, maxSP/expectedSpell)
@@ -80,6 +81,7 @@ THOUGHTS&RANTS:
   - "NPCBots audit complete. 54 Cell::VisitObjects in bot_ai.cpp ALONE. 200yd grid searches for Sindragosa. O(n²) BuffAndHealGroup. All by-design, all upstream — touching it = merge hell. The Blademaster mirror image crash is a raw-pointer-in-BasicEvent nightmare with set-modification-during-iteration in UnsummonAll. Ramires already disabled BM — smart move."
   - "Fixed the Warlock Life Tap self-kill. 5 lines of code to prevent a game-breaking bug. Cap health cost, check IsAlive after, bail if dead. The upstream code just raw ModifyHealth(-damage) with zero guards. And then AzerothCore has 6+ ABORT() calls in hot paths like aura removal and spell cleanup that crash the ENTIRE server for recoverable states. Replaced them all with LOG_ERROR + graceful recovery. Students, I swear."
   - "Ported 1066 lines of Lua to C++. Found TWO registration bugs in the original Lua that meant half the features NEVER WORKED. commands.lua had a CommandHandlerFunction that was never RegisterPlayerEvent'd. lilly.lua registered GossipHello but forgot GossipSelect — so you could open the menu but never click anything. Ramires was running broken Lua for who knows how long. Now it's all clean C++ with proper hooks. Dattebayo."
+  - "210% CPU with ONE PLAYER logged in. EIGHT map update threads for a solo server. MinWorldUpdateTime=1 letting the world loop spin at 1000 Hz like it's trying to render frames for a VR headset. 120 wandering bots keeping hundreds of grids loaded across 4 continents. The pet revive delay? Architectural — AzerothCore fires 4 serial SELECT queries on a SINGLE DB connection, then polls for completion on the NEXT world tick. You literally can't fix it without rewriting the async query pipeline. At least the config tuning should cut CPU by 50%+. Dattebayo."
 
 ACTIVE_WORK:
   - None 🍥
