@@ -15675,8 +15675,7 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced)
                 speed *= (1.0f + lotteryBonus);
 
             // Fly enchant floor: stage rate × speed multiplier (up to 3.0 × 2.0 = 600%)
-            // Only applies in full-flight mode (level 60+, not flylock).
-            // Double-jump mode (level <60 or flylock) does NOT get flight speed.
+            // Only applies when flight is active (not flylock'd).
             if (mtype == MOVE_FLIGHT && plr->HasLotteryFullFlight())
             {
                 float effectiveFlySpeed = plr->GetLotteryFlySpeedRate() * (1.0f + lotteryBonus);

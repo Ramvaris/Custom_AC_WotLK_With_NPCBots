@@ -2421,14 +2421,14 @@ public:
     float m_lotterySpeedBonus{0.0f};     // 0.0–1.0 (additive base multiplier, cap +100%)
     float m_lotteryFlySpeedRate{0.0f};   // Highest fly stage rate: 0=none, 1.0/2.0/3.0 (cap 6.0)
     bool  m_lotteryCanFly{false};        // Has any fly enchant equipped (raw)
-    bool  m_lotteryFlyLocked{false};     // .flylock toggle — locks full flight, enables double jump
+    bool  m_lotteryFlyLocked{false};     // .flylock toggle — disables all flight when true
 
     [[nodiscard]] float GetLotterySpeedBonus() const { return m_lotterySpeedBonus; }
     void SetLotterySpeedBonus(float b) { m_lotterySpeedBonus = std::min(b, 1.0f); }
     [[nodiscard]] float GetLotteryFlySpeedRate() const { return m_lotteryFlySpeedRate; }
     void SetLotteryFlySpeedRate(float r) { m_lotteryFlySpeedRate = std::min(r, 6.0f); }
     [[nodiscard]] bool GetLotteryCanFly() const { return m_lotteryCanFly; }
-    [[nodiscard]] bool HasLotteryFullFlight() const { return m_lotteryCanFly && !m_lotteryFlyLocked && GetLevel() >= 60; }
+    [[nodiscard]] bool HasLotteryFullFlight() const { return m_lotteryCanFly && !m_lotteryFlyLocked; }
     void SetLotteryCanFly(bool v) { m_lotteryCanFly = v; }
     [[nodiscard]] bool IsLotteryFlyLocked() const { return m_lotteryFlyLocked; }
     void SetLotteryFlyLocked(bool v) { m_lotteryFlyLocked = v; }

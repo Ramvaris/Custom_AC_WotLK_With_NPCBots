@@ -25,37 +25,31 @@ COMPLETED_TASKS:
   [x] - Batch 4: Durability 777 persist, Mobility Boost (double jump + full flight) 🍥
   [x] - Batch 5: Double jump apex fix, GUID tag removal, gossip cleanup 🍥
   [x] - Batch 6: Double jump complete rewrite — state machine + MovementHandlerScript 🍥
+  [x] - Batch 7: Nuke double jump, simplify to mount-style flight + .flylock toggle 🍥
 
 LATEST_FEATURE:
-  DOUBLE_JUMP_REWRITE:
-  - TASK: Complete rewrite of double jump — proper platformer-style using core opcodes
-  - PROBLEM: Previous approach polled movement flags in OnPlayerUpdate for both trigger
-    AND landing detection. At knockback apex, flags briefly clear → false landing →
-    instant reset → infinite re-trigger → player kicked to sky endlessly.
-    Even the s_doubleJumpFellAfter "falling phase" fix was fragile.
-  - SOLUTION: State machine + MovementHandlerScript for opcode-driven detection
+  FLIGHT_SIMPLIFICATION:
+  - TASK: Remove broken double jump, simplify to mount-style flying
+  - PROBLEM: Double jump was fundamentally unfixable in 3.3.5a. Two full rewrites
+    (knockback + flag polling, then state machine + MovementHandlerScript) both failed.
+    The knockback approach had infinite sky-kick. The state machine approach made the
+    player just fly instead of double-jumping. Flying mount behavior already exists
+    in the engine and works perfectly — no need to reinvent it.
+  - SOLUTION: Nuke everything. Just use SetCanFly(true) → flying mount behavior.
+    Jump on ground, press space mid-air to fly. That's it.
   - CHANGES:
-    1. STATE_MACHINE: DoubleJumpState enum (DJ_GROUNDED / DJ_AIRBORNE / DJ_USED)
-       with s_djState and s_djJumpTime tracking maps. Replaced s_doubleJumpUsed
-       and s_doubleJumpFellAfter entirely.
-    2. MOVEMENT_SCRIPT: New LotteryEnchants_MovementScript (MovementHandlerScript)
-       hooks into OnPlayerMove for precise opcode detection:
-       - MSG_MOVE_JUMP (0x0BB): GROUNDED → AIRBORNE, records timestamp
-       - MSG_MOVE_FALL_LAND (0x0C9): USED → GROUNDED (re-enable SetCanFly),
-         or AIRBORNE → GROUNDED (unused double jump, just reset)
-    3. ON_PLAYER_UPDATE: Reduced to ONLY handling DJ_AIRBORNE → DJ_USED transition.
-       Checks IsFlying() (space pressed mid-air with CAN_FLY), enforces 300ms delay,
-       applies KnockbackFrom(pos, 0, 7.96f) for vanilla jump velocity, then
-       SetCanFly(false) + state = DJ_USED.
-    4. CONSTANTS: DOUBLE_JUMP_MIN_DELAY_MS=300, DOUBLE_JUMP_Z_SPEED=7.96f
-       (vanilla WoW jump z-velocity, not arbitrary values)
-  - ARCHITECTURE: Split responsibilities cleanly:
-    * MovementHandlerScript: Precise jump/landing detection via client opcodes
-    * OnPlayerUpdate: Mid-air trigger only (IsFlying + delay check + knockback)
-    * No movement flag polling for landing — MSG_MOVE_FALL_LAND is definitive
-  - FILES_CHANGED:
-    * random_enchants.cpp: Complete double jump rewrite (~100 lines changed)
-    * README.md: Updated double jump description with state machine details
+    1. REMOVED: DoubleJumpState enum, s_djState, s_djJumpTime maps, DOUBLE_JUMP_MIN_DELAY_MS,
+       DOUBLE_JUMP_Z_SPEED constants, entire LotteryEnchants_MovementScript class,
+       OnPlayerUpdate double jump detection, #include GameTime.h, #include Opcodes.h
+    2. SIMPLIFIED: RecalcLotterySpeedAndFly — two branches: fullFlight → SetCanFly(true),
+       else → SetCanFly(false). No more doubleJump variable or state checks.
+    3. SIMPLIFIED: HasLotteryFullFlight() — removed GetLevel() >= 60 check.
+       Any player with Mobility Boost can fly. No level restriction.
+    4. SIMPLIFIED: .flylock command — just "Flight DISABLED" / "Flight ENABLED".
+       No more double jump mode messages.
+    5. SIMPLIFIED: OnPlayerUpdate — only BG flag enforcement remains.
+  - NET RESULT: ~130 lines deleted. Flying works like flying mounts (because it IS
+    flying mount behavior). .flylock toggles it off if you want to stay grounded.
   - BUILD: CLEAN 🍥
   - STATUS: SHIPPED 🍥
 
