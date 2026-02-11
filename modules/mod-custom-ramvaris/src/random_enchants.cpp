@@ -458,13 +458,6 @@ static const char* GetEquipSlotShort(uint8 slot)
 }
 
 // Short hex tag from item GUID for disambiguating duplicate item names in gossip
-static std::string MakeGuidTag(uint32 itemGuid)
-{
-    char buf[16];
-    snprintf(buf, sizeof(buf), " |cff666666#%04X|r", itemGuid & 0xFFFF);
-    return buf;
-}
-
 // Dynamic gossip text helper (NPC_TEXT_UPDATE packet)
 static void SendDynamicGossipText(Player* player, std::string const& text, uint32 textId)
 {
@@ -1390,13 +1383,12 @@ static void ShowRerollMenu(Player* player, uint32 page)
             if (!proto) continue;
 
             std::string name = GetItemDisplayName(player, proto);
-            std::string guidTag = MakeGuidTag(ri.itemGuid);
             std::string label;
             if (ri.enchantCount > 0)
                 label = std::string(GetCountColor(ri.enchantCount)) + name + "|r |cff888888(" +
-                        std::to_string(ri.enchantCount) + " enchants)|r" + guidTag;
+                        std::to_string(ri.enchantCount) + " enchants)|r";
             else
-                label = "|cffBBBBBB" + name + "|r |cff888888(no enchants)|r" + guidTag;
+                label = "|cffBBBBBB" + name + "|r |cff888888(no enchants)|r";
 
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, label,
                 LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_REROLL_BASE + (i - startIdx));
@@ -1614,16 +1606,13 @@ static void ShowEnchantsMenu(Player* player, uint32 page)
 
             std::string name = GetItemDisplayName(player, proto);
 
-            // Equipped items: show slot name. Bag items: show GUID tag for duplicates.
+            // Equipped items: show slot name with green prefix.
             std::string prefix;
-            std::string suffix;
             if (ei.equipped)
                 prefix = "|cff00FF00[" + std::string(GetEquipSlotShort(ei.equipSlot)) + "]|r ";
-            else
-                suffix = MakeGuidTag(ei.itemGuid);
 
             std::string label = prefix + std::string(GetCountColor(ei.enchantCount)) + name +
-                                "|r |cff888888(" + std::to_string(ei.enchantCount) + ")|r" + suffix;
+                                "|r |cff888888(" + std::to_string(ei.enchantCount) + ")|r";
 
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, label,
                 LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_ENCHANTS_BASE + (i - startIdx));
