@@ -27,8 +27,10 @@ public:
     {
         GuildHouseSpawnerAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void UpdateAI(uint32 /*diff*/) override
+        /// Set gossip flag once on spawn/evade — not every AI tick.
+        void Reset() override
         {
+            ScriptedAI::Reset();
             me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
         }
     };

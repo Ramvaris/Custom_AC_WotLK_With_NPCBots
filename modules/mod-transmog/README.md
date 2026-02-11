@@ -73,7 +73,4 @@ This module is released under the [GNU AGPL license](https://github.com/azerothc
 
 
 ---
-**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvars](https://github.com/Ramvaris) (2025-present)
-
----
-**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvars](https://github.com/Ramvaris) (2025-present)
+**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvaris](https://github.com/Ramvaris) (2025-present)

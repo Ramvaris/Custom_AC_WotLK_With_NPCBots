@@ -1,7 +1,7 @@
 /*
  * Warlock Pet Renamer NPC — Gossip NPC for renaming Warlock demon pets.
  * Original: silviu20092
- * Fixes by Ramvars: Forced SMSG_PET_NAME_QUERY_RESPONSE for immediate client
+ * Fixes by Ramvaris: Forced SMSG_PET_NAME_QUERY_RESPONSE for immediate client
  * name update, DirectExecute for synchronous DB write, improved dialogue.
  */
 

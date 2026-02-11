@@ -23,7 +23,4 @@
 AzerothCore: [repository](https://github.com/azerothcore) - [website](http://azerothcore.org/) - [discord chat community](https://discord.gg/PaqQRkd)
 
 ---
-**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvars](https://github.com/Ramvaris) (2025-present)
-
----
-**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvars](https://github.com/Ramvaris) (2025-present)
+**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvaris](https://github.com/Ramvaris) (2025-present)

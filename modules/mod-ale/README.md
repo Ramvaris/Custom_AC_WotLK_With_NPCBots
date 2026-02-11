@@ -154,7 +154,4 @@ This project is licensed under the GNU General Public License v3.0. See [LICENSE
 </div>
 
 ---
-**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvars](https://github.com/Ramvaris) (2025-present)
-
----
-**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvars](https://github.com/Ramvaris) (2025-present)
+**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvaris](https://github.com/Ramvaris) (2025-present)

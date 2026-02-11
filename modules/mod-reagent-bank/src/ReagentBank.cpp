@@ -48,7 +48,6 @@ private:
         // so the data is committed before ShowReagentItems refreshes the gossip.
         // Using async Execute() here causes a write-then-read race where the menu
         // shows stale amounts ("1-behind" lag).
-        std::string query = "SELECT amount FROM custom_reagent_bank WHERE character_id = " + std::to_string(player->GetGUID().GetCounter()) + " AND item_entry = " + std::to_string(entry);
         QueryResult result = CharacterDatabase.Query("SELECT amount FROM custom_reagent_bank WHERE character_id = " + std::to_string(player->GetGUID().GetCounter()) + " AND item_entry = " + std::to_string(entry));
         if (result)
         {

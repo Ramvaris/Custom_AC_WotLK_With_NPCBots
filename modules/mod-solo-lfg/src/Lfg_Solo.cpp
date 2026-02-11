@@ -1,7 +1,7 @@
 /*
  * Solo LFG — Solo and undersized group queuing for LFG.
  * Original: Traesh, Conan513, Micrah
- * Fixes by Ramvars: Forever Queue recovery — detects stuck LFG states
+ * Fixes by Ramvaris: Forever Queue recovery — detects stuck LFG states
  * (QUEUED/PROPOSAL with no matching group/proposal) and force-resets them.
  *
  * The "forever queue" bug happens when:
@@ -28,8 +28,12 @@
 static constexpr uint32 LFG_STUCK_CHECK_INTERVAL_MS = 30000;
 static constexpr uint32 LFG_STUCK_THRESHOLD_MS      = 90000; // 90s — generous margin over 40s proposal timeout
 
-/// Per-player tracker for how long they've been in a suspicious LFG state
+/// Per-player tracker for how long they've been in a suspicious LFG state.
 static std::unordered_map<ObjectGuid, uint32> s_lfgStuckTimers;
+
+/// Per-player throttle accumulator — counts actual elapsed ms via p_time.
+/// Only runs the full stuck-state check every LFG_STUCK_CHECK_INTERVAL_MS.
+static std::unordered_map<ObjectGuid, uint32> s_lfgCheckAccum;
 
 /// Force-reset a stuck LFG state. Nukes all queue data and notifies the player.
 static void ForceResetLfgState(Player* player, const char* reason)
@@ -144,6 +148,7 @@ public:
     void OnPlayerLogout(Player* player) override
     {
         s_lfgStuckTimers.erase(player->GetGUID());
+        s_lfgCheckAccum.erase(player->GetGUID());
     }
 
     void OnPlayerRewardKillRewarder(Player* /*player*/, KillRewarder* /*rewarder*/, bool isDungeon, float& rate) override
@@ -159,26 +164,35 @@ public:
     }
 };
 
-/// Periodic stuck-state recovery — runs OnUpdate every LFG_STUCK_CHECK_INTERVAL_MS.
+/// Periodic stuck-state recovery — accumulates real elapsed time via p_time
+/// and only runs the full check every LFG_STUCK_CHECK_INTERVAL_MS.
+/// Without this throttle, CheckAndRecoverLfgState would fire every tick (~100ms)
+/// adding 30s to the stuck counter each time — reaching the 90s threshold in
+/// ~300ms of real time instead of 90 actual seconds.
 class lfg_solo_recovery : public PlayerScript
 {
 public:
     lfg_solo_recovery() : PlayerScript("lfg_solo_recovery") {}
 
-    void OnPlayerUpdate(Player* player, uint32 /*p_time*/) override
+    void OnPlayerUpdate(Player* player, uint32 p_time) override
     {
-        if (!sConfigMgr->GetOption<bool>("SoloLFG.Enable", true))
-            return;
+        ObjectGuid guid = player->GetGUID();
 
-        // Throttle to ~once per LFG_STUCK_CHECK_INTERVAL_MS using static timer
-        // per-player timestamps stored in the s_lfgStuckTimers map are enough
-        // to prevent over-checking since CheckAndRecoverLfgState only increments
-        // when a suspicious state is detected.
-        lfg::LfgState state = sLFGMgr->GetState(player->GetGUID());
+        // Fast filter: skip players not in any active LFG state (vast majority).
+        // GetState is a fast O(1) hash lookup — acceptable per-tick.
+        lfg::LfgState state = sLFGMgr->GetState(guid);
         if (state == lfg::LFG_STATE_NONE ||
             state == lfg::LFG_STATE_DUNGEON ||
             state == lfg::LFG_STATE_FINISHED_DUNGEON)
             return;
+
+        // Throttle: accumulate actual elapsed time. Only run the full
+        // stuck-state check once per LFG_STUCK_CHECK_INTERVAL_MS (~30s).
+        uint32& accum = s_lfgCheckAccum[guid];
+        accum += p_time;
+        if (accum < LFG_STUCK_CHECK_INTERVAL_MS)
+            return;
+        accum = 0;
 
         CheckAndRecoverLfgState(player);
     }

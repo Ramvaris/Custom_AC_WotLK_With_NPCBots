@@ -54,7 +54,7 @@ copy the file SoloLfg.conf.dist to SoloLfg.conf and edit it (keep both files).
 *  [Artanisx](https://github.com/Artanisx) - Update for Docker installations. Updated LFG-Solo.patch to work with the latest AzerothCore version (17/09/2021). Updated standard installation instructions.
 
 ---
-**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvars](https://github.com/Ramvaris) (2025-present)
+**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvaris](https://github.com/Ramvaris) (2025-present)
 
 ### Fixes (vs upstream)
 - **Forever Queue Recovery**: Added automatic stuck-state detection and recovery. Detects players stuck in QUEUED/PROPOSAL/ROLECHECK states with no valid queue or proposal backing them. After 90 seconds of confirmed stuck state, force-resets the LFG system for that player and notifies them. Prevents the dreaded "forever queue" that previously required a server restart to fix. Also checks on login to recover from states that persisted through a relog.

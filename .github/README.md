@@ -1,13 +1,4 @@
-# ![logo](https://raw.githubusercontent.com/azerothcore/azerothcore.github.io/master/images/logo-github.png) AzerothCore
-
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
-## Build Status
-
-3.3.5
-:------------:
-[![nopch-build](https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots/actions/workflows/core-build-nopch.yml/badge.svg?branch=npcbots_3.3.5)](https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots/actions/workflows/core-build-nopch.yml)
-[![windows-build](https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots/actions/workflows/windows_build.yml/badge.svg)](https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots/actions/workflows/windows_build.yml)
-[![dashboard-ci](https://github.com/azerothcore/azerothcore-wotlk/actions/workflows/dashboard-ci.yml/badge.svg?branch=master)](https://github.com/azerothcore/azerothcore-wotlk/actions/workflows/dashboard-ci.yml?query=branch%3Amaster)
+# ![logo](https://raw.githubusercontent.com/azerothcore/azerothcore.github.io/master/images/logo-github.png) Ramvaris Custom AzerothCore with NPCBots
 
 ## Custom
 
@@ -57,10 +48,11 @@ Bug fixes and improvements applied to adopted community modules:
 
 | Module | Fix | Details |
 |--------|-----|---------|
-| **mod-reagent-bank** | Thread-safe withdraw | Switched async `Execute()` to synchronous `DirectExecute()` for item withdraw — prevents race conditions when multiple players interact simultaneously |
+| **mod-reagent-bank** | Thread-safe withdraw | Switched async `Execute()` to synchronous `DirectExecute()` for item withdraw — prevents stale gossip display. Removed dead duplicate query string. |
 | **mod-warlock-pet-rename** | Reliable name updates | Added forced `SMSG_PET_NAME_QUERY_RESPONSE` packet after rename, switched to `DirectExecute()`, improved NPC dialogue (no more ugly red "WARLOCKS ONLY" text) |
-| **mod-solo-lfg** | Forever queue recovery | Added periodic stuck-state detection (15s check, 90s threshold) with force-reset via `LeaveLfg()` + `LeaveAllLfgQueues()`. Recovers from orphaned proposals, stale group refs, and relog-persistent stuck states |
-| **mod-guildhouse** | Dalaran Grand Master trainers | Replaced all profession trainer NPCs with neutral Dalaran Grand Masters (28693-28706). Eliminated Alliance/Horde faction splits for Enchanting, Jewelcrafting, and Inscription — all trainers now work for both factions |
+| **mod-solo-lfg** | Forever queue recovery | Added periodic stuck-state detection with force-reset via `LeaveLfg()` + `LeaveAllLfgQueues()`. Fixed critical timer bug: `OnPlayerUpdate` was adding 30s per tick (~100ms) instead of accumulating real elapsed time — reaching the 90s threshold in ~300ms, kicking players from valid queues. Now uses proper `p_time` throttle. |
+| **mod-guildhouse** | Dalaran Grand Master trainers | Replaced all profession trainer NPCs with neutral Dalaran Grand Masters (28693-28706). Eliminated Alliance/Horde faction splits. Fixed `UpdateAI` perf hog: gossip flag was `SetFlag()`'d every AI tick instead of once on spawn. |
+| **mod-gain-honor-guard** | Null deref crash fix | `!killed && killed->HasAuraType()` dereferenced a null pointer — server crash on guard/elite kill with null target. Fixed operator to `killed &&`. |
 
 ### 🌦️ Weather Data
 
@@ -186,7 +178,7 @@ CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable = 0  # Even out Allianc
 
 > **Note:** The fast respawn SQL is prefixed with `9999_99_99_` to ensure it runs LAST after all other database updates, preventing overwrites.
 
-## Introduction
+## Original Introduction
 
 AzerothCore is an open-source game server application and framework designed for hosting massively multiplayer online role-playing games (MMORPGs). It is based on the popular MMORPG World of Warcraft (WoW) and seeks to recreate the gameplay experience of the original game from patch 3.3.5a.
 
@@ -194,35 +186,11 @@ The original code is based on MaNGOS, TrinityCore, and SunwellCore and has since
 
 [NPCBots](https://github.com/trickerer/Trinity-Bots) is AzerothCore mod.
 
-
 ## Installation
 
 Installation instructions are available [here](http://www.azerothcore.org/wiki/Installation).
 
 NPCBots installation guide is available in the [NPCBots Readme](https://github.com/trickerer/Trinity-Bots#npcbot-mod-installation).
-
-
-## Support
-
-AzerothCore self-made wiki probably has a lot of answers for you.
-
-For help requests, it is recommended to ask your question on [StackOverflow](https://stackoverflow.com/questions/tagged/azerothcore) and link it in [our chat](https://discordapp.com/channels/217589275766685707/284406375495368704).
-
-
-## Reporting issues
-
-NPCBots issues can be reported via the [Github issue tracker](https://github.com/trickerer/Trinity-Bots/issues/).
-
-Please take the time to review existing issues before submitting your own to
-prevent duplicates.
-
-
-## Submitting fixes
-
-C++ fixes are submitted as [pull requests](https://github.com/trickerer/Azerothcore-wotlk-with-NPCBots/pulls).
-
-
-You can check the [authors](https://github.com/azerothcore/azerothcore-wotlk/blob/master/AUTHORS) file for more details.
 
 ## Important Links
 
