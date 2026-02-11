@@ -2,7 +2,9 @@
  * Warlock Pet Renamer NPC — Gossip NPC for renaming Warlock demon pets.
  * Original: silviu20092
  * Fixes by Ramvaris: Forced SMSG_PET_NAME_QUERY_RESPONSE for immediate client
- * name update, DirectExecute for synchronous DB write, improved dialogue.
+ * name update, improved dialogue. DB write is async (the prepared statement is
+ * CONNECTION_ASYNC only) — safe because SetName() + SendPetNameUpdate() handle
+ * the in-memory and client-side update synchronously.
  */
 
 #include "ScriptMgr.h"
@@ -82,12 +84,15 @@ private:
         // Visual sparkle effect
         player->CastSpell(pet, VISUAL_FEEDBACK_SPELL_ID, true);
 
-        // Synchronous DB write — must complete before any menu refresh
+        // Async DB write — the statement (CHAR_UPD_CHAR_PET_NAME) is registered
+        // on CONNECTION_ASYNC only, so DirectExecute (synchronous) cannot access it.
+        // This is safe: the name is already applied in-memory via SetName() and the
+        // SMSG_PET_NAME_QUERY_RESPONSE packet updates the client immediately.
         CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_PET_NAME);
         stmt->SetData(0, name);
         stmt->SetData(1, player->GetGUID().GetCounter());
         stmt->SetData(2, pet->GetCharmInfo()->GetPetNumber());
-        CharacterDatabase.DirectExecute(stmt);
+        CharacterDatabase.Execute(stmt);
 
         // Force client to show the new name immediately
         SendPetNameUpdate(player, pet, name);

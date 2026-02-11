@@ -68,7 +68,7 @@ Bug fixes and improvements applied to adopted community modules:
 | Module | Fix | Details |
 |--------|-----|---------|
 | **mod-reagent-bank** | Thread-safe withdraw | Switched async `Execute()` to synchronous `DirectExecute()` for item withdraw — prevents stale gossip display. Removed dead duplicate query string. |
-| **mod-warlock-pet-rename** | Reliable name updates | Added forced `SMSG_PET_NAME_QUERY_RESPONSE` packet after rename, switched to `DirectExecute()`, improved NPC dialogue (no more ugly red "WARLOCKS ONLY" text) |
+| **mod-warlock-pet-rename** | Reliable name updates | Added forced `SMSG_PET_NAME_QUERY_RESPONSE` packet after rename for immediate client-side name display. DB write stays async (prepared statement is `CONNECTION_ASYNC` only — `DirectExecute` crashes). Improved NPC dialogue (no more ugly red "WARLOCKS ONLY" text). |
 | **mod-solo-lfg** | Forever queue recovery | Added periodic stuck-state detection with force-reset via `LeaveLfg()` + `LeaveAllLfgQueues()`. Fixed critical timer bug: `OnPlayerUpdate` was adding 30s per tick (~100ms) instead of accumulating real elapsed time — reaching the 90s threshold in ~300ms, kicking players from valid queues. Now uses proper `p_time` throttle. |
 | **mod-guildhouse** | Dalaran Grand Master trainers | Replaced all profession trainer NPCs with neutral Dalaran Grand Masters (28693-28706). Eliminated Alliance/Horde faction splits. Fixed `UpdateAI` perf hog: gossip flag was `SetFlag()`'d every AI tick instead of once on spawn. |
 | **mod-gain-honor-guard** | Null deref crash fix | `!killed && killed->HasAuraType()` dereferenced a null pointer — server crash on guard/elite kill with null target. Fixed operator to `killed &&`. |
