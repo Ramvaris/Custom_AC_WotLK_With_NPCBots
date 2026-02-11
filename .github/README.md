@@ -163,7 +163,7 @@ All guardian output scales with YOUR gear and level - no overpowered captured bo
 All of Ramvaris' private server Lua customizations ported to C++ for performance. Global toggle ON, all sub-features OFF by default — safe dead module for cloners.
 
 **Features:**
-- **Human Stoneform** (Spell 81013) — Custom racial cleanse removing Poison, Disease, Curse, Magic (2min CD)
+- **Human Stoneform / Holy Cleanse** (Spell 81013) — Custom racial cleanse removing Poison, Disease, Curse, and negative Magic (2min CD). **Fix:** now cleanses debuffs regardless of who cast them (previously self-cast-only due to an incorrect caster GUID filter).
 - **NPC Summon Flavor Text** — 8 custom NPCs with 12 random witty sayings each when summoned
 - **Lilly Helper NPC** — Full gossip: city/dungeon/POI teleports, instance reset, talent point purchase
 - **Login Spell Grants** — Auto-learn utility spells, profession dual/triple spec unlock, racial fixes. Unlearns 81002/81003/81008 (replaced by enchant speed/fly system)
@@ -173,7 +173,7 @@ All of Ramvaris' private server Lua customizations ported to C++ for performance
 - **`.petscale`** — Double any pet visual scale each use (Hunter/Warlock/DK, caps at 5x)
 - **Pet Stay on Mount** — Core patch: pets stay summoned when mounting up instead of being dismissed
 - **Lottery Enchants** — Diablo-style random enchantments on ALL acquired weapons/armor (any quality, grey through legendary). DB-based, up to 7 enchants per item, level-scaled stats. Vendor purchases only roll on Green+ items (grey/white vendor trash skipped to prevent farming). Non-vendor sources (loot, craft, quest, mail) roll on ANY quality. No quality-based tier gating — the percentile system handles balance naturally. Includes **Movespeed** (1-25% per roll, stacks to +100% = 200% base, affects run+swim+flight, **skipped when mounted** — mounts always use vanilla 100% base) and **Mobility Boost** (1% chance, 3 stages: 100%/200%/300%, combined with speed bonus up to 600% — full superman mode). Flying mount behavior: jump, press space mid-air to fly (no level restriction). `.flylock` toggles flight on/off. Speed bonus is multiplicative with aura buffs. Gossip-based `.reroll` with Take/Keep preview (500g). Gossip-based `.enchants` viewer with item drill-down and **[Sum] equipped totals page** (aggregated stat overview across all equipped items — instant check for overcapped speed or stat imbalance). BG flag auto-drops when airborne.
-- **Smart Wandering Bots** — Zone-aware dynamic bot spawning instead of global. Spawns MinAmount–MaxAmount bots ONLY in the player's current zone, despawns on zone change. Optional faction balancing to even out Alliance/Horde ratio. Core patch extends BotDataMgr with zone-specific spawn/despawn API. 30s cooldown prevents zone-border flapping. Per-player tracking for multi-player support. The performance fix for servers with NPCBots.
+- **Smart Wandering Bots** — Zone-aware dynamic bot spawning instead of global. Spawns MinAmount–MaxAmount bots ONLY in the player's current zone, despawns on zone change. Optional faction balancing to even out Alliance/Horde ratio. **Fix:** balanced mode now guarantees spawns even with low counts (e.g. Min=1/Max=2) by biasing odd remainders to the player's faction and falling back when one faction has no spare bots/nodes. Core patch extends BotDataMgr with zone-specific spawn/despawn API. 30s cooldown prevents zone-border flapping. Per-player tracking for multi-player support. The performance fix for servers with NPCBots.
 
 **Config:**
 ```ini

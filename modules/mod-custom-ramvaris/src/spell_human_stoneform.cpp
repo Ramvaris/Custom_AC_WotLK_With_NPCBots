@@ -28,19 +28,37 @@ class spell_human_stoneform_81013 : public SpellScript
             return;
 
         Unit* caster = GetCaster();
+        Unit* target = GetHitUnit();
         if (!caster)
             return;
+        if (!target)
+            target = caster;
 
         // Dispel mask: Poison (1<<4) | Disease (1<<3) | Curse (1<<2) | Magic (1<<1)
         uint32 dispelMask = (1 << DISPEL_POISON) | (1 << DISPEL_DISEASE) | (1 << DISPEL_CURSE) | (1 << DISPEL_MAGIC);
 
         DispelChargesList dispelList;
-        caster->GetDispellableAuraList(caster, dispelMask, dispelList, GetSpellInfo());
+        // Note: GetDispellableAuraList is called on the unit that HAS the auras (target),
+        // and receives the dispeller (caster) as the first argument.
+        target->GetDispellableAuraList(caster, dispelMask, dispelList, GetSpellInfo());
 
         for (auto itr = dispelList.begin(); itr != dispelList.end(); ++itr)
         {
             if (Aura* aura = itr->first)
-                caster->RemoveAurasDueToSpell(aura->GetId(), caster->GetGUID());
+            {
+                // Remove only debuffs/negative auras (players may have dispellable *buffs*
+                // like Blessing/HoT magic auras; this spell is meant to cleanse negatives).
+                if (AuraApplication const* app = aura->GetApplicationOfTarget(target->GetGUID()))
+                {
+                    if (app->IsPositive())
+                        continue;
+                }
+
+                // IMPORTANT: do NOT filter by caster GUID.
+                // The old code removed only self-cast auras, which breaks cleansing of
+                // diseases/poisons/etc applied by mobs/players.
+                aura->Remove();
+            }
         }
     }
 

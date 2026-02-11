@@ -91,7 +91,9 @@ private:
 
     static bool IsEnabled()
     {
-        return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", false)
+        // Keep default consistent with the rest of the module: master switch defaults ON,
+        // but each feature defaults OFF unless explicitly enabled in config.
+        return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true)
             && sConfigMgr->GetOption<bool>("CustomRamvaris.SmartWanderingBots.Enable", false);
     }
 
@@ -142,38 +144,111 @@ private:
 
         if (IsBalancedFactionEnabled())
         {
-            // Faction-balanced spawning: split count evenly between Alliance and Horde
+            // Faction-balanced spawning.
+            // Important: with low counts (e.g. Min=1/Max=2) strict splitting can otherwise
+            // result in *zero* spawns when one faction has no spare bots OR the zone has
+            // no valid nodes for that faction. We always fall back to "spawn something".
+
+            TeamId playerTeam = player->GetTeamId();
+
             uint32 allianceCount = count / 2;
-            uint32 hordeCount    = count - allianceCount;  // Horde gets the odd remainder
+            uint32 hordeCount    = count / 2;
 
-            // Spawn Alliance half
-            std::vector<uint32> allianceEntries;
-            uint32 aSpawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, allianceCount, &allianceEntries, ALLIANCE);
-
-            // Spawn Horde half
-            std::vector<uint32> hordeEntries;
-            uint32 hSpawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, hordeCount, &hordeEntries, HORDE);
-
-            // If one faction couldn't fill its half (no spare bots or no nodes),
-            // give the remainder to the other faction as fallback
-            if (aSpawned < allianceCount && hSpawned > 0)
+            // Give odd remainder to the player's faction (more intuitive than always Horde)
+            if (count % 2)
             {
-                uint32 remainder = allianceCount - aSpawned;
-                std::vector<uint32> extraEntries;
-                uint32 extra = BotDataMgr::SpawnWanderingBotsInZone(newZone, remainder, &extraEntries, HORDE);
-                hSpawned += extra;
-                hordeEntries.insert(hordeEntries.end(), extraEntries.begin(), extraEntries.end());
+                if (playerTeam == TEAM_ALLIANCE)
+                    ++allianceCount;
+                else
+                    ++hordeCount;
             }
-            else if (hSpawned < hordeCount && aSpawned > 0)
+
+            auto trySpawn = [newZone](uint32 spawnCount, std::vector<uint32>* out, int32 team) -> uint32
             {
-                uint32 remainder = hordeCount - hSpawned;
-                std::vector<uint32> extraEntries;
-                uint32 extra = BotDataMgr::SpawnWanderingBotsInZone(newZone, remainder, &extraEntries, ALLIANCE);
-                aSpawned += extra;
-                allianceEntries.insert(allianceEntries.end(), extraEntries.begin(), extraEntries.end());
+                if (!spawnCount)
+                    return 0;
+                return BotDataMgr::SpawnWanderingBotsInZone(newZone, spawnCount, out, team);
+            };
+
+            std::vector<uint32> allianceEntries;
+            std::vector<uint32> hordeEntries;
+
+            uint32 aSpawned = 0;
+            uint32 hSpawned = 0;
+
+            // Spawn in an order biased towards the player's faction.
+            if (playerTeam == TEAM_ALLIANCE)
+            {
+                aSpawned = trySpawn(allianceCount, &allianceEntries, ALLIANCE);
+                hSpawned = trySpawn(hordeCount, &hordeEntries, HORDE);
+            }
+            else
+            {
+                hSpawned = trySpawn(hordeCount, &hordeEntries, HORDE);
+                aSpawned = trySpawn(allianceCount, &allianceEntries, ALLIANCE);
             }
 
             totalSpawned = aSpawned + hSpawned;
+
+            // If we couldn't fulfill the requested total, try to allocate the remainder.
+            if (totalSpawned < count)
+            {
+                uint32 missing = count - totalSpawned;
+
+                // First try the player's faction again (in case the first pass failed due to
+                // RNG/level-bracket mismatch on some candidates).
+                if (playerTeam == TEAM_ALLIANCE)
+                {
+                    std::vector<uint32> extra;
+                    uint32 extraSpawned = trySpawn(missing, &extra, ALLIANCE);
+                    aSpawned += extraSpawned;
+                    totalSpawned += extraSpawned;
+                    missing -= extraSpawned;
+                    allianceEntries.insert(allianceEntries.end(), extra.begin(), extra.end());
+                }
+                else
+                {
+                    std::vector<uint32> extra;
+                    uint32 extraSpawned = trySpawn(missing, &extra, HORDE);
+                    hSpawned += extraSpawned;
+                    totalSpawned += extraSpawned;
+                    missing -= extraSpawned;
+                    hordeEntries.insert(hordeEntries.end(), extra.begin(), extra.end());
+                }
+
+                // Then try the opposite faction.
+                if (missing)
+                {
+                    std::vector<uint32> extra;
+                    uint32 extraSpawned = (playerTeam == TEAM_ALLIANCE)
+                        ? trySpawn(missing, &extra, HORDE)
+                        : trySpawn(missing, &extra, ALLIANCE);
+
+                    if (playerTeam == TEAM_ALLIANCE)
+                    {
+                        hSpawned += extraSpawned;
+                        hordeEntries.insert(hordeEntries.end(), extra.begin(), extra.end());
+                    }
+                    else
+                    {
+                        aSpawned += extraSpawned;
+                        allianceEntries.insert(allianceEntries.end(), extra.begin(), extra.end());
+                    }
+
+                    totalSpawned += extraSpawned;
+                    missing -= extraSpawned;
+                }
+
+                // Final fallback: ignore faction split and spawn whatever the spare pool allows.
+                if (missing)
+                {
+                    std::vector<uint32> extra;
+                    uint32 extraSpawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, missing, &extra);
+                    totalSpawned += extraSpawned;
+                    allEntries.insert(allEntries.end(), extra.begin(), extra.end());
+                }
+            }
+
             allEntries.insert(allEntries.end(), allianceEntries.begin(), allianceEntries.end());
             allEntries.insert(allEntries.end(), hordeEntries.begin(), hordeEntries.end());
 
