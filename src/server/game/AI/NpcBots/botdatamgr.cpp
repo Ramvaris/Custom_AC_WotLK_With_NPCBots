@@ -211,6 +211,23 @@ static void SpawnWandererBot(uint32 bot_id, WanderNode const* spawnLoc, NpcBotRe
         ASSERT(false);
     }
 
+    // CRITICAL: generated wanderer bots MUST have AI initialized explicitly.
+    // LoadBotCreatureFromDB() only creates/adds the creature; it does not guarantee
+    // bot_ai construction/registration. Without AIM_Initialize(), wanderers will exist
+    // as inert creatures and won't show up in `.npcbot list spawned`.
+    if (!bot->AIM_Initialize())
+    {
+        delete bot;
+        BOT_LOG_FATAL("server.loading", "Cannot initialize npcbot {} AI!", bot_id);
+        ASSERT(false);
+    }
+
+    if (!bot->IsAlive())
+    {
+        BOT_LOG_WARN("server.loading", "Wanderer bot {} is dead on spawn, respawning!", bot_id);
+        bot->setDeathState(DeathState::JustRespawned);
+    }
+
     if (registry)
         registry->insert(bot);
 }
