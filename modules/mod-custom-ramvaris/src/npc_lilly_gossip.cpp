@@ -14,6 +14,7 @@
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
 #include "Player.h"
+#include "Chat.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include "Opcodes.h"
@@ -479,6 +480,17 @@ private:
     // --- Talent point purchase ---
     static void HandleTalentPurchase(Player* player, Creature* creature)
     {
+        // Re-validate prerequisites — gossip state may be stale if player traded
+        // away emblems or lost reputation between opening the menu and clicking.
+        if (player->GetReputationRank(CUSTOM_FACTION_ID) < REP_EXALTED ||
+            !player->HasItemCount(EMBLEM_ITEM_ID, EMBLEM_COST))
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cffFF0000You no longer meet the requirements for a talent point.|r");
+            CloseGossipMenuFor(player);
+            return;
+        }
+
         player->DestroyItemCount(EMBLEM_ITEM_ID, EMBLEM_COST, true);
         uint32 freeTalentPoints = player->GetFreeTalentPoints();
         player->SetFreeTalentPoints(freeTalentPoints + 1);

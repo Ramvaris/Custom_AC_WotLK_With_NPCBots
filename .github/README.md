@@ -23,7 +23,6 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
   - **Minion Ownership Safety** - Owner GUID mismatches in controlled sets are logged and skipped, not crashed
   - **Warlock Bot Life Tap Fix** - Prevents NPCBot warlocks from killing themselves with Life Tap (capped health cost + alive guard)
   - **Aura Duration Zero-Tick Fix** - Prevents periodic aura ticks from firing when duration has already reached zero (changed `>= 0` to `> 0` in AuraEffect::Update). Fixes debuffs visually at 0s but still ticking for several seconds under server load.
-- Potential old world flying (needs also a fitting client side spell or a lua script that allows the client to mount up)
 - Some QoL stuff
 -> Looting of mobs that were killed by a players pet without the player doing damage to it
 -> All Ore- and Flower-Nodes respawn in 120 seconds instead of 24 hours to 7 days.
@@ -33,7 +32,7 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 - **Soul Keeper Guardian Travel Safety** - Guardians are automatically despawned on cross-map teleport and taxi flights, preventing orphaned guardians on old maps. Cooldowns are preserved for re-summoning.
 - Some AC modules from other people integrated and kept up-to-date
 
-Notice: I also have some MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' if you can pay massive amounts of gold, QoL Spells for any race/class on login (Aspect of the Uber Cheetah / 40% / No Dazzle, Levitation over water and mounted that does not dispel, Detect Invisibility (To see all the easter eggs) with endless duration, Stealth without Movement Speed Reduction, the Druid waterform), Human Reputation Bonus for everyone on Login, an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
+Notice: I also have some MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' if you can pay massive amounts of gold, QoL Spells (Detect Invisibility to see easter eggs with endless duration, Stealth without Movement Speed Reduction), Human Reputation Bonus for everyone on Login, an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
 
 ### Included Modules
 
@@ -142,23 +141,22 @@ All of Ramvaris' private server Lua customizations ported to C++ for performance
 - **Human Stoneform** (Spell 81013) — Custom racial cleanse removing Poison, Disease, Curse, Magic (2min CD)
 - **NPC Summon Flavor Text** — 8 custom NPCs with 12 random witty sayings each when summoned
 - **Lilly Helper NPC** — Full gossip: city/dungeon/POI teleports, instance reset, talent point purchase
-- **Login Spell Grants** — Auto-learn utility spells, profession dual/triple spec unlock, racial fixes
+- **Login Spell Grants** — Auto-learn utility spells, profession dual/triple spec unlock, racial fixes. Unlearns 81002/81003/81008 (replaced by enchant speed/fly system)
 - **Dark Azeroth Weather** — Biome-aware bad weather: storms in deserts, snow in tundra, rain elsewhere
 - **`.special`** — Gossip menu to summon custom NPCs, open bank, open mailbox
-- **`.mountup`** — Auto-mount based on riding skill (flying in Outland/Northrend, ground elsewhere)
 - **`.guardianscale`** — Double Soul Keeper guardian visual scale each use (caps at 5x)
 - **`.petscale`** — Double any pet visual scale each use (Hunter/Warlock/DK, caps at 5x)
 - **Pet Stay on Mount** — Core patch: pets stay summoned when mounting up instead of being dismissed
-- **Random Enchants** — Diablo-style class-specific random enchants on looted/crafted/quest gear. Pure C++ from DBC data — no SQL tables. Scans SpellItemEnchantment DBC at startup, builds class-appropriate stat pools. Hybrid classes get ALL primary stats, Spirit only for Priest, no AP/RAP, compressed spellpower, all WotLK secondaries. Up to 3 enchants per item (70%/65%/60% cascading chance). Items with existing random properties ("of the Bear") are EXTENDED with bonus enchants in unused PROP slots, not skipped. Uses PROP_ENCHANTMENT_SLOT_0/1/2 — never conflicts with player enchants. Merged from mod-random-enchants with complete rewrite.
+- **Lottery Enchants** — Diablo-style random enchantments on ALL acquired Green+ gear. DB-based, up to 7 enchants per item, level-scaled stats. Includes **Movespeed** (1-25% per roll, stacks to +100%, affects run+swim) and **Flying** (1% chance, 3 stages up to 300% flight speed, flying everywhere). Gossip-based `.reroll` with Take/Keep preview (1000g). Gossip-based `.enchants` viewer with item drill-down. `.flylock` to toggle flight. Grey/White items excluded. Vendor buyback does NOT trigger re-rolling. BG flag auto-drops when airborne.
 - **Smart Wandering Bots** — Zone-aware dynamic bot spawning instead of global. Spawns MinAmount–MaxAmount bots ONLY in the player's current zone, despawns on zone change. Optional faction balancing to even out Alliance/Horde ratio. Core patch extends BotDataMgr with zone-specific spawn/despawn API. 30s cooldown prevents zone-border flapping. Per-player tracking for multi-player support. The performance fix for servers with NPCBots.
 
 **Config:**
 ```ini
 CustomRamvaris.Enable = 1                    # Master switch (ON, but all features OFF by default)
 CustomRamvaris.DarkAzeroth.Enable = 0        # Example: no custom DB needed
-CustomRamvaris.MountUp.Enable = 0            # Example: .mountup works without custom DB
 CustomRamvaris.PetStayOnMount.Enable = 0     # Core patch: pets run alongside mounted player
-CustomRamvaris.RandomEnchants.Enable = 0     # Diablo-style class-specific random enchants
+CustomRamvaris.LotteryEnchants.Enable = 0    # Diablo-style enchants + speed/fly + gossip menus
+CustomRamvaris.LotteryEnchants.MaxSlots = 7  # 1-7 enchants per item (cascading chance)
 CustomRamvaris.SmartWanderingBots.Enable = 0 # Zone-aware bot spawning (set NpcBot.WanderingBots.Continents.Count=0!)
 CustomRamvaris.SmartWanderingBots.MinAmount = 5
 CustomRamvaris.SmartWanderingBots.MaxAmount = 15

@@ -952,7 +952,9 @@ static std::vector<uint32> RollNewEnchants(Item* item, bool isReroll)
     ItemTemplate const* proto = item->GetTemplate();
     if (!proto) return {};
     if (proto->Class != ITEM_CLASS_WEAPON && proto->Class != ITEM_CLASS_ARMOR) return {};
-    if (proto->Quality < ITEM_QUALITY_POOR || proto->Quality > ITEM_QUALITY_LEGENDARY) return {};
+    // Grey/White items skip lottery — prevents mass-buying cheap vendor items for enchants.
+    // Green+ items are rate-limited by drop rates or cost special currency.
+    if (proto->Quality < ITEM_QUALITY_UNCOMMON || proto->Quality > ITEM_QUALITY_LEGENDARY) return {};
 
     uint32 maxSlots = sConfigMgr->GetOption<uint32>("CustomRamvaris.LotteryEnchants.MaxSlots", MAX_LOTTERY_SLOTS);
     if (maxSlots > MAX_LOTTERY_SLOTS) maxSlots = MAX_LOTTERY_SLOTS;
@@ -1156,6 +1158,10 @@ static void UnloadLotteryEnchantsForPlayer(Player* player)
     s_rerollItemList.erase(pg);
 }
 
+// Cleanup helper — deletes lottery enchants for a destroyed item from DB + cache.
+// Called by the orphan cleanup on server startup, and available for future item
+// destruction hooks if AzerothCore adds PLAYERHOOK_ON_ITEM_DESTROY.
+static void DeleteLotteryEnchantsForItem(uint32 itemGuid) __attribute__((unused));
 static void DeleteLotteryEnchantsForItem(uint32 itemGuid)
 {
     {
@@ -1239,6 +1245,7 @@ static void BuildRerollItemList(Player* player)
         ItemTemplate const* proto = item->GetTemplate();
         if (!proto) return;
         if (proto->Class != ITEM_CLASS_WEAPON && proto->Class != ITEM_CLASS_ARMOR) return;
+        if (proto->Quality < ITEM_QUALITY_UNCOMMON) return; // Grey/White skip — no cheap vendor spam
 
         uint32 guid = item->GetGUID().GetCounter();
         uint32 enchantCount = 0;
@@ -1567,8 +1574,6 @@ static void ShowEnchantsMenu(Player* player, uint32 page)
 // --- Show enchant details for a specific item ---
 static void ShowEnchantDetails(Player* player, uint32 itemGuid)
 {
-    uint32 pg = player->GetGUID().GetCounter();
-
     std::vector<uint32> enchants;
     {
         std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
@@ -1850,6 +1855,8 @@ public:
         PLAYERHOOK_ON_UPDATE,
     }) { }
 
+    // NOTE: Vendor buyback uses Player::StoreItem (not StoreNewItem), so
+    // repurchased items do NOT trigger this hook — no rebuy abuse possible.
     void OnPlayerStoreNewItem(Player* player, Item* item, uint32) override
     {
         if (!IsEnabled()) return;
