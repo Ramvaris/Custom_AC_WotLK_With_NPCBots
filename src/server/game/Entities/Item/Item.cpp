@@ -1111,7 +1111,10 @@ Item* Item::CreateItem(uint32 item, uint32 count, Player const* player, bool clo
             delete pItem;
     }
     else
-        ABORT();
+    {
+        // Invalid item template — return nullptr instead of crashing.
+        LOG_ERROR("entities.item", "Item::CreateItem: invalid item entry {} — template not found in ObjectMgr", item);
+    }
     return nullptr;
 }
 

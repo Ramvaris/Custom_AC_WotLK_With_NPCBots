@@ -2146,8 +2146,9 @@ void WorldObject::SetMap(Map* map)
 
     if (m_currMap)
     {
-        LOG_FATAL("entities.object", "WorldObject::SetMap: obj {} new map {} {}, old map {} {}", (uint32)GetTypeId(), map->GetId(), map->GetInstanceId(), m_currMap->GetId(), m_currMap->GetInstanceId());
-        ABORT();
+        LOG_ERROR("entities.object", "WorldObject::SetMap: obj {} new map {} {}, old map {} {} — skipping double map assignment",
+            (uint32)GetTypeId(), map->GetId(), map->GetInstanceId(), m_currMap->GetId(), m_currMap->GetInstanceId());
+        return;
     }
 
     m_currMap = map;

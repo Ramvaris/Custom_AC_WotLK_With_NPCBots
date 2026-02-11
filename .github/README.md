@@ -8,10 +8,22 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 - Custom Solo Sustain Mod for life/mana leech (damage-based, class-specific, Recount/MSBT compatible)
 - A number of 'defensive crash protectors' for the server:
   - **SmartAI Recursion Gate** - Prevents stack overflow from infinite SmartAI script loops (depth-limited with logging)
-  - **Aura System Hardening** - Converts fatal ABORT() calls to graceful LOG_ERROR recovery when aura maps desync
+  - **Aura System Hardening** - 5 fatal ABORT() calls in SpellAuras converted to graceful LOG_ERROR recovery (target map desync, cross-map shadowfiend auras, duplicate target entries, invalid owner type, owner mismatch). These run per-tick on every active aura — a single corrupt aura would crash a 500-player server.
   - **Spell Event Safety** - Non-deletable spell events are force-cleaned up instead of crashing + leaking memory
+  - **Spell Script Dispatch Guard** - Invalid SpellEffectHandleMode in CallScriptEffectHandlers returns false instead of crashing (every scripted spell cast passes through this)
   - **Charm State Cleanup** - Stale charmer GUIDs are force-cleared on world removal instead of crashing
+  - **Uncharm Force-Clear** - Player::Uncharm now force-clears both sides of a broken charm link instead of crashing when the charm target's charmer GUID is stale
   - **Minion Ownership Safety** - Owner GUID mismatches in controlled sets are logged and skipped, not crashed
+  - **Combat Damage Mod Guards** - 4 switch-default ABORTs in Player/Unit damage calculation paths (UpdateDamagePhysical, UpdateWeaponDependentCritAuras, UpdateDamageDoneMods, UpdateDamagePctDoneMods) converted to LOG_ERROR + return. Invalid WeaponAttackType from a corrupt aura miscvalue would crash the server mid-combat.
+  - **Vehicle ChangeSeat Safety** - Failed AddPassenger after RemovePassenger in vehicle seat swap is logged instead of crashing the server
+  - **Item CreateItem Null-Template Guard** - Attempting to create an item with a missing template (bad item ID from DB) logs an error and returns nullptr instead of crashing
+  - **Battleground Hardening** - 9 ABORT() calls converted across Battleground core, Strand of the Ancients, and Alterac Valley: BG Reset pre-cleanup crash, SA object interaction/graveyard capture switch defaults, AV node lookup failures, and 4 AV AssaultNode state validation crashes. A single bad BG node state would kill the worldserver for ALL players.
+  - **Map Double-Enter Guard** - BattlegroundMap::CannotEnter returns ALREADY_IN_MAP instead of crashing when a player object is already on the map
+  - **WorldObject::SetMap Safety** - Double map assignment (e.g. during fast teleport sequences) is logged and skipped instead of crashing
+  - **GameObject Owner Conflict Guard** - Trying to reassign a GO's owner to a different GUID is logged and skipped instead of crashing (affects totems, traps, summoned objects)
+  - **CreatureAI Selector Fallback** - If no suitable AI is found during creature spawn (corrupt AIName or registry failure), logs error and returns nullptr instead of crashing
+  - **NPCBots Gossip Safety** - 2 ABORT() calls in bot_ai.cpp gossip handlers converted to LOG_ERROR + graceful return
+  - **NPCBots Sindragosa Search Optimization** - Reduced grid search radius from 200yd to 80yd (Sindragosa's arena is ~60yd across). With 100+ bots, the old 200yd search was scanning massive grid areas every tick.
   - **Warlock Bot Life Tap Fix** - Prevents NPCBot warlocks from killing themselves with Life Tap (capped health cost + alive guard)
   - **Aura Duration Zero-Tick Fix** - Prevents periodic aura ticks from firing when duration has already reached zero (changed `>= 0` to `> 0` in AuraEffect::Update). Fixes debuffs visually at 0s but still ticking for several seconds under server load.
 - Some QoL stuff

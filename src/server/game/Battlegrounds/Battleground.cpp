@@ -1346,8 +1346,9 @@ void Battleground::Init()
 
     if (m_BgInvitedPlayers[TEAM_ALLIANCE] > 0 || m_BgInvitedPlayers[TEAM_HORDE] > 0)
     {
+        // Non-zero invited counters during reset — log and continue.
+        // The counters are zeroed on the next lines anyway.
         LOG_ERROR("bg.battleground", "Battleground::Reset: one of the counters is not 0 (alliance: {}, horde: {}) for BG (map: {}, instance id: {})!", m_BgInvitedPlayers[TEAM_ALLIANCE], m_BgInvitedPlayers[TEAM_HORDE], m_MapId, m_InstanceID);
-        ABORT();
     }
 
     m_BgInvitedPlayers[TEAM_ALLIANCE] = 0;

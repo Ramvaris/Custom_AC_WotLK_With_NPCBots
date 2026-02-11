@@ -8916,7 +8916,7 @@ bool Spell::CallScriptEffectHandlers(SpellEffIndex effIndex, SpellEffectHandleMo
                 hookType = SPELL_SCRIPT_HOOK_EFFECT_HIT_TARGET;
                 break;
             default:
-                ABORT();
+                LOG_ERROR("spells", "Spell::CallScriptEffectHandlers: Unknown SpellEffectHandleMode {} for spell {}", uint32(mode), m_spellInfo->Id);
                 return false;
         }
         (*scritr)->_PrepareScriptCall(hookType);

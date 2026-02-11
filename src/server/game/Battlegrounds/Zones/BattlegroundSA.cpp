@@ -864,7 +864,7 @@ bool BattlegroundSA::CanInteractWithObject(uint32 objectId)
             }
             break;
         default:
-            ABORT();
+            LOG_ERROR("bg.battleground", "BattlegroundSA::CanInteractWithObject: unexpected objectId {}", objectId);
             break;
     }
 
@@ -1037,7 +1037,7 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
                 });
             break;
         default:
-            ABORT();
+            LOG_ERROR("bg.battleground", "BattlegroundSA::CaptureGraveyard: unexpected graveyard index {}", i);
             break;
     }
 }

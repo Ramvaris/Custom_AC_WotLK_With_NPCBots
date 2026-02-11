@@ -16628,8 +16628,8 @@ void Unit::UpdateDamageDoneMods(WeaponAttackType attackType, int32 /*skipEnchant
             unitMod = UNIT_MOD_DAMAGE_RANGED;
             break;
         default:
-            ABORT();
-            break;
+            LOG_ERROR("entities.unit", "Unit::UpdateDamageDoneMods: Invalid WeaponAttackType {} on unit {}", uint32(attackType), GetGUID().ToString());
+            return;
     }
 
     float amount = GetTotalAuraModifier(SPELL_AURA_MOD_DAMAGE_DONE, [&](AuraEffect const* aurEff) -> bool
@@ -16669,8 +16669,8 @@ void Unit::UpdateDamagePctDoneMods(WeaponAttackType attackType)
             unitMod = UNIT_MOD_DAMAGE_RANGED;
             break;
         default:
-            ABORT();
-            break;
+            LOG_ERROR("entities.unit", "Unit::UpdateDamagePctDoneMods: Invalid WeaponAttackType {} on unit {}", uint32(attackType), GetGUID().ToString());
+            return;
     }
 
     factor *= GetTotalAuraMultiplier(SPELL_AURA_MOD_DAMAGE_PERCENT_DONE, [attackType, this](AuraEffect const* aurEff) -> bool
@@ -21317,7 +21317,12 @@ void Unit::ChangeSeat(int8 seatId, bool next)
 
     m_vehicle->RemovePassenger(this);
     if (!m_vehicle->AddPassenger(this, seatId))
-        ABORT();
+    {
+        // Vehicle seat change failed — eject unit instead of crashing.
+        // The passenger was already removed; crashing leaves them in a dangling state.
+        LOG_ERROR("entities.unit", "Unit::ChangeSeat: AddPassenger failed for unit {} to seat {} — ejecting from vehicle",
+            GetGUID().ToString(), seatId);
+    }
 }
 
 void Unit::ExitVehicle(Position const* /*exitPosition*/)

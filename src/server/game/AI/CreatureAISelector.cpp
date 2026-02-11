@@ -71,7 +71,7 @@ namespace FactorySelector
             return itr->second.get();
 
         // should _never_ happen, Null AI types defined as PERMIT_BASE_IDLE, it must've been found
-        ABORT();
+        LOG_ERROR("scripts.ai", "SelectAI: No suitable AI found for object — AI registry may be corrupt. Returning nullptr.");
         return nullptr;
     }
 

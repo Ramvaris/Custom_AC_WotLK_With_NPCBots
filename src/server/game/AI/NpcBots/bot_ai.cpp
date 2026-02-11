@@ -4053,7 +4053,7 @@ std::tuple<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool &re
 
             std::list<Creature*> cList;
             Bcore::CreatureListSearcher searcher(master, cList, SiItCheck);
-            Cell::VisitObjects(me, searcher, 200.f);
+            Cell::VisitObjects(me, searcher, 80.f);
 
             if (!cList.empty())
             {
@@ -10420,7 +10420,8 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                 case GOSSIP_SENDER_ABILITIES_USAGE_TOGGLE_SUPPORT:
                     newSender = GOSSIP_SENDER_ABILITIES_USAGE_LIST_SUPPORT; break;
                 default:
-                    ABORT();
+                    LOG_ERROR("npcbots", "bot_ai: unexpected gossip sender {} in abilities toggle", sender);
+                    return true;
             }
             sender = newSender;
         }
@@ -10453,7 +10454,8 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                     myspells = GetSupportSpellsList();
                     break;
                 default:
-                    ABORT();
+                    LOG_ERROR("npcbots", "bot_ai: unexpected gossip sender {} in abilities list", sender);
+                    return true;
             }
 
             ASSERT(myspells);

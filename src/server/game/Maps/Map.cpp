@@ -2372,8 +2372,8 @@ Map::EnterState BattlegroundMap::CannotEnter(Player* player, bool loginCheck)
 {
     if (!loginCheck && player->GetMapRef().getTarget() == this)
     {
+        // Player is already on this BG map — return error instead of crashing.
         LOG_ERROR("maps", "BGMap::CanEnter - player {} is already in map!", player->GetGUID().ToString());
-        ABORT();
         return CANNOT_ENTER_ALREADY_IN_MAP;
     }
 

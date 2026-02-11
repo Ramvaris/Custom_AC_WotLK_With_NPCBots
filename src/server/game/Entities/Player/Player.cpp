@@ -5094,8 +5094,9 @@ void Player::UpdateDamageDoneMods(WeaponAttackType attackType, int32 skipEnchant
             unitMod = UNIT_MOD_DAMAGE_RANGED;
             break;
         default:
-            ABORT();
-            break;
+            LOG_ERROR("entities.player", "Player::UpdateDamagePhysical: invalid AttackType {} for player {}",
+                uint32(attackType), GetGUID().ToString());
+            return;
     }
 
     float amount = 0.0f;
@@ -7209,8 +7210,9 @@ void Player::UpdateWeaponDependentCritAuras(WeaponAttackType attackType)
             modGroup = RANGED_CRIT_PERCENTAGE;
             break;
         default:
-            ABORT();
-            break;
+            LOG_ERROR("entities.player", "Player::UpdateAllWeaponDependentCritAuras: invalid AttackType {} for player {}",
+                uint32(attackType), GetGUID().ToString());
+            return;
     }
 
     float amount = 0.0f;
@@ -9514,8 +9516,10 @@ void Player::StopCastingCharm(Aura* except /*= nullptr*/)
 
         if (charm->GetCharmerGUID())
         {
-            LOG_FATAL("entities.player", "Charmed unit has charmer {}", charm->GetCharmerGUID().ToString());
-            ABORT();
+            // Force-clear both sides of the stale charm reference instead of crashing.
+            LOG_ERROR("entities.player", "Charmed unit has charmer {} — force-clearing charm state", charm->GetCharmerGUID().ToString());
+            charm->SetCharmerGUID(ObjectGuid::Empty);
+            SetCharm(charm, false);
         }
         else
         {

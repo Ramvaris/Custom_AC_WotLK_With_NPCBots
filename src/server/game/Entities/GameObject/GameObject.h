@@ -21,6 +21,7 @@
 #include "Common.h"
 #include "G3D/Quat.h"
 #include "GameObjectData.h"
+#include "Log.h"
 #include "LootMgr.h"
 #include "Object.h"
 #include "SharedDefines.h"
@@ -162,10 +163,12 @@ public:
 
     void SetOwnerGUID(ObjectGuid owner)
     {
-        // Owner already found and different than expected owner - remove object from old owner
+        // Owner already found and different than expected owner - skip reassignment
         if (owner && GetOwnerGUID() && GetOwnerGUID() != owner)
         {
-            ABORT();
+            LOG_ERROR("entities.gameobject", "GameObject::SetOwnerGUID: Trying to overwrite owner {} with {} on GO entry {}",
+                GetOwnerGUID().ToString(), owner.ToString(), GetEntry());
+            return;
         }
         m_spawnedByDefault = false;                     // all object with owner is despawned after delay
         SetGuidValue(OBJECT_FIELD_CREATED_BY, owner);

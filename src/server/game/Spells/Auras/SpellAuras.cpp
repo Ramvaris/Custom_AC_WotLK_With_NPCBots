@@ -340,7 +340,8 @@ Aura* Aura::Create(SpellInfo const* spellproto, uint8 effMask, WorldObject* owne
             aura = new DynObjAura(spellproto, effMask, owner, caster, baseAmount, castItem, casterGUID, itemGUID);
             break;
         default:
-            ABORT();
+            LOG_ERROR("spells.aura", "Aura::Create: invalid owner type {} for spell {}",
+                uint32(owner->GetTypeId()), spellproto->Id);
             return nullptr;
     }
     // aura can be removed in Unit::_AddAura call
@@ -472,7 +473,9 @@ void Aura::_UnapplyForTarget(Unit* target, Unit* caster, AuraApplication* auraAp
     {
         LOG_ERROR("spells.aura", "Aura::_UnapplyForTarget, target:{}, caster:{}, spell:{} was not found in owners application map!",
                        target->GetGUID().ToString(), caster ? caster->GetGUID().ToString() : "", auraApp->GetBase()->GetSpellInfo()->Id);
-        ABORT();
+        // Graceful recovery: skip removal instead of crashing the server.
+        // The aura application is already gone — continuing is safe.
+        return;
     }
 
     // aura has to be already applied
@@ -597,8 +600,12 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
             }
             else
             {
-                // ok, we have one unit twice in target map (impossible, but...)
-                ABORT();
+                // Duplicate unit in target map — should be impossible.
+                // Skip instead of crashing. The aura system will clean up.
+                LOG_ERROR("spells.aura", "Aura::UpdateTargetMap: spell {} has duplicate target {} in target map",
+                    GetSpellInfo()->Id, itr->first->GetGUID().ToString());
+                targets.erase(itr++);
+                continue;
             }
         }
 
@@ -654,11 +661,15 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
             // owner has to be in world, or effect has to be applied to self
             if (!GetOwner()->IsSelfOrInSameMap(itr->first))
             {
-                //TODO: There is a crash caused by shadowfiend load addon
-                LOG_FATAL("spells.aura", "Aura {}: Owner {} (map {}) is not in the same map as target {} (map {}).", GetSpellInfo()->Id,
-                               GetOwner()->GetName(), GetOwner()->IsInWorld() ? GetOwner()->GetMap()->GetId() : uint32(-1),
-                               itr->first->GetName(), itr->first->IsInWorld() ? itr->first->GetMap()->GetId() : uint32(-1));
-                ABORT();
+                // Cross-map aura application — owner and target are on different maps.
+                // Known trigger: shadowfiend addon, summon pet cross-map, etc.
+                // Skip this target instead of crashing the entire server.
+                LOG_ERROR("spells.aura", "Aura {}: Owner {} (map {}) is not in the same map as target {} (map {}). Skipping target.",
+                    GetSpellInfo()->Id,
+                    GetOwner()->GetName(), GetOwner()->IsInWorld() ? GetOwner()->GetMap()->GetId() : uint32(-1),
+                    itr->first->GetName(), itr->first->IsInWorld() ? itr->first->GetMap()->GetId() : uint32(-1));
+                targets.erase(itr++);
+                continue;
             }
             itr->first->_CreateAuraApplication(this, itr->second);
             ++itr;
@@ -711,7 +722,13 @@ void Aura::UpdateOwner(uint32 diff, WorldObject* owner)
 {
     if (owner != m_owner)
     {
-        ABORT();
+        // Owner mismatch — skip this tick's update instead of crashing.
+        // The aura will be cleaned up by subsequent removal logic.
+        LOG_ERROR("spells.aura", "Aura::UpdateOwner: owner mismatch for spell {} (expected {}, got {}). Skipping update.",
+            m_spellInfo->Id,
+            m_owner ? m_owner->GetGUID().ToString() : "null",
+            owner ? owner->GetGUID().ToString() : "null");
+        return;
     }
 
     Unit* caster = GetCaster();
