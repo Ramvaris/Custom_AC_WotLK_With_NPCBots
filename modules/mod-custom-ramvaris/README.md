@@ -85,7 +85,7 @@ Biome-aware bad weather system — hot zones get thunderstorms, cold zones get s
 - `.guardianscale` — Doubles Soul Keeper guardian visual scale each use (caps at 5x base). Only works on Soul Keeper guardians.
 - `.petscale` — Doubles any pet visual scale each use (Hunter/Warlock/DK pets, caps at 5x base)
 - `.enchants` — Opens paginated gossip menu showing all lottery enchants on equipped + bag items. Click an item to see its enchant details. Color-coded by tier.
-- `.reroll` — Opens paginated gossip menu listing eligible bag items (weapons, armor, accessories). Select an item to pay 1000g and reroll enchants. Preview shows rolled stats with Take (apply) / Keep (discard) options. Gold deducted on roll, not on accept.
+- `.reroll` — Opens paginated gossip menu listing eligible bag items (weapons, armor, accessories). Select an item to pay 500g and reroll enchants. Preview shows rolled stats with Take (apply) / Keep (discard) options. Gold deducted on roll, not on accept.
 - `.flylock` — Toggles flight lock. When locked, lottery fly enchants won't grant flight even if you have a flying stage. Useful for avoiding accidental flight in dungeons/raids.
 
 ### Pet Stay on Mount
@@ -96,9 +96,10 @@ Pets run alongside the mounted player. Only affects mount-up — other dismiss t
 ### Lottery Enchants
 Diablo-style random enchantments on ALL acquired weapons/armor (any quality, grey through
 legendary). Uses `PLAYERHOOK_ON_STORE_NEW_ITEM` as the universal catch-all. **Vendor purchases
-are silently skipped** via `PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR` — prevents mass-buying
-cheap items for enchant farming. Vendor buyback uses `Player::StoreItem` (not `StoreNewItem`),
-so repurchased items are also safe.
+only roll on Green+ items** (grey/white vendor trash skipped to prevent farming) via
+`PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR`. Non-vendor sources (loot, craft, quest, mail,
+group roll) roll on ANY quality — even grey items can get god-tier stats. Vendor buyback uses
+`Player::StoreItem` (not `StoreNewItem`), so repurchased items are safe.
 Scans SpellItemEnchantment.dbc at startup for pure-stat AND pure-resistance enchants.
 
 **No Class Filtering** — any stat/resist can roll on any class. Self-balancing through randomness:
@@ -108,7 +109,8 @@ resilience, AND all elemental resistances (Holy/Fire/Nature/Frost/Shadow/Arcane)
 Pool **excludes**: Dodge, Parry, Defense (overcapping too easily with multiple items).
 
 Up to 7 enchants per item with cascading chances
-(70% → 60% → 50% → 50% → 50% → 40% → 40%). Quality-tiered: item quality caps the max value tier.
+(70% → 60% → 50% → 50% → 50% → 40% → 40%). **No quality-based tier filtering** — the
+percentile system handles balance naturally. A grey item can roll god-tier stats if RNG blesses you.
 
 **Level Scaling**: Stats grow linearly with player level — `max(1, round(base * level / 80))`.
 Level 1 = 1.25%, Level 40 = 50%, Level 80 = 100%. Stats automatically recalculate on level-up
@@ -120,6 +122,8 @@ Rolls +1% to +25% speed (custom enchant IDs 900001–900025). Stacks additively 
 equipped items, capped at +100% total (200% base speed). Affects MOVE_RUN, MOVE_SWIM, AND
 MOVE_FLIGHT — speed bonus is a base multiplier on ALL movement types.
 Multiplicative with aura buffs (e.g., +50% enchant × 1.15 paladin aura = 172.5% speed).
+**Mounted players get NO speed bonus** — mounts always calculate from 100% base. This
+intentionally makes mounts obsolete as enchant speed grows.
 Core patch: Player fields `m_lotterySpeedBonus`, injected into `Unit::UpdateSpeed()` before
 final `SetSpeed()` call — survives any aura recalculation. **No level scaling** on speed.
 
@@ -135,7 +139,7 @@ Core patch: Player fields `m_lotteryFlySpeedRate` + `m_lotteryCanFly`, injected 
 **No level scaling** on flight. Use `.flylock` to voluntarily disable flight.
 
 #### Reroll (Gossip Menu)
-`.reroll` opens a paginated gossip menu listing eligible bag items. Select an item → pay 1000g →
+`.reroll` opens a paginated gossip menu listing eligible bag items. Select an item → pay 500g →
 enchants are rolled and previewed. Choose **Take** (apply enchants, set 777 durability) or
 **Keep** (discard new roll, keep existing enchants). Gold deducted on roll, NOT on accept —
 prevents reopen abuse. First enchant guaranteed (100%), rest use normal cascade.
@@ -154,7 +158,7 @@ durability as a visual marker.
 ## SQL Setup
 
 SQL runs automatically via AzerothCore's UpdateFetcher system.
-Files in `data/sql/db-world/base/` are applied on first server start.
+Files in `data/sql/db-characters/` and `data/sql/db-world/` are applied on first server start.
 UPDATEs are harmless if the NPC entries don't exist in your DB.
 
 ## Lua Archive

@@ -30,9 +30,12 @@ CustomRamvaris.Enable = 1
 #
 # CustomRamvaris.LotteryEnchants.Enable
 #     Diablo-style lottery enchantments on ALL acquired weapons/armor (any quality,
-#     grey through legendary). Vendor purchases silently excluded via
-#     PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR — prevents mass-buying cheap items.
+#     grey through legendary). Vendor purchases only roll on Green+ items
+#     (grey/white vendor trash skipped to prevent farming) via
+#     PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR. Non-vendor sources roll ANY quality.
+#     No quality-based tier gating — percentile system handles balance naturally.
 #     Vendor buyback uses Player::StoreItem (not StoreNewItem), also safe.
+#     Mounted players get NO speed bonus — mounts always use vanilla 100% base.
 #     Scans SpellItemEnchantment DBC at startup for pure stat + resistance enchants.
 #     NO class filtering — any stat/resist rolls on any class. Self-balancing:
 #     a warrior rolling INT+SPI+FIRE_RES is a crap roll. Dilution IS the balance.

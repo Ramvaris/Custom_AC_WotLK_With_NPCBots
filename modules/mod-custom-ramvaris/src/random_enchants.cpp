@@ -15,10 +15,12 @@
  *   haste, crit, hit, expertise, armor pen, resilience, AND all elemental resistances.
  * - Pool EXCLUDES: Dodge, Parry, Defense (overcapping with multiple items)
  * - CUSTOM ENCHANTS: Movespeed (1-25% per roll, cap +100% = 200% base, stacking,
- *   affects run + swim, NO level scaling) and Flying (1% chance, 3 stages: 100%/200%/300%
- *   flight speed, only highest counts, cap 600%, NO level scaling).
- * - `.enchants` paginated gossip menu; `.reroll` gossip-based Keep/Take flow (1000g)
+ *   affects run + swim + flight, NO level scaling) and Flying (1% chance, 3 stages:
+ *   100%/200%/300% flight speed, combined with speed bonus up to 600%, NO level scaling).
+ * - `.enchants` paginated gossip menu; `.reroll` gossip-based Keep/Take flow (500g)
  * - `.flylock` toggles flying ability on/off
+ * - NO quality-based tier filtering — the percentile system handles balance naturally.
+ *   A grey item can roll god-tier stats if RNG blesses you. Any quality, any tier.
  * - 7 color tiers by percentile (~14.29% each): Grey→White→Green→Blue→Purple→Orange→Red
  * - Item name color = enchant COUNT (1=grey..7=red), stat color = VALUE percentile
  * - Items with lottery enchants get 777/777 durability as visual marker
@@ -39,8 +41,10 @@
  * Speed modifies base character speed (run, swim, AND flight), multiplicative with
  * aura buffs. E.g. +50% from enchants × 15% paladin aura = 1.5 × 1.15 = 172.5%.
  * Capped at +100% from enchants (200% base speed). Individual rolls are 1-25%.
- * Swimming is treated the same as running. Speed bonus also multiplies flight speed
- * (from mounts, fly enchants, etc.), enabling extreme superman-mode when combined.
+ * Swimming is treated the same as running.
+ * MOUNTED PLAYERS GET NO SPEED BONUS — mounts use vanilla 100% base speed. This
+ * intentionally makes mounts obsolete as enchant speed grows (epic mount = 200%,
+ * but +100% enchant speed unmounted = 200% without needing a mount).
  *
  * Fly grants SetCanFly + flight speed. 1% overall chance in the dice pool.
  * Sub-roll: 75%=Stage1 (100%), 20%=Stage2 (200%), 5%=Stage3 (300%). Only highest
@@ -51,12 +55,12 @@
  *
  * ITEM SOURCES:
  * Uses PLAYERHOOK_ON_STORE_NEW_ITEM — catches ALL item acquisition (loot, craft, quest,
- * vendor purchase, mail, group roll). Vendor purchases are detected via
- * PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR and silently skipped — prevents mass-buying
- * cheap vendor items for enchant farming. ALL item qualities get enchants (even grey/white)
- * as long as the item wasn't purchased from a vendor.
+ * vendor purchase, mail, group roll). ALL item qualities (grey through legendary) get
+ * enchants from non-vendor sources. Vendor purchases are detected via
+ * PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR — only Green+ vendor items get enchants,
+ * grey/white vendor trash is skipped to prevent mass-buying cheap items for farming.
  * Vendor buyback uses Player::StoreItem (not StoreNewItem), so repurchased items are safe.
- * Additionally, `.reroll` allows re-rolling bag items for 1000g via gossip menu.
+ * Additionally, `.reroll` allows re-rolling bag items for 500g via gossip menu.
  *
  * Original: https://github.com/azerothcore/mod-random-enchants (MIT License)
  */
@@ -169,7 +173,7 @@ static constexpr float ROLL_CHANCES[] = {
     70.0f, 60.0f, 50.0f, 50.0f, 50.0f, 40.0f, 40.0f
 };
 static constexpr uint32 MAX_LOTTERY_SLOTS = 7;
-static constexpr uint32 REROLL_COST_GOLD  = 1000;
+static constexpr uint32 REROLL_COST_GOLD  = 500;
 
 // =============================================================================
 // Static Globals
@@ -846,14 +850,12 @@ static void BuildEnchantPoolsFromDBC()
 // Get a random enchant — POOL-TYPE-FIRST approach for equal type weighting.
 // 1% chance → Flying enchant (sub-roll 75/20/5% for stage 1/2/3).
 // 99% chance → pick a random pool type (including Movespeed), then a random
-// enchant from that type. Quality-gated for DBC enchants.
+// enchant from that type. ALL enchant values available for ALL item qualities —
+// the percentile system handles balance (low rolls are common, god-rolls rare).
 // =============================================================================
 static uint32 GetRandomEnchant(Item* item, const std::vector<uint32>& excludeSet)
 {
     if (!item) return 0;
-
-    uint32 quality = item->GetTemplate()->Quality;
-    EnchantTier maxTier = GetMaxTierForQuality(quality);
 
     // --- 1% chance: Flying enchant ---
     if (urand(1, 100) == 1)
@@ -877,25 +879,13 @@ static uint32 GetRandomEnchant(Item* item, const std::vector<uint32>& excludeSet
 
     for (auto& [key, ids] : s_enchantPools)
     {
-        // Check if this pool type has at least one valid enchant (quality-gated, not excluded)
+        // Check if this pool type has at least one valid non-excluded enchant
         for (uint32 id : ids)
         {
             if (std::find(excludeSet.begin(), excludeSet.end(), id) != excludeSet.end())
                 continue;
-
-            SpellItemEnchantmentEntry const* entry = sSpellItemEnchantmentStore.LookupEntry(id);
-            if (!entry) continue;
-
-            for (uint32 e = 0; e < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++e)
-            {
-                if ((entry->type[e] == ITEM_ENCHANTMENT_TYPE_STAT || entry->type[e] == ITEM_ENCHANTMENT_TYPE_RESISTANCE)
-                    && entry->amount[e] > 0
-                    && GetTierFromValue(entry->amount[e]) <= maxTier)
-                {
-                    poolKeys.push_back(key);
-                    goto nextPool; // Found at least one valid → this pool type qualifies
-                }
-            }
+            poolKeys.push_back(key);
+            goto nextPool;
         }
         nextPool:;
     }
@@ -931,20 +921,7 @@ static uint32 GetRandomEnchant(Item* item, const std::vector<uint32>& excludeSet
         {
             if (std::find(excludeSet.begin(), excludeSet.end(), id) != excludeSet.end())
                 continue;
-
-            SpellItemEnchantmentEntry const* entry = sSpellItemEnchantmentStore.LookupEntry(id);
-            if (!entry) continue;
-
-            for (uint32 e = 0; e < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++e)
-            {
-                if ((entry->type[e] == ITEM_ENCHANTMENT_TYPE_STAT || entry->type[e] == ITEM_ENCHANTMENT_TYPE_RESISTANCE)
-                    && entry->amount[e] > 0
-                    && GetTierFromValue(entry->amount[e]) <= maxTier)
-                {
-                    valid.push_back(id);
-                    break;
-                }
-            }
+            valid.push_back(id);
         }
 
         if (!valid.empty())
@@ -1870,23 +1847,30 @@ public:
     }) { }
 
     // Fires INSIDE BuyItemFromVendorSlot BEFORE StoreNewItem is called.
-    // Sets a per-player flag so the StoreNewItem hook knows to skip lottery.
+    // Sets a per-player flag so the StoreNewItem hook can apply quality filtering
+    // for vendor purchases: only Green+ vendor items get enchants.
     void OnPlayerBeforeBuyItemFromVendor(Player* player, ObjectGuid, uint32, uint32&, uint8, uint8, uint8) override
     {
         if (!player) return;
         s_vendorBuying.insert(player->GetGUID().GetCounter());
     }
 
-    // Universal item acquisition hook. Skips lottery for vendor purchases
-    // (detected via flag set in OnPlayerBeforeBuyItemFromVendor).
+    // Universal item acquisition hook.
+    // Vendor purchases: Green+ only (grey/white vendor trash = no enchants).
+    // Non-vendor sources (loot, craft, quest, mail, group roll): ANY quality enchants.
     // Vendor buyback uses Player::StoreItem (not StoreNewItem) — never fires here.
     void OnPlayerStoreNewItem(Player* player, Item* item, uint32) override
     {
-        if (!IsEnabled()) return;
+        if (!IsEnabled() || !player || !item) return;
 
         uint32 pg = player->GetGUID().GetCounter();
         if (s_vendorBuying.erase(pg))
-            return; // Vendor purchase — skip lottery
+        {
+            // Vendor purchase — only roll if item is Green (Uncommon) or better
+            ItemTemplate const* proto = item->GetTemplate();
+            if (!proto || proto->Quality < ITEM_QUALITY_UNCOMMON)
+                return;
+        }
 
         RollLotteryEnchants(player, item);
     }

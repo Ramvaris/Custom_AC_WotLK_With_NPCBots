@@ -15654,26 +15654,33 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced)
     // Lottery Enchant Speed/Fly — mod-custom-ramvaris
     // Speed bonus: multiplicative base modifier on RUN, SWIM, and FLIGHT.
     //   Up to +100% (200% base). Stacks multiplicatively with aura buffs.
-    //   Applies to mount flight too — "later multiplicators" work on top.
-    // Fly enchant: provides a minimum flight speed floor.
+    //   SKIPPED WHEN MOUNTED — mounts always calculate from 100% base speed.
+    //   This makes mounts progressively useless as enchant speed grows.
+    // Fly enchant: provides a minimum flight speed floor (also unmounted only).
     //   Effective floor = flyStageRate × (1 + speedBonus).
     //   Max: stage 3 (3.0) × 2.0 = 600% — full superman mode.
     // =========================================================================
     if (IsPlayer())
     {
         Player* plr = ToPlayer();
-        float lotteryBonus = plr->GetLotterySpeedBonus();
 
-        // Base speed bonus: run + swim + flight (up to +100% = 200% base)
-        if (lotteryBonus > 0.0f && (mtype == MOVE_RUN || mtype == MOVE_SWIM || mtype == MOVE_FLIGHT))
-            speed *= (1.0f + lotteryBonus);
-
-        // Fly enchant floor: stage rate × speed multiplier (up to 3.0 × 2.0 = 600%)
-        if (mtype == MOVE_FLIGHT && plr->GetLotteryCanFly())
+        // Mounted players get NO lottery speed bonus — mounts use vanilla 100% base.
+        // Enchant speed intentionally makes mounts obsolete at higher bonus values.
+        if (!plr->IsMounted())
         {
-            float effectiveFlySpeed = plr->GetLotteryFlySpeedRate() * (1.0f + lotteryBonus);
-            if (effectiveFlySpeed > speed)
-                speed = effectiveFlySpeed;
+            float lotteryBonus = plr->GetLotterySpeedBonus();
+
+            // Base speed bonus: run + swim + flight (up to +100% = 200% base)
+            if (lotteryBonus > 0.0f && (mtype == MOVE_RUN || mtype == MOVE_SWIM || mtype == MOVE_FLIGHT))
+                speed *= (1.0f + lotteryBonus);
+
+            // Fly enchant floor: stage rate × speed multiplier (up to 3.0 × 2.0 = 600%)
+            if (mtype == MOVE_FLIGHT && plr->GetLotteryCanFly())
+            {
+                float effectiveFlySpeed = plr->GetLotteryFlySpeedRate() * (1.0f + lotteryBonus);
+                if (effectiveFlySpeed > speed)
+                    speed = effectiveFlySpeed;
+            }
         }
     }
 
