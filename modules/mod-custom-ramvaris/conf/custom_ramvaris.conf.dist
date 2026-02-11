@@ -29,9 +29,10 @@ CustomRamvaris.Enable = 1
 
 #
 # CustomRamvaris.LotteryEnchants.Enable
-#     Diablo-style lottery enchantments on ALL acquired gear (loot, craft, quest,
-#     group roll, vendor purchase, mail). Uses PLAYERHOOK_ON_STORE_NEW_ITEM —
-#     the universal catch-all from Player::StoreNewItem.
+#     Diablo-style lottery enchantments on ALL acquired weapons/armor (any quality,
+#     grey through legendary). Vendor purchases silently excluded via
+#     PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR — prevents mass-buying cheap items.
+#     Vendor buyback uses Player::StoreItem (not StoreNewItem), also safe.
 #     Scans SpellItemEnchantment DBC at startup for pure stat + resistance enchants.
 #     NO class filtering — any stat/resist rolls on any class. Self-balancing:
 #     a warrior rolling INT+SPI+FIRE_RES is a crap roll. Dilution IS the balance.
@@ -43,9 +44,10 @@ CustomRamvaris.Enable = 1
 #     Level-scaled: stats grow linearly from 1.25% (level 1) to 100% (level 80).
 #     Stats update automatically on level-up (delta-based recalculation).
 #     SPEED: Regular dice pool entry. +1-25% per roll, stacks to +100% (200% base),
-#            affects run+swim, multiplicative with auras. Core patch in UpdateSpeed.
+#            affects run+swim+flight, multiplicative with auras. Core patch in UpdateSpeed.
 #     FLY: 1% leftover chance. Sub-roll 75/20/5% for Stage 1/2/3 (100/200/300%).
-#          Only highest stage counts. Flying everywhere, BG flag drops if airborne.
+#          Effective speed = flyStageRate × (1 + speedBonus), max 600% (superman mode).
+#          Flying everywhere, BG flag drops if airborne.
 #          .flylock command to voluntarily disable flight.
 #     Commands: .enchants (paginated gossip viewer), .reroll (gossip-based reroll
 #              with Take/Keep flow, gold on roll), .flylock (toggle flight lock).

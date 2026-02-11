@@ -94,8 +94,11 @@ Pets run alongside the mounted player. Only affects mount-up — other dismiss t
 (vehicle entry, teleport, logout) work as normal. Reverts to vanilla behavior when OFF.
 
 ### Lottery Enchants
-Diablo-style random enchantments on ALL acquired gear (loot, craft, quest, group roll, vendor purchase,
-mail). Uses `PLAYERHOOK_ON_STORE_NEW_ITEM` — the universal catch-all from `Player::StoreNewItem`.
+Diablo-style random enchantments on ALL acquired weapons/armor (any quality, grey through
+legendary). Uses `PLAYERHOOK_ON_STORE_NEW_ITEM` as the universal catch-all. **Vendor purchases
+are silently skipped** via `PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR` — prevents mass-buying
+cheap items for enchant farming. Vendor buyback uses `Player::StoreItem` (not `StoreNewItem`),
+so repurchased items are also safe.
 Scans SpellItemEnchantment.dbc at startup for pure-stat AND pure-resistance enchants.
 
 **No Class Filtering** — any stat/resist can roll on any class. Self-balancing through randomness:
@@ -114,7 +117,8 @@ via delta-based application (no full unapply/reapply needed).
 #### Speed Enchants
 Movespeed is a REGULAR type in the dice pool with equal weight alongside STR, AGI, etc.
 Rolls +1% to +25% speed (custom enchant IDs 900001–900025). Stacks additively across all
-equipped items, capped at +100% total (200% base speed). Affects MOVE_RUN + MOVE_SWIM.
+equipped items, capped at +100% total (200% base speed). Affects MOVE_RUN, MOVE_SWIM, AND
+MOVE_FLIGHT — speed bonus is a base multiplier on ALL movement types.
 Multiplicative with aura buffs (e.g., +50% enchant × 1.15 paladin aura = 172.5% speed).
 Core patch: Player fields `m_lotterySpeedBonus`, injected into `Unit::UpdateSpeed()` before
 final `SetSpeed()` call — survives any aura recalculation. **No level scaling** on speed.
@@ -122,7 +126,9 @@ final `SetSpeed()` call — survives any aura recalculation. **No level scaling*
 #### Fly Enchants
 1% leftover chance before the regular pool. Sub-roll: 75% Stage 1 (100% flight speed),
 20% Stage 2 (200%), 5% Stage 3 (300%). Custom enchant IDs 900101–900103.
-Only the HIGHEST stage across all equipped items counts. Capped at 600% flight speed.
+Only the HIGHEST stage across all equipped items counts.
+Effective flight speed floor = `flyStageRate × (1 + speedBonus)`. Max: 3.0 × 2.0 = **600%**
+flight speed — full superman mode. Speed bonus from enchants multiplies the fly stage rate.
 Flying everywhere — no zone restrictions. BG flag auto-drops when airborne.
 Core patch: Player fields `m_lotteryFlySpeedRate` + `m_lotteryCanFly`, injected into
 `Unit::UpdateSpeed(MOVE_FLIGHT)`. Slow Fall (spell 130) cast on fly disable to prevent death.

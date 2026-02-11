@@ -147,7 +147,7 @@ All of Ramvaris' private server Lua customizations ported to C++ for performance
 - **`.guardianscale`** — Double Soul Keeper guardian visual scale each use (caps at 5x)
 - **`.petscale`** — Double any pet visual scale each use (Hunter/Warlock/DK, caps at 5x)
 - **Pet Stay on Mount** — Core patch: pets stay summoned when mounting up instead of being dismissed
-- **Lottery Enchants** — Diablo-style random enchantments on ALL acquired Green+ gear. DB-based, up to 7 enchants per item, level-scaled stats. Includes **Movespeed** (1-25% per roll, stacks to +100%, affects run+swim) and **Flying** (1% chance, 3 stages up to 300% flight speed, flying everywhere). Gossip-based `.reroll` with Take/Keep preview (1000g). Gossip-based `.enchants` viewer with item drill-down. `.flylock` to toggle flight. Grey/White items excluded. Vendor buyback does NOT trigger re-rolling. BG flag auto-drops when airborne.
+- **Lottery Enchants** — Diablo-style random enchantments on ALL acquired weapons/armor (any quality, grey through legendary). DB-based, up to 7 enchants per item, level-scaled stats. Vendor purchases are silently excluded (prevents mass-buying cheap items for enchant farming). Includes **Movespeed** (1-25% per roll, stacks to +100% = 200% base, affects run+swim+flight) and **Flying** (1% chance, 3 stages: 100%/200%/300%, combined with speed bonus up to 600% — full superman mode). Speed bonus is multiplicative with all other buffs (mounts, auras, etc.). Gossip-based `.reroll` with Take/Keep preview (1000g). Gossip-based `.enchants` viewer with item drill-down. `.flylock` to toggle flight. BG flag auto-drops when airborne.
 - **Smart Wandering Bots** — Zone-aware dynamic bot spawning instead of global. Spawns MinAmount–MaxAmount bots ONLY in the player's current zone, despawns on zone change. Optional faction balancing to even out Alliance/Horde ratio. Core patch extends BotDataMgr with zone-specific spawn/despawn API. 30s cooldown prevents zone-border flapping. Per-player tracking for multi-player support. The performance fix for servers with NPCBots.
 
 **Config:**
@@ -155,7 +155,7 @@ All of Ramvaris' private server Lua customizations ported to C++ for performance
 CustomRamvaris.Enable = 1                    # Master switch (ON, but all features OFF by default)
 CustomRamvaris.DarkAzeroth.Enable = 0        # Example: no custom DB needed
 CustomRamvaris.PetStayOnMount.Enable = 0     # Core patch: pets run alongside mounted player
-CustomRamvaris.LotteryEnchants.Enable = 0    # Diablo-style enchants + speed/fly + gossip menus
+CustomRamvaris.LotteryEnchants.Enable = 0    # Diablo-style enchants + speed/fly/gossip (vendor buys excluded)
 CustomRamvaris.LotteryEnchants.MaxSlots = 7  # 1-7 enchants per item (cascading chance)
 CustomRamvaris.SmartWanderingBots.Enable = 0 # Zone-aware bot spawning (set NpcBot.WanderingBots.Continents.Count=0!)
 CustomRamvaris.SmartWanderingBots.MinAmount = 5

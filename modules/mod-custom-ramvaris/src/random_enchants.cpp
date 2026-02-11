@@ -36,17 +36,26 @@
  * Speed and Fly enchants do NOT level-scale — their values are always full.
  *
  * SPEED/FLY MECHANIC:
- * Speed modifies base character speed (run + swim), multiplicative with aura buffs.
- * E.g. +50% from enchants + 15% paladin aura = 1.5 × 1.15 = 172.5% effective.
- * Capped at +100% from enchants (200% base). Individual rolls are 1-25%.
+ * Speed modifies base character speed (run, swim, AND flight), multiplicative with
+ * aura buffs. E.g. +50% from enchants × 15% paladin aura = 1.5 × 1.15 = 172.5%.
+ * Capped at +100% from enchants (200% base speed). Individual rolls are 1-25%.
+ * Swimming is treated the same as running. Speed bonus also multiplies flight speed
+ * (from mounts, fly enchants, etc.), enabling extreme superman-mode when combined.
+ *
  * Fly grants SetCanFly + flight speed. 1% overall chance in the dice pool.
  * Sub-roll: 75%=Stage1 (100%), 20%=Stage2 (200%), 5%=Stage3 (300%). Only highest
- * stage counts across ALL equipped items. Capped at 600% flight speed.
- * Flying works everywhere. BG flag carriers auto-drop the flag when airborne.
+ * stage counts across ALL equipped items. Effective fly speed = flyStageRate ×
+ * (1 + speedBonus). Max: 3.0 × 2.0 = 600% flight speed. Works everywhere.
+ * BG flag carriers auto-drop the flag when airborne.
  * .flylock toggles flying on/off even if you have the enchant.
  *
  * ITEM SOURCES:
- * Uses PLAYERHOOK_ON_STORE_NEW_ITEM — the universal catch-all for ALL item acquisition.
+ * Uses PLAYERHOOK_ON_STORE_NEW_ITEM — catches ALL item acquisition (loot, craft, quest,
+ * vendor purchase, mail, group roll). Vendor purchases are detected via
+ * PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR and silently skipped — prevents mass-buying
+ * cheap vendor items for enchant farming. ALL item qualities get enchants (even grey/white)
+ * as long as the item wasn't purchased from a vendor.
+ * Vendor buyback uses Player::StoreItem (not StoreNewItem), so repurchased items are safe.
  * Additionally, `.reroll` allows re-rolling bag items for 1000g via gossip menu.
  *
  * Original: https://github.com/azerothcore/mod-random-enchants (MIT License)
@@ -205,6 +214,10 @@ struct RerollMenuItem
     uint32 enchantCount;
 };
 static std::unordered_map<uint32, std::vector<RerollMenuItem>> s_rerollItemList;
+
+// Vendor purchase detection: player GUIDs currently in a BuyItemFromVendorSlot call.
+// Set in OnPlayerBeforeBuyItemFromVendor, checked+cleared in OnPlayerStoreNewItem.
+static std::unordered_set<uint32> s_vendorBuying;
 
 // =============================================================================
 // Helper functions — Custom enchant ID detection
@@ -952,9 +965,10 @@ static std::vector<uint32> RollNewEnchants(Item* item, bool isReroll)
     ItemTemplate const* proto = item->GetTemplate();
     if (!proto) return {};
     if (proto->Class != ITEM_CLASS_WEAPON && proto->Class != ITEM_CLASS_ARMOR) return {};
-    // Grey/White items skip lottery — prevents mass-buying cheap vendor items for enchants.
-    // Green+ items are rate-limited by drop rates or cost special currency.
-    if (proto->Quality < ITEM_QUALITY_UNCOMMON || proto->Quality > ITEM_QUALITY_LEGENDARY) return {};
+    // All qualities (grey through legendary) are eligible — quality gates the TIER of
+    // enchant that can roll (grey item = only grey-tier stats). Vendor purchase exclusion
+    // is handled at the hook level, not here.
+    if (proto->Quality > ITEM_QUALITY_LEGENDARY) return {};
 
     uint32 maxSlots = sConfigMgr->GetOption<uint32>("CustomRamvaris.LotteryEnchants.MaxSlots", MAX_LOTTERY_SLOTS);
     if (maxSlots > MAX_LOTTERY_SLOTS) maxSlots = MAX_LOTTERY_SLOTS;
@@ -1245,7 +1259,6 @@ static void BuildRerollItemList(Player* player)
         ItemTemplate const* proto = item->GetTemplate();
         if (!proto) return;
         if (proto->Class != ITEM_CLASS_WEAPON && proto->Class != ITEM_CLASS_ARMOR) return;
-        if (proto->Quality < ITEM_QUALITY_UNCOMMON) return; // Grey/White skip — no cheap vendor spam
 
         uint32 guid = item->GetGUID().GetCounter();
         uint32 enchantCount = 0;
@@ -1846,6 +1859,7 @@ class LotteryEnchants_PlayerScript : public PlayerScript
 public:
     LotteryEnchants_PlayerScript() : PlayerScript("LotteryEnchants_PlayerScript", {
         PLAYERHOOK_ON_STORE_NEW_ITEM,
+        PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR,
         PLAYERHOOK_ON_EQUIP,
         PLAYERHOOK_ON_UNEQUIP_ITEM,
         PLAYERHOOK_ON_LOGIN,
@@ -1855,11 +1869,25 @@ public:
         PLAYERHOOK_ON_UPDATE,
     }) { }
 
-    // NOTE: Vendor buyback uses Player::StoreItem (not StoreNewItem), so
-    // repurchased items do NOT trigger this hook — no rebuy abuse possible.
+    // Fires INSIDE BuyItemFromVendorSlot BEFORE StoreNewItem is called.
+    // Sets a per-player flag so the StoreNewItem hook knows to skip lottery.
+    void OnPlayerBeforeBuyItemFromVendor(Player* player, ObjectGuid, uint32, uint32&, uint8, uint8, uint8) override
+    {
+        if (!player) return;
+        s_vendorBuying.insert(player->GetGUID().GetCounter());
+    }
+
+    // Universal item acquisition hook. Skips lottery for vendor purchases
+    // (detected via flag set in OnPlayerBeforeBuyItemFromVendor).
+    // Vendor buyback uses Player::StoreItem (not StoreNewItem) — never fires here.
     void OnPlayerStoreNewItem(Player* player, Item* item, uint32) override
     {
         if (!IsEnabled()) return;
+
+        uint32 pg = player->GetGUID().GetCounter();
+        if (s_vendorBuying.erase(pg))
+            return; // Vendor purchase — skip lottery
+
         RollLotteryEnchants(player, item);
     }
 
