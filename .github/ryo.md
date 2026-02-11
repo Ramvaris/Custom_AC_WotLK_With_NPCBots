@@ -68,7 +68,19 @@ THOUGHTS&RANTS:
   - "Five bugs, five root causes, zero in common. Transmog NPC invisible because CanBeSeen checks GetOwner() but TEMPSUMMON_TIMED_DESPAWN doesn't set UNIT_FIELD_SUMMONEDBY. Reagent bank lag because Execute() is fire-and-forget — the menu refresh query beats the write. Chat format broken because PSendSysMessage uses fmt::format but I wrote printf. Stat stacking because OnPlayerUnequip doesn't fire on swaps. Speed not level-scaled by design choice but should be for balance. Every single one is a different category of mistake. I'm learning five lessons at once. Dattebayo."
 
 ACTIVE_WORK:
-  - None 🍥
+  ENCHANTS_SUM_PAGE:
+  - TASK: Add [Sum] button to .enchants gossip menu
+  - PROBLEM: No quick way to see total equipped enchant stats at a glance
+  - SOLUTION: First button in .enchants opens aggregated summary page showing
+    all stat totals, speed (with overcap warning), fly stage, effective flight %.
+    Back button returns to normal .enchants item list.
+  - CHANGES:
+    1. ADDED: LOTTO_ACTION_ENCHANTS_SUM (30006) to gossip action enum
+    2. ADDED: ShowEnchantsSummary() — iterates equipped items, resolves enchant IDs,
+       aggregates stats into std::map (sorted alphabetically), shows speed/fly totals
+    3. MODIFIED: ShowEnchantsMenu — Sum button inserted as FIRST gossip item (before pagination)
+    4. MODIFIED: HandleLotteryGossipSelect — routes LOTTO_ACTION_ENCHANTS_SUM to ShowEnchantsSummary
+  - STATUS: SHIPPED 🍥
 
 LATEST_CUSTOM_SPELL:
   HUMAN_STONEFORM_81013:

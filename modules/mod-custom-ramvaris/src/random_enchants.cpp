@@ -179,6 +179,7 @@ enum LotteryGossipAction : uint32
     LOTTO_ACTION_ENCHANTS_FIRST  = 30003,
     LOTTO_ACTION_ENCHANTS_LAST   = 30004,
     LOTTO_ACTION_ENCHANTS_BACK   = 30005,
+    LOTTO_ACTION_ENCHANTS_SUM    = 30006,
 };
 
 static constexpr uint32 ITEMS_PER_PAGE = 15;
@@ -1525,6 +1526,11 @@ static void ShowEnchantsMenu(Player* player, uint32 page)
     uint8 plvl = player->GetLevel();
     uint32 scalePct = uint32(float(plvl) / 80.0f * 100.0f);
 
+    // Sum button — always first, shows aggregated equipped enchant totals
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+        "|TInterface\\Icons\\INV_Misc_Note_01:20:20:-2:0|t |cffFFD700[Sum] Equipped Enchant Totals|r",
+        LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_ENCHANTS_SUM);
+
     if (items.empty())
     {
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
@@ -1582,6 +1588,150 @@ static void ShowEnchantsMenu(Player* player, uint32 page)
                           " (" + std::to_string(scalePct) + "% scaling)\n"
                           "Click an item to view its enchant details.",
                           LOTTERY_NPC_TEXT_ID);
+    SendGossipMenuFor(player, LOTTERY_NPC_TEXT_ID, player->GetGUID());
+}
+
+// --- Show aggregated stat summary for ALL equipped lottery enchants ---
+static void ShowEnchantsSummary(Player* player)
+{
+    uint8 plvl = player->GetLevel();
+
+    // Aggregate containers: stat name → total scaled value
+    std::map<std::string, int32> statTotals;
+    uint32 totalSpeedPct      = 0;
+    uint32 highestFlyStage    = 0;
+    uint32 totalItemsScanned  = 0;
+    uint32 totalEnchantsFound = 0;
+
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (!item) continue;
+
+        uint32 guid = item->GetGUID().GetCounter();
+        std::vector<uint32> enchants;
+        {
+            std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
+            auto it = s_lotteryCache.find(guid);
+            if (it != s_lotteryCache.end())
+                enchants = it->second;
+        }
+        if (enchants.empty()) continue;
+
+        totalItemsScanned++;
+        totalEnchantsFound += enchants.size();
+
+        for (uint32 enchantId : enchants)
+        {
+            if (IsCustomSpeedEnchant(enchantId))
+            {
+                totalSpeedPct += GetSpeedPct(enchantId);
+                continue;
+            }
+            if (IsCustomFlyEnchant(enchantId))
+            {
+                uint32 stage = GetFlyStage(enchantId);
+                if (stage > highestFlyStage)
+                    highestFlyStage = stage;
+                continue;
+            }
+
+            SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchantId);
+            if (!pEnchant) continue;
+
+            for (int s = 0; s < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++s)
+            {
+                if (pEnchant->amount[s] == 0) continue;
+
+                uint32 scaledAmount = ScaleEnchantAmount(pEnchant->amount[s], plvl);
+                const char* name = nullptr;
+
+                if (pEnchant->type[s] == ITEM_ENCHANTMENT_TYPE_STAT)
+                    name = GetStatName(pEnchant->spellid[s]);
+                else if (pEnchant->type[s] == ITEM_ENCHANTMENT_TYPE_RESISTANCE)
+                    name = GetResistName(pEnchant->spellid[s]);
+                else
+                    continue;
+
+                if (name)
+                    statTotals[name] += int32(scaledAmount);
+            }
+        }
+    }
+
+    ClearGossipMenuFor(player);
+    player->PlayerTalkClass->GetGossipMenu().SetMenuId(LOTTERY_GOSSIP_MENU_ID);
+
+    if (totalEnchantsFound == 0)
+    {
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            "|cff888888No equipped lottery enchants found.|r",
+            LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_CLOSE);
+    }
+    else
+    {
+        // Header line with item/enchant counts
+        std::string header = "|cffFFD700" + std::to_string(totalEnchantsFound) +
+                             " enchants across " + std::to_string(totalItemsScanned) + " items|r";
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, header,
+            LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_ENCHANTS_SUM);
+
+        // Regular stats sorted alphabetically by the map
+        for (auto const& [statName, total] : statTotals)
+        {
+            // Color by value tier for visual feedback
+            EnchantTier tier = GetTierFromValue(uint32(total));
+            std::string line = std::string(GetValueColor(tier)) + "+" +
+                               std::to_string(total) + " " + statName + "|r";
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, line,
+                LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_ENCHANTS_SUM);
+        }
+
+        // Speed summary (capped display)
+        if (totalSpeedPct > 0)
+        {
+            std::string speedLine = "|cff00FFFF+" + std::to_string(totalSpeedPct) + "% Movespeed";
+            if (totalSpeedPct > 100)
+                speedLine += " |cffFF0000(CAPPED at 100%)|r";
+            else
+                speedLine += "|r";
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, speedLine,
+                LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_ENCHANTS_SUM);
+        }
+
+        // Fly summary
+        if (highestFlyStage > 0)
+        {
+            uint32 flyPct = highestFlyStage * 100;
+            std::string flyLine = "|cffFF00FF+Mobility Boost Stage " +
+                                  std::to_string(highestFlyStage) + " (" +
+                                  std::to_string(flyPct) + "% flight)|r";
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, flyLine,
+                LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_ENCHANTS_SUM);
+
+            // Effective flight speed with speed bonus
+            if (totalSpeedPct > 0)
+            {
+                float cappedSpd = std::min(float(totalSpeedPct) / 100.0f, 1.0f);
+                float effectiveFly = float(flyPct) * (1.0f + cappedSpd);
+                std::string effLine = "|cffFF00FF  Effective Flight: " +
+                                      std::to_string(uint32(effectiveFly)) + "%|r";
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, effLine,
+                    LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_ENCHANTS_SUM);
+            }
+        }
+    }
+
+    // Back button → enchants list
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+        "|TInterface\\Icons\\Misc_ArrowLeft:20:20:-2:0|t Back to Enchants",
+        LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_ENCHANTS_BACK);
+
+    uint32 scalePct = uint32(float(plvl) / 80.0f * 100.0f);
+    SendDynamicGossipText(player,
+        "Equipped Enchant Summary — Level " + std::to_string(plvl) +
+        " (" + std::to_string(scalePct) + "% scaling)",
+        LOTTERY_NPC_TEXT_ID);
     SendGossipMenuFor(player, LOTTERY_NPC_TEXT_ID, player->GetGUID());
 }
 
@@ -1808,6 +1958,12 @@ static void HandleLotteryGossipSelect(Player* player, uint32 action)
         {
             uint32 p = s_enchantsPage.count(pg) ? s_enchantsPage[pg] : 0;
             ShowEnchantsMenu(player, p);
+            return;
+        }
+
+        case LOTTO_ACTION_ENCHANTS_SUM:
+        {
+            ShowEnchantsSummary(player);
             return;
         }
 
