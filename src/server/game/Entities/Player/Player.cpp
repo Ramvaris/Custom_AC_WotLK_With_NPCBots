@@ -9521,15 +9521,13 @@ void Player::StopCastingCharm(Aura* except /*= nullptr*/)
 
         if (charm->GetCharmerGUID())
         {
-            // Force-clear both sides of the stale charm reference instead of crashing.
+            // Force-clear stale charm reference instead of crashing.
+            // Clear charmer GUID only if it doesn't point to us — SetCharm handles our own GUID correctly.
             LOG_ERROR("entities.player", "Charmed unit has charmer {} — force-clearing charm state", charm->GetCharmerGUID().ToString());
-            charm->SetCharmerGUID(ObjectGuid::Empty);
-            SetCharm(charm, false);
+            if (charm->GetCharmerGUID() != GetGUID())
+                charm->SetCharmerGUID(GetGUID()); // Normalize to our GUID so SetCharm's RemoveGuidValue succeeds cleanly
         }
-        else
-        {
-            SetCharm(charm, false);
-        }
+        SetCharm(charm, false);
     }
 }
 
