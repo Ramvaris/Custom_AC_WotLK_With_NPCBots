@@ -50,11 +50,10 @@ Custom racial for Humans — 2 minute cooldown cleanse that removes Poison, Dise
 Requires DBC entry: `SPELL_EFFECT_DUMMY`, `TARGET_UNIT_CASTER`, `RecoveryTime=120000`.
 
 ### NPC Summon Flavor Text
-8 custom NPCs each have 12 random witty sayings when summoned:
+7 custom NPCs each have 12 random witty sayings when summoned:
 - **Ling** (290011) — Sarcastic reagent banker
 - **Ashari** (299902) — Charismatic vendor
 - **Lord Squeak** (299901) — Rat nobleman emblem trader
-- **Cromi** (300000) — Time-confused instance resetter
 - **Ciel** (299903) — Mount enthusiast
 - **Rename** (200002) — Reluctant pet renamer
 - **Warpweaver** (190011) — Fashion-obsessed transmogger
@@ -63,7 +62,7 @@ Requires DBC entry: `SPELL_EFFECT_DUMMY`, `TARGET_UNIT_CASTER`, `RecoveryTime=12
 ### Lilly Helper NPC
 Full gossip NPC with services:
 - **Teleportation** — Cities (faction-aware), Classic dungeons, Secret points of interest
-- **Instance Reset** — Unbinds all saved instances for 5 gold
+- **Instance Reset** — Unbinds all saved instances for 5 gold (built-in, no external module needed)
 - **Talent Point Purchase** — Exalted reputation + 7 Emblems of Ramires = +1 talent point
 
 ### Login Spell Grants
@@ -187,7 +186,7 @@ commands.lua) that were ported to C++. They are kept for reference only — ALE 
 - Spells 81002 (Water Form), 81003 (Uber Cheetah), 81008 (Levitation) are actively unlearned on login
 - Custom enchant IDs 900001–900025 (Speed) and 900101–900103 (Fly) are module-internal, not in DBC
 - Core patches: Player.h (lottery speed/fly fields), Unit.cpp (UpdateSpeed injection)
-- The custom NPC entries (290011, 299900-299903, 300000, 200002, 190011) don't exist in standard DB
+- The custom NPC entries (290011, 299900-299903, 200002, 190011) don't exist in standard DB
 
 ## License
 

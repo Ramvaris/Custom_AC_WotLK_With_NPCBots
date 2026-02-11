@@ -6,7 +6,7 @@
  * a creature could have a module ScriptName AND a Lua OnSummon callback.
  * In C++, a creature can only have ONE ScriptName. Using per-creature CreatureAI
  * scripts for flavor text would overwrite the functional ScriptNames from other
- * modules (instance_reset, npc_reagent_banker, npc_warlock_pet_renamer, etc.).
+ * modules (npc_reagent_banker, npc_warlock_pet_renamer, etc.).
  * This centralized function avoids that conflict entirely.
  */
 

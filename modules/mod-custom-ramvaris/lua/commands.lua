@@ -29,10 +29,9 @@ local summonMap = {
     [2] = { id = 299902, name = "Ashari (Vendor)" },
     [3] = { id = 299900, name = "Lilly (Helper)" },
     [4] = { id = 299901, name = "Lord Squeak (Emblems)" },
-    [5] = { id = 300000, name = "Cromi (Instance Reset)" },
-    [6] = { id = 299903, name = "Ciel (Mounts)" },
-    [7] = { id = 200002, name = "Rename (Pet Renamer)" },
-    [8] = { id = 190011, name = "Warpweaver (Transmog)" }
+    [5] = { id = 299903, name = "Ciel (Mounts)" },
+    [6] = { id = 200002, name = "Rename (Pet Renamer)" },
+    [7] = { id = 190011, name = "Warpweaver (Transmog)" }
 }
 
 local function OnSpecialGossipSelect(event, player, object, sender, intid, code, menu_id)

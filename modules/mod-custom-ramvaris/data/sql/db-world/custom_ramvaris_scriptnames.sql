@@ -2,7 +2,7 @@
 -- mod-custom-ramvaris: ScriptName and spell bindings
 --
 -- Sets ScriptName for mod-custom-ramvaris-owned NPCs only.
--- NPCs owned by OTHER modules (mod-reagent-bank, mod-instance-reset,
+-- NPCs owned by OTHER modules (mod-reagent-bank,
 -- mod-warlock-pet-rename, mod-transmog) keep their original ScriptNames.
 -- Flavor text for those NPCs is triggered directly from the .special
 -- command handler — no ScriptName needed.

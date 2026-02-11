@@ -38,3 +38,9 @@ All settings are well-described in the configuration file.
 - [Interactive Inflection Point Spreadsheet](https://docs.google.com/spreadsheets/d/100cmKIJIjCZ-ncWd0K9ykO8KUgwFTcwg4h2nfE_UeCc/copy)
 - [InflectionPoint Curve Examples](https://i.imgur.com/x42UnUR.png)
 - [Impact of CurveFloor and CurveCeiling on enemy multiplier](https://i.imgur.com/I8S4cwJ.png)
+
+---
+**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvars](https://github.com/Ramvaris) (2025-present)
+
+---
+**Fork Maintainer:** Additional maintenance, bug fixes, and improvements by [Ramvars](https://github.com/Ramvaris) (2025-present)

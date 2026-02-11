@@ -28,7 +28,6 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 -> All Ore- and Flower-Nodes respawn in 120 seconds instead of 24 hours to 7 days.
 - **Working Language Comprehension** - NPCs speaking Orcish/Thalassian/etc. are actually readable if your character knows the language (via skill or aura). Non-speakers get the original scrambled text with proper language tags. No Client-Mod neccesary.
 - **Pet Stay on Mount** - Pets stay summoned when mounting up instead of being dismissed. They run alongside the player. Config-gated (`CustomRamvaris.PetStayOnMount.Enable`).
-- **Warrior Stance Freedom** - All 228 warrior spells and talents have been stance-neutralized in Spell.dbc. Warriors can use ANY ability in ANY stance (Battle/Defensive/Berserker). Non-warrior forms (Druid Bear/Cat, Rogue Stealth) are untouched. Applied via `tools/warrior_stance_neutralizer.py`. Client-side DBC must also be patched (user responsibility).
 - **Soul Keeper Guardian Travel Safety** - Guardians are automatically despawned on cross-map teleport and taxi flights, preventing orphaned guardians on old maps. Cooldowns are preserved for re-summoning.
 - Some AC modules from other people integrated and kept up-to-date
 
@@ -37,6 +36,7 @@ Notice: I also have some MPQ QoL Stuff that I couldn't include here. Like a cust
 ### Included Modules
 
 These modules are from the amazing AzerothCore community. Full credit to the original authors!
+All adopted modules have been stripped of upstream `.git` metadata, bug-fixed, and are maintained by Ramvaris.
 
 | Module | Description | Source |
 |--------|-------------|--------|
@@ -44,15 +44,29 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 | **mod-transmog** | Transmogrification system for appearance changes | [azerothcore/mod-transmog](https://github.com/azerothcore/mod-transmog) |
 | **mod-solo-lfg** | Enables solo queuing for dungeons via LFG | [azerothcore/mod-solo-lfg](https://github.com/azerothcore/mod-solo-lfg) |
 | **mod-guildhouse** | Personal guild housing system | [azerothcore/mod-guildhouse](https://github.com/azerothcore/mod-guildhouse) |
-| **mod-instance-reset** | Extended instance reset options | [azerothcore/mod-instance-reset](https://github.com/azerothcore/mod-instance-reset) |
 | **mod-reagent-bank** | Additional storage for crafting reagents | [azerothcore/mod-reagent-bank](https://github.com/azerothcore/mod-reagent-bank) |
 | **mod-skip-dk-starting-area** | Skip the Death Knight starting zone | [azerothcore/mod-skip-dk-starting-area](https://github.com/azerothcore/mod-skip-dk-starting-area) |
 | **mod-ale** | AzerothCore Lua Engine for scripting | [azerothcore/mod-eluna](https://github.com/azerothcore/mod-eluna) |
 | **mod-gain-honor-guard** | Honor gain adjustments | [azerothcore/mod-gain-honor-guard](https://github.com/azerothcore/mod-gain-honor-guard) |
 | **mod-pvp-titles** | PvP ranking and title system | [azerothcore/mod-pvp-titles](https://github.com/azerothcore/mod-pvp-titles) |
-| **mod-warlock-pet-rename** | Allow Warlocks to rename their pets | [azerothcore/mod-individual-progression](https://github.com/azerothcore/mod-individual-progression) |
+| **mod-warlock-pet-rename** | Allow Warlocks to rename their pets | [azerothcore/mod-warlock-pet-rename](https://github.com/azerothcore/mod-warlock-pet-rename) |
 
-### 🍥 Custom Modules (Made for this fork)
+### 🔧 Module Fixes (vs upstream)
+
+Bug fixes and improvements applied to adopted community modules:
+
+| Module | Fix | Details |
+|--------|-----|---------|
+| **mod-reagent-bank** | Thread-safe withdraw | Switched async `Execute()` to synchronous `DirectExecute()` for item withdraw — prevents race conditions when multiple players interact simultaneously |
+| **mod-warlock-pet-rename** | Reliable name updates | Added forced `SMSG_PET_NAME_QUERY_RESPONSE` packet after rename, switched to `DirectExecute()`, improved NPC dialogue (no more ugly red "WARLOCKS ONLY" text) |
+| **mod-solo-lfg** | Forever queue recovery | Added periodic stuck-state detection (15s check, 90s threshold) with force-reset via `LeaveLfg()` + `LeaveAllLfgQueues()`. Recovers from orphaned proposals, stale group refs, and relog-persistent stuck states |
+| **mod-guildhouse** | Dalaran Grand Master trainers | Replaced all profession trainer NPCs with neutral Dalaran Grand Masters (28693-28706). Eliminated Alliance/Horde faction splits for Enchanting, Jewelcrafting, and Inscription — all trainers now work for both factions |
+
+### 🌦️ Weather Data
+
+The `game_weather` table is auto-populated on first server start via `custom_ramvaris_weather.sql` (~191 zone entries). This provides base weather data for the server's built-in weather timer, complementing the Dark Azeroth forced-weather feature.
+
+### 🌍 Custom Modules (Made for this fork)
 
 | Module | Description |
 |--------|-------------|

@@ -195,7 +195,7 @@ CustomRamvaris.HumanStoneform.Enable = 0
 #
 # CustomRamvaris.NpcFlavorText.Enable
 #     NPC summon flavor text — random witty sayings when custom NPCs are summoned.
-#     Affects: Ling (290011), Ashari (299902), Squeak (299901), Cromi (300000),
+#     Affects: Ling (290011), Ashari (299902), Squeak (299901),
 #              Ciel (299903), Rename (200002), Warpweaver (190011).
 #     Lilly (299900) flavor text is controlled by LillyGossip toggle below.
 #     [CUSTOM DB] — needs custom creature_template entries + ScriptNames
@@ -206,7 +206,7 @@ CustomRamvaris.NpcFlavorText.Enable = 0
 
 #
 # CustomRamvaris.LillyGossip.Enable
-#     Lilly helper NPC (299900) — teleportation, instance reset, talent point purchase.
+#     Lilly helper NPC (299900) — teleportation, talent point purchase, instance reset.
 #     Also includes Lilly's summon flavor text.
 #     [CUSTOM DB] — needs custom creature_template entry 299900 + ScriptName
 #     Default: 0 (OFF)

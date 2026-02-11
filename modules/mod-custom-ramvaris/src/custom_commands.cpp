@@ -51,7 +51,6 @@ static const SummonableNPC SummonMap[] =
     { 299902, "Ashari (Vendor)" },
     { 299900, "Lilly (Helper)" },
     { 299901, "Lord Squeak (Emblems)" },
-    { 300000, "Cromi (Instance Reset)" },
     { 299903, "Ciel (Mounts)" },
     { 200002, "Rename (Pet Renamer)" },
     { 190011, "Warpweaver (Transmog)" },

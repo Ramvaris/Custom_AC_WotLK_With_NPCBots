@@ -137,39 +137,6 @@ local function OnSqueakSummon(event, creature, summoner)
     end
 end
 
-local function OnCromiSummon(event, creature, summoner)
-    math.randomseed(os.time())
-    local choice = math.random(1, 12)
-    if choice == 1 then
-        creature:SendUnitSay("You are just in time! Or are you?", 0)
-    elseif choice == 2 then
-        creature:SendUnitSay("Let's unwind time! Did we do this already?", 0)
-    elseif choice == 3 then
-        creature:SendUnitSay("Time is money, friend! Wait, wrong goblin line. Time is... wibbly wobbly!", 0)
-        creature:SendUnitEmote("Cromi adjusts her goggles.")
-    elseif choice == 4 then
-        creature:SendUnitSay("Did you need a reset? Or did you just want to say hello to a friendly gnome dragon?", 0)
-    elseif choice == 5 then
-        creature:SendUnitSay("Wait, haven't we had this conversation tomorrow?", 0)
-    elseif choice == 6 then
-        creature:SendUnitSay("I remember you from the future! You were taller.", 0)
-    elseif choice == 7 then
-        creature:SendUnitSay("Resetting instances... reversing entropy... hold on.", 0)
-    elseif choice == 8 then
-        creature:SendUnitSay("Don't step on any butterflies! The timeline is fragile!", 0)
-        creature:SendUnitEmote("Cromi looks panicked.")
-    elseif choice == 9 then
-        creature:SendUnitSay("The Bronze Dragonflight sends their regards. Or they will. Or they have.", 0)
-    elseif choice == 10 then
-        creature:SendUnitSay("Let's just say I made that dungeon lockout... disappear.", 0)
-        creature:SendUnitEmote("Cromi makes a magical gesture.")
-    elseif choice == 11 then
-        creature:SendUnitSay("Chronologically speaking, you're late.", 0)
-    else
-        creature:SendUnitSay("I love the smell of temporal paradoxes in the morning.", 0)
-    end
-end
-
 local function OnCielSummon(event, creature, summoner)
     math.randomseed(os.time())
     local choice = math.random(1, 12)
@@ -467,7 +434,6 @@ RegisterCreatureEvent(290011, 22, OnLingSummon)
 RegisterCreatureEvent(299902, 22, OnVendorSummon)
 RegisterCreatureEvent(299900, 22, OnLillySummon)
 RegisterCreatureEvent(299901, 22, OnSqueakSummon)
-RegisterCreatureEvent(300000, 22, OnCromiSummon)
 RegisterCreatureEvent(299903, 22, OnCielSummon)
 RegisterCreatureEvent(200002, 22, OnRenameSummon)
 RegisterCreatureEvent(190011, 22, OnWarpweaverSummon)

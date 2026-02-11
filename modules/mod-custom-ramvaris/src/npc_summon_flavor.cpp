@@ -5,13 +5,12 @@
  * Called from the .special gossip handler after SummonCreature().
  * NOT individual CreatureAI scripts — a creature can only have ONE ScriptName,
  * and these NPCs already have functional ScriptNames from other modules
- * (instance_reset, npc_reagent_banker, npc_warlock_pet_renamer, npc_transmogrifier).
+ * (npc_reagent_banker, npc_warlock_pet_renamer, npc_transmogrifier).
  *
- * Handles 7 custom NPCs (Lilly is in npc_lilly_gossip.cpp):
+ * Handles 6 custom NPCs (Lilly is in npc_lilly_gossip.cpp):
  *   290011 - Ling (Reagent Bank)        — ScriptName: npc_reagent_banker
  *   299902 - Ashari (Vendor)            — vendor via npcflag
  *   299901 - Lord Squeak (Emblems)      — quest giver via npcflag
- *   300000 - Cromi (Instance Reset)     — ScriptName: instance_reset
  *   299903 - Ciel (Mounts)              — vendor via npcflag
  *   200002 - Rename (Pet Renamer)       — ScriptName: npc_warlock_pet_renamer
  *   190011 - Warpweaver (Transmog)      — ScriptName: npc_transmogrifier
@@ -117,35 +116,6 @@ static void FlavorSqueak(Creature* me)
     }
 }
 
-static void FlavorCromi(Creature* me)
-{
-    uint32 choice = urand(1, 12);
-    switch (choice)
-    {
-        case 1:  me->Say("You are just in time! Or are you?", LANG_UNIVERSAL); break;
-        case 2:  me->Say("Let's unwind time! Did we do this already?", LANG_UNIVERSAL); break;
-        case 3:
-            me->Say("Time is money, friend! Wait, wrong goblin line. Time is... wibbly wobbly!", LANG_UNIVERSAL);
-            me->TextEmote("Cromi adjusts her goggles.");
-            break;
-        case 4:  me->Say("Did you need a reset? Or did you just want to say hello to a friendly gnome dragon?", LANG_UNIVERSAL); break;
-        case 5:  me->Say("Wait, haven't we had this conversation tomorrow?", LANG_UNIVERSAL); break;
-        case 6:  me->Say("I remember you from the future! You were taller.", LANG_UNIVERSAL); break;
-        case 7:  me->Say("Resetting instances... reversing entropy... hold on.", LANG_UNIVERSAL); break;
-        case 8:
-            me->Say("Don't step on any butterflies! The timeline is fragile!", LANG_UNIVERSAL);
-            me->TextEmote("Cromi looks panicked.");
-            break;
-        case 9:  me->Say("The Bronze Dragonflight sends their regards. Or they will. Or they have.", LANG_UNIVERSAL); break;
-        case 10:
-            me->Say("Let's just say I made that dungeon lockout... disappear.", LANG_UNIVERSAL);
-            me->TextEmote("Cromi makes a magical gesture.");
-            break;
-        case 11: me->Say("Chronologically speaking, you're late.", LANG_UNIVERSAL); break;
-        default: me->Say("I love the smell of temporal paradoxes in the morning.", LANG_UNIVERSAL); break;
-    }
-}
-
 static void FlavorCiel(Creature* me)
 {
     uint32 choice = urand(1, 12);
@@ -237,7 +207,6 @@ void DoSummonFlavorText(Creature* creature, WorldObject* summoner)
         case 290011: FlavorLing(creature, name);    break;  // Ling (Reagent Bank)
         case 299902: FlavorAshari(creature, name);  break;  // Ashari (Vendor)
         case 299901: FlavorSqueak(creature);        break;  // Lord Squeak (Emblems)
-        case 300000: FlavorCromi(creature);         break;  // Cromi (Instance Reset)
         case 299903: FlavorCiel(creature);          break;  // Ciel (Mounts)
         case 200002: FlavorRename(creature);        break;  // Rename (Pet Renamer)
         case 190011: FlavorWarpweaver(creature);    break;  // Warpweaver (Transmog)

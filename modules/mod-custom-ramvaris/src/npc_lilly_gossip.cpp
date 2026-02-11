@@ -3,7 +3,7 @@
  * Config: CustomRamvaris.LillyGossip.Enable
  *
  * Services: Teleportation (cities, dungeons, points of interest),
- *           Instance Reset, Exalted Talent Point Purchase.
+ *           Instance Reset (built-in), Exalted Talent Point Purchase.
  * Also handles Lilly's summon flavor text via IsSummonedBy.
  *
  * Requires creature_template entry 299900 with ScriptName = "npc_custom_lilly"
@@ -344,7 +344,7 @@ private:
         else
         {
             player->ModifyMoney(-static_cast<int32>(INSTANCE_RESET_COST));
-            // Unbind all instances (same pattern as mod-instance-reset and ALE)
+            // Unbind all instances (same pattern as ALE Lua predecessor)
             for (uint8 d = 0; d < MAX_DIFFICULTY; ++d)
             {
                 BoundInstancesMap const& binds = sInstanceSaveMgr->PlayerGetBoundInstances(player->GetGUID(), Difficulty(d));
