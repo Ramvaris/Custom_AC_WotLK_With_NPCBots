@@ -128,7 +128,7 @@ Multiplicative with aura buffs (e.g., +50% enchant × 1.15 paladin aura = 172.5%
 intentionally makes mounts obsolete as enchant speed grows.
 Core patch: Player fields `m_lotterySpeedBonus`, injected into `Unit::UpdateSpeed()` before
 final `SetSpeed()` call — survives any aura recalculation.
-**Level-scaled**: `max(1, round(rawPct * level / 80))` — a 10% roll at level 40 gives +5%.
+**NOT level-scaled** — 10% rolled = 10% at any level, always the raw rolled value.
 
 #### Fly Enchants
 1% leftover chance before the regular pool. Sub-roll: 75% Stage 1 (100% flight speed),
@@ -141,13 +141,9 @@ Core patch: Player fields `m_lotteryFlySpeedRate` + `m_lotteryCanFly`, injected 
 `Unit::UpdateSpeed(MOVE_FLIGHT)`. Slow Fall (spell 130) cast on fly disable to prevent death.
 **No level scaling** on flight. Use `.flylock` to voluntarily disable flight.
 
-**Double-Jump Mechanic**: Flight is NOT GM-style instant fly. Instead:
-1. Space = normal jump (arc up, then fall)
-2. After 300ms of freefall, `CanFly` is enabled
-3. Press space again while falling = start flying (ascend)
-4. Landing resets `CanFly` = back to normal jump
-
-This gives a natural "jump, then fly" experience instead of space-to-hover.
+**Flying Mount Behavior**: Flight uses MOVEMENTFLAG_CAN_FLY (same as flying mounts).
+On ground, space = normal jump. In the air or falling, space = start flying.
+Jump off a cliff → fall → press space = fly. Don't press = splat.
 
 #### Reroll (Gossip Menu)
 `.reroll` opens a paginated gossip menu listing eligible bag items. Select an item → pay 500g →
