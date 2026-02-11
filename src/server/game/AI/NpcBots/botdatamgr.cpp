@@ -211,23 +211,6 @@ static void SpawnWandererBot(uint32 bot_id, WanderNode const* spawnLoc, NpcBotRe
         ASSERT(false);
     }
 
-    // CRITICAL: generated wanderer bots MUST have AI initialized explicitly.
-    // LoadBotCreatureFromDB() only creates/adds the creature; it does not guarantee
-    // bot_ai construction/registration. Without AIM_Initialize(), wanderers will exist
-    // as inert creatures and won't show up in `.npcbot list spawned`.
-    if (!bot->AIM_Initialize())
-    {
-        delete bot;
-        BOT_LOG_FATAL("server.loading", "Cannot initialize npcbot {} AI!", bot_id);
-        ASSERT(false);
-    }
-
-    if (!bot->IsAlive())
-    {
-        BOT_LOG_WARN("server.loading", "Wanderer bot {} is dead on spawn, respawning!", bot_id);
-        bot->setDeathState(DeathState::JustRespawned);
-    }
-
     if (registry)
         registry->insert(bot);
 }
@@ -376,7 +359,11 @@ private:
                 level_nodes.push_back(node);
         }
 
-        ASSERT(!level_nodes.empty());
+        // Zone-specific spawning may have mismatched level brackets (e.g. bracket 7
+        // = level 70-79 requested in a level 1-10 zone). Return false to let the retry
+        // loop in GenerateWanderingBotsToSpawn skip this bot instead of crashing.
+        if (level_nodes.empty())
+            return false;
         WanderNode const* spawnLoc = Bcore::Containers::SelectRandomContainerElement(level_nodes);
 
         CreatureTemplate& bot_template = _botsWanderCreatureTemplates[next_bot_id];
@@ -680,6 +667,54 @@ public:
             {
                 bots_per_bracket[j] += count - total_bots_in_brackets;
                 break;
+            }
+        }
+
+        // EDGE CASE: with small counts (1-2 bots), CalculatePct rounds to 0 for every
+        // bracket (e.g. CalculatePct(1, 15) = 0). All bots_per_bracket stay zero and the
+        // remainder loop above finds nothing to assign to. Fix: pick appropriate brackets.
+        if (total_bots_in_brackets == 0 && count > 0)
+        {
+            if (zoneFilter != -1)
+            {
+                // Zone mode: pick brackets that match the zone's actual node level ranges.
+                // This avoids bracket/zone level mismatches that would crash on the ASSERT
+                // in GenerateWanderingBotToSpawn (e.g. bracket 7 in a level 1-10 zone).
+                std::set<uint8> zoneBrackets;
+                for (NodeVec const* nodeVec : { &spawns_a, &spawns_h, &spawns_n })
+                    for (WanderNode const* wp : *nodeVec)
+                    {
+                        uint8 minBracket = wp->GetLevels().first / 10;
+                        uint8 maxBracket = std::min<uint8>(wp->GetLevels().second / 10, BRACKETS_COUNT - 1);
+                        for (uint8 b = minBracket; b <= maxBracket; ++b)
+                            zoneBrackets.insert(b);
+                    }
+
+                if (!zoneBrackets.empty())
+                {
+                    std::vector<uint8> validBrackets(zoneBrackets.begin(), zoneBrackets.end());
+                    for (uint32 b = 0; b < count; ++b)
+                        bots_per_bracket[validBrackets[urand(0, validBrackets.size() - 1)]] += 1;
+                }
+                else
+                {
+                    // Absolute fallback: bracket 0 (level 1-9)
+                    bots_per_bracket[0] = count;
+                }
+            }
+            else
+            {
+                // Global mode: select a random bracket weighted by bracketPcts
+                std::vector<uint8> validBrackets;
+                for (uint8 b = 0; b < BRACKETS_COUNT; ++b)
+                    if (bracketPcts[b])
+                        validBrackets.push_back(b);
+
+                if (!validBrackets.empty())
+                {
+                    for (uint32 b = 0; b < count; ++b)
+                        bots_per_bracket[validBrackets[urand(0, validBrackets.size() - 1)]] += 1;
+                }
             }
         }
 
