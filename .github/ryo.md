@@ -62,24 +62,27 @@ SCALING_FORMULAS:
   SHIELDS: HPS × 3.0
 
 THOUGHTS&RANTS:
+  - "Three rounds of debugging to find a silent integer math edge case. CalculatePct(1, 15) = 0. Every bracket gets zero bots. The remainder loop finds nothing to fix. brackets_shuffled is empty. Zero bots spawn. The function returns TRUE. No error, no crash, no log. Just... nothing. Upstream code assumes Count >= ~10. With Count=1, the entire percentage-based bracket distribution collapses silently. And the ASSERT(!level_nodes.empty()) would've been a latent crash bomb if we ever DID fix the first bug — spawning bracket 7 (70-79) bots in Elwynn (1-10) would nuke the server. Two bugs stacked: the first prevented the second from ever triggering. Poetic, in a terrible way. Dattebayo."
   - "Fixed the Warlock Life Tap self-kill. 5 lines of code to prevent a game-breaking bug. Cap health cost, check IsAlive after, bail if dead. The upstream code just raw ModifyHealth(-damage) with zero guards. And then AzerothCore has 6+ ABORT() calls in hot paths like aura removal and spell cleanup that crash the ENTIRE server for recoverable states. Replaced them all with LOG_ERROR + graceful recovery. Students, I swear."
   - "Ported 1066 lines of Lua to C++. Found TWO registration bugs in the original Lua that meant half the features NEVER WORKED. commands.lua had a CommandHandlerFunction that was never RegisterPlayerEvent'd. lilly.lua registered GossipHello but forgot GossipSelect — so you could open the menu but never click anything. Ramires was running broken Lua for who knows how long. Now it's all clean C++ with proper hooks. Dattebayo."
   - "210% CPU with ONE PLAYER logged in. EIGHT map update threads for a solo server. MinWorldUpdateTime=1 letting the world loop spin at 1000 Hz like it's trying to render frames for a VR headset. 120 wandering bots keeping hundreds of grids loaded across 4 continents. The pet revive delay? Architectural — AzerothCore fires 4 serial SELECT queries on a SINGLE DB connection, then polls for completion on the NEXT world tick. You literally can't fix it without rewriting the async query pipeline. At least the config tuning should cut CPU by 50%+. Dattebayo."
   - "Five bugs, five root causes, zero in common. Transmog NPC invisible because CanBeSeen checks GetOwner() but TEMPSUMMON_TIMED_DESPAWN doesn't set UNIT_FIELD_SUMMONEDBY. Reagent bank lag because Execute() is fire-and-forget — the menu refresh query beats the write. Chat format broken because PSendSysMessage uses fmt::format but I wrote printf. Stat stacking because OnPlayerUnequip doesn't fire on swaps. Speed not level-scaled by design choice but should be for balance. Every single one is a different category of mistake. I'm learning five lessons at once. Dattebayo."
 
 ACTIVE_WORK:
-  GUARDIAN_TRAVEL_SAFETY_HARDENING:
-  - TASK: Add explicit IsSoulKeeperGuardian() checks to travel safety system
-  - PROBLEM: User reported warlock/hunter/DK pets lost during taxi/teleport
-  - ANALYSIS: DespawnGuardianForTravel was already correctly scoped via _activeGuardians
-    map lookup (only Soul Keeper entries stored there). But implicit scoping is fragile.
-  - SOLUTION: Added explicit IsSoulKeeperGuardian() checks as belt-and-suspenders:
-    1. DespawnGuardianForTravel: checks marker before despawn, logs if mismatch
-    2. OnPlayerLogout: checks marker before despawn
-    3. OnCreatureRemoveWorld: only cleans tracking maps for Soul Keeper guardians
-    4. Updated all comments to explicitly state warlock/hunter/DK pets untouched
-  - NOTE: If pet loss persists, it's likely vanilla AC behavior (UnsummonPetTemporaryIfAny
-    on cross-map teleport + ResummonPetTemporaryUnSummonedIfAny on arrival)
+  SMART_WANDERING_BOTS_FIX:
+  - TASK: Fix Smart Wandering Bots showing zero spawns
+  - PROBLEM: .npcbot list spawned shows NOTHING despite config enabled
+  - ROOT_CAUSE: CalculatePct(count, pct) returns 0 for ALL brackets when count is
+    small (1-2). With bracket percents like 5,10,10,...,15 — CalculatePct(1,15)=0.
+    All bots_per_bracket stay zero. The remainder loop finds no non-zero bracket.
+    brackets_shuffled is empty. Spawn loop never runs. 0 bots spawn.
+  - SECONDARY: ASSERT(!level_nodes.empty()) in GenerateWanderingBotToSpawn would crash
+    if bracket didn't match zone level range (e.g. bracket 7 in level 1-10 zone)
+  - SOLUTION:
+    1. Zone mode: scan zone WanderNode level ranges, assign bots to matching brackets
+    2. Global mode: pick random bracket weighted by bracketPcts
+    3. Replace fatal ASSERT with graceful return false for level_nodes mismatch
+    4. Removed redundant AIM_Initialize (AddToWorld already calls it)
   - STATUS: SHIPPED 🍥
 
 LATEST_CUSTOM_SPELL:
