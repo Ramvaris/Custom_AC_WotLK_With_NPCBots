@@ -68,12 +68,13 @@
  *     SetCanFly(true) → flying mount behavior. On ground: space = jump.
  *     In air/falling: space = start flying. Sustained flight with stage speed.
  *   DOUBLE JUMP (level < 60 OR .flylock ON):
- *     SetCanFly(true) as trigger → when player presses space while falling, the
- *     client enters fly state → OnPlayerUpdate detects IsFlying() → applies upward
- *     KnockbackFrom(0, 15) → SetCanFly(false). Player arcs up then falls normally.
- *     One double jump per airborne session, resets on landing. Resets fall damage
- *     tracking to the activation point. Useful in boss fights where flying would
- *     risk boss reset.
+ *     SetCanFly(true) as trigger → player presses space while falling → client
+ *     enters fly state → OnPlayerUpdate detects IsFlying() → applies upward
+ *     KnockbackFrom(0, 7.5) → SetCanFly(false). Player arcs up then falls.
+ *     One double jump per airborne session. Landing detection requires the
+ *     player to go through a FALLING phase first (prevents false resets at the
+ *     knockback apex where movement flags briefly clear). Resets fall damage
+ *     tracking to the activation point.
  *   .flylock toggles between full flight and double jump for level 60+ players.
  *
  * ITEM SOURCES:
@@ -252,9 +253,11 @@ static std::unordered_set<uint32> s_vendorBuying;
 static std::unordered_map<uint32, std::unordered_set<uint32>> s_appliedItems;
 
 // Double jump tracking: player GUID → has used double jump this airborne session.
-// Reset when the player lands on the ground. Only active for players with fly enchant
-// who are in double-jump mode (level <60 or flylock ON).
+// Reset when the player lands after going through a falling phase.
+// s_doubleJumpFellAfter prevents false landing detection at the knockback apex
+// (brief moment where both IsFalling() and IsFlying() are false during upward arc).
 static std::unordered_map<uint32, bool> s_doubleJumpUsed;
+static std::unordered_map<uint32, bool> s_doubleJumpFellAfter;
 
 // =============================================================================
 // Helper functions — Custom enchant ID detection
@@ -711,15 +714,12 @@ static void RecalcLotterySpeedAndFly(Player* player)
         // until the player lands (OnPlayerUpdate handles re-enabling).
         if (!s_doubleJumpUsed[pg])
             player->SetCanFly(true);
-
-        // Transition from full-fly to double-jump while airborne: the player
-        // is currently flying and toggled flylock or leveled down (hypothetical).
-        // They keep flying this one time; OnPlayerUpdate will handle landing transition.
     }
     else
     {
         // No fly enchant — disable flight entirely.
         s_doubleJumpUsed.erase(pg);
+        s_doubleJumpFellAfter.erase(pg);
         if (player->IsFlying())
         {
             player->SetCanFly(false);
@@ -1211,6 +1211,7 @@ static void UnloadLotteryEnchantsForPlayer(Player* player)
     s_enchantsItemList.erase(pg);
     s_rerollItemList.erase(pg);
     s_doubleJumpUsed.erase(pg);
+    s_doubleJumpFellAfter.erase(pg);
 }
 
 // Cleanup helper — deletes lottery enchants for a destroyed item from DB + cache.
@@ -1993,7 +1994,12 @@ public:
     // trigger while airborne. When the player presses space while falling, the
     // client transitions to MOVEMENTFLAG_FLYING → IsFlying() becomes true.
     // We detect this, apply an upward knockback, disable CAN_FLY, and mark the
-    // double jump as used until the player lands on the ground.
+    // double jump as used.
+    //
+    // LANDING DETECTION: Requires the player to enter a FALLING phase after the
+    // double jump before accepting a "landed" state. This prevents false resets
+    // at the knockback apex (movement flags briefly clear during upward arc).
+    // Sequence: jump used → IsFalling() seen → IsFalling()==false → reset.
     //
     // FULL FLIGHT (level 60+, not flylock):
     // No intervention needed — player flies normally. Only BG flag enforcement.
@@ -2015,19 +2021,30 @@ public:
                 // Player pressed space while airborne → client entered "flying" state.
                 // Apply upward knockback and remove CAN_FLY to simulate a double jump.
                 player->SetCanFly(false);
-                player->KnockbackFrom(player->GetPositionX(), player->GetPositionY(), 0.0f, 15.0f);
+                player->KnockbackFrom(player->GetPositionX(), player->GetPositionY(), 0.0f, 7.5f);
 
                 // Reset fall tracking so fall damage only counts from the double-jump
                 // activation point, not the original cliff edge.
                 player->SetFallInformation(getMSTime(), player->GetPositionZ());
 
                 s_doubleJumpUsed[pg] = true;
+                s_doubleJumpFellAfter[pg] = false;
             }
-            else if (!player->IsFalling() && !player->IsFlying() && s_doubleJumpUsed[pg])
+            else if (s_doubleJumpUsed[pg])
             {
-                // Player landed on ground — reset double jump for next airborne session.
-                s_doubleJumpUsed[pg] = false;
-                player->SetCanFly(true);
+                // Track whether a falling phase has occurred since the double jump.
+                // Without this, the brief IsFalling()==false at the knockback apex
+                // would immediately reset the jump, causing infinite kick-to-sky.
+                if (player->IsFalling())
+                    s_doubleJumpFellAfter[pg] = true;
+
+                // Only accept landing when we've been through a falling phase first.
+                if (s_doubleJumpFellAfter[pg] && !player->IsFalling() && !player->IsFlying())
+                {
+                    s_doubleJumpUsed[pg] = false;
+                    s_doubleJumpFellAfter[pg] = false;
+                    player->SetCanFly(true);
+                }
             }
         }
 

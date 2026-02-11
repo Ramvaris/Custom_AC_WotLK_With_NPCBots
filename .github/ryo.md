@@ -23,37 +23,28 @@ COMPLETED_TASKS:
   [x] - Batch 2: Pagination, grey readability, slot/GUID tags, .ramhelp, README 🍥
   [x] - Batch 3: Revert speed scaling, fix >7 enchant cache bug, mount-style flying 🍥
   [x] - Batch 4: Durability 777 persist, Mobility Boost (double jump + full flight) 🍥
+  [x] - Batch 5: Double jump apex fix, GUID tag removal, gossip cleanup 🍥
 
 LATEST_FEATURE:
-  MOBILITY_BOOST_AND_DURABILITY_FIX:
-  - TASK: Durability 777 fix + Mobility Boost dual-mode system (double jump / full flight)
+  DOUBLE_JUMP_FIX_AND_CLEANUP:
+  - TASK: Fix infinite-kick-to-sky double jump bug + gossip menu cleanup
   - CHANGES:
-    1. DURABILITY_777_PERSIST: Item::LoadFromDB resets ITEM_FIELD_MAXDURABILITY to
-       template value (0 for cloaks). Our 777 marker was lost on relog. Fix: re-stamp
-       777/777 on all lottery-enchanted items in LoadLotteryEnchantsForPlayer after
-       cache load. Also added SQL cleanup for slot_index >= 7 rows on server startup.
-    2. MOBILITY_BOOST: Renamed "Flying" → "Mobility Boost". Two modes:
-       - Full Flight (level >= 60, flylock OFF): sustained flight, same as flying mount
-       - Double Jump (level < 60 OR flylock ON): SetCanFly(true) as trigger, OnPlayerUpdate
-         detects IsFlying() → KnockbackFrom(pos, 0, 15) upward + SetCanFly(false).
-         One use per airborne session, resets on landing. Fall damage tracked from
-         activation point via SetFallInformation. DH-style agility in boss fights.
-    3. PLAYER_H_UPDATE: GetLotteryCanFly() returns raw m_lotteryCanFly (no flylock check).
-       New HasLotteryFullFlight() accessor: has fly + level >= 60 + not locked.
-    4. UNIT_CPP_UPDATE: Flight speed floor only applies in HasLotteryFullFlight() mode.
-    5. FLYLOCK_REWORK: .flylock messages updated. Shows "Double Jump mode" when locking,
-       "Full flight active" when unlocking at 60+. Checks for fly enchant before toggling.
+    1. DOUBLE_JUMP_FIX: Old landing detection checked `!IsFalling() && !IsFlying()`
+       which was TRUE at the knockback apex (movement flags briefly clear during upward
+       arc) → instant reset → infinite re-trigger → player launched to orbit.
+       Fix: Added s_doubleJumpFellAfter tracking map. Landing detection now requires
+       the player to go through a FALLING phase after the jump before accepting a
+       "landed" state. Sequence: jump fires → IsFalling() seen → IsFalling()==false
+       → reset. Also reduced knockback speedZ from 15 to 7.5 for natural jump feel.
+    2. GUID_TAG_REMOVAL: Removed hex GUID suffix (#XXXX) from .enchants and .reroll
+       gossip menus. Enchant count + slot prefix is sufficient. Deleted MakeGuidTag().
   - FILES_CHANGED:
-    * random_enchants.cpp: RecalcLotterySpeedAndFly dual-mode, OnPlayerUpdate double jump,
-      s_doubleJumpUsed tracking, LoadLotteryEnchantsForPlayer durability restamp,
-      OnStartup SQL cleanup for duplicates, FormatEnchantLine renamed to Mobility Boost,
-      flylock command messages updated, header comments rewritten, GameTime.h re-added
-    * Player.h: GetLotteryCanFly returns raw, added HasLotteryFullFlight()
-    * Unit.cpp: Flight speed check uses HasLotteryFullFlight()
-    * README.md (module): Mobility Boost section with table of modes
-    * README.md (repo): Updated lottery enchants description
-  - BUILD: TESTING 🍥
-  - STATUS: DEPLOYING 🍥
+    * random_enchants.cpp: s_doubleJumpFellAfter map, OnPlayerUpdate rewrite,
+      RecalcLotterySpeedAndFly cleanup paths, UnloadLotteryEnchantsForPlayer cleanup,
+      removed MakeGuidTag, removed GUID tags from ShowEnchantsMenu/ShowRerollMenu
+    * README.md (repo): Double jump description clarified
+  - BUILD: CLEAN 🍥
+  - STATUS: SHIPPED 🍥
 
 SCALING_FORMULAS:
   BEST_RATIO_DESIGN:  Pick max of (meleeAP/expectedMelee, rangedAP/expectedRanged, maxSP/expectedSpell)
