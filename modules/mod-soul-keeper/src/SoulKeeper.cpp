@@ -1259,8 +1259,9 @@ void SoulKeeper::ScaleSummonedHelper(Creature* helper, Player* owner)
 
 // =============================================================================
 // Utility: Despawn guardian when the player travels (teleport, taxi, portal)
-// Silently cleans up the guardian and tracking data. No combat check — travel
-// is involuntary (hearthstone, flight path, dungeon queue, etc.)
+// Only affects Soul Keeper guardians (IsSoulKeeperGuardian check). NEVER
+// touches warlock/hunter/DK pets — those are handled by the core engine's
+// UnsummonPetTemporaryIfAny / ResummonPetTemporaryUnSummonedIfAny flow.
 // =============================================================================
 void SoulKeeper::DespawnGuardianForTravel(Player* player)
 {
@@ -1272,16 +1273,33 @@ void SoulKeeper::DespawnGuardianForTravel(Player* player)
     if (it == _activeGuardians.end())
         return;
 
-    if (Creature* guardian = ObjectAccessor::GetCreature(*player, it->second))
+    Creature* guardian = ObjectAccessor::GetCreature(*player, it->second);
+    if (!guardian)
     {
-        SaveGuardianCooldowns(guardian, player);
-        DespawnGuardianSummons(guardian);
-        _guardianScaling.erase(guardian->GetGUID());
-        _guardianAITimer.erase(guardian->GetGUID());
-        _guardianLastDamage.erase(guardian->GetGUID());
-        _guardianLastOwnerDamage.erase(guardian->GetGUID());
-        guardian->DespawnOrUnsummon();
+        // Stale tracking entry — creature already gone. Clean up map only.
+        _activeGuardians.erase(it);
+        return;
     }
+
+    // EXPLICIT SAFETY: Only despawn if this is actually a Soul Keeper guardian.
+    // Prevents accidental dismissal of warlock/hunter/DK pets if tracking data
+    // is somehow corrupt or a GUID collision occurs.
+    if (!guardian->IsSoulKeeperGuardian())
+    {
+        LOG_ERROR("module", "SoulKeeper::DespawnGuardianForTravel: Tracked creature {} "
+                  "for player {} is NOT a Soul Keeper guardian! Skipping despawn.",
+                  guardian->GetEntry(), player->GetName());
+        _activeGuardians.erase(it);
+        return;
+    }
+
+    SaveGuardianCooldowns(guardian, player);
+    DespawnGuardianSummons(guardian);
+    _guardianScaling.erase(guardian->GetGUID());
+    _guardianAITimer.erase(guardian->GetGUID());
+    _guardianLastDamage.erase(guardian->GetGUID());
+    _guardianLastOwnerDamage.erase(guardian->GetGUID());
+    guardian->DespawnOrUnsummon();
     _activeGuardians.erase(it);
 }
 
@@ -1522,9 +1540,8 @@ public:
 
     // =========================================================================
     // Guardian Despawn on Teleport / Cross-Map Travel
-    // Guardians are TempSummon creatures — they can't follow across maps.
-    // Hearthstone, portals, GM teleport, dungeon/BG entry — all fire this hook
-    // BEFORE the teleport happens, so the guardian is still accessible.
+    // ONLY despawns Soul Keeper guardians (IsSoulKeeperGuardian check inside
+    // DespawnGuardianForTravel). NEVER touches warlock/hunter/DK pets.
     // =========================================================================
     bool OnPlayerBeforeTeleport(Player* player, uint32 mapid, float /*x*/, float /*y*/, float /*z*/, float /*orientation*/, uint32 /*options*/, Unit* /*target*/) override
     {
@@ -1541,16 +1558,15 @@ public:
 
     // =========================================================================
     // Guardian Despawn on Taxi / Flight Path
-    // Paid flight paths move the player at extreme speed — guardians can't
-    // follow. Despawn when player enters a taxi flight. This does NOT affect
-    // player-controlled flying mounts (Ramires wants pets to stay on mounts).
+    // ONLY despawns Soul Keeper guardians. Warlock/hunter/DK pets are left
+    // untouched — the core engine handles their taxi behavior separately.
     // =========================================================================
     void OnPlayerUpdateZone(Player* player, uint32 /*newZone*/, uint32 /*newArea*/) override
     {
         if (!player)
             return;
 
-        // If the player is on a taxi (paid flight path), despawn guardian
+        // If the player is on a taxi (paid flight path), despawn Soul Keeper guardian
         if (player->IsInFlight())
             sSoulKeeper->DespawnGuardianForTravel(player);
     }
@@ -1569,13 +1585,17 @@ public:
         {
             if (Creature* guardian = ObjectAccessor::GetCreature(*player, it->second))
             {
-                sSoulKeeper->DespawnGuardianSummons(guardian);
-                sSoulKeeper->SaveGuardianCooldowns(guardian, player);
-                sSoulKeeper->_guardianScaling.erase(guardian->GetGUID());
-                sSoulKeeper->_guardianAITimer.erase(guardian->GetGUID());
-                sSoulKeeper->_guardianLastDamage.erase(guardian->GetGUID());
-                sSoulKeeper->_guardianLastOwnerDamage.erase(guardian->GetGUID());
-                guardian->DespawnOrUnsummon();
+                // Explicit safety: only despawn if it's actually our guardian
+                if (guardian->IsSoulKeeperGuardian())
+                {
+                    sSoulKeeper->DespawnGuardianSummons(guardian);
+                    sSoulKeeper->SaveGuardianCooldowns(guardian, player);
+                    sSoulKeeper->_guardianScaling.erase(guardian->GetGUID());
+                    sSoulKeeper->_guardianAITimer.erase(guardian->GetGUID());
+                    sSoulKeeper->_guardianLastDamage.erase(guardian->GetGUID());
+                    sSoulKeeper->_guardianLastOwnerDamage.erase(guardian->GetGUID());
+                    guardian->DespawnOrUnsummon();
+                }
             }
             sSoulKeeper->_activeGuardians.erase(it);
         }
@@ -2798,8 +2818,13 @@ public:
             return;
 
         // Skip non-player-owned creatures (~95% of all creatures: wild mobs, NPCs, etc.)
-        // Avoids 4 unnecessary hash lookups per creature despawn
         if (!creature->GetOwnerGUID().IsPlayer())
+            return;
+
+        // Only clean up tracking data for Soul Keeper guardians.
+        // Warlock/hunter/DK pets pass through here too when temporarily
+        // unsummoned by the core engine — we must NOT interfere with them.
+        if (!creature->IsSoulKeeperGuardian())
             return;
 
         sSoulKeeper->_guardianScaling.erase(creature->GetGUID());

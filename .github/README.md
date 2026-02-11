@@ -38,7 +38,7 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 -> All Ore- and Flower-Nodes respawn in 120 seconds instead of 24 hours to 7 days.
 - **Working Language Comprehension** - NPCs speaking Orcish/Thalassian/etc. are actually readable if your character knows the language (via skill or aura). Non-speakers get the original scrambled text with proper language tags. No Client-Mod neccesary.
 - **Pet Stay on Mount** - Pets stay summoned when mounting up instead of being dismissed. They run alongside the player. Config-gated (`CustomRamvaris.PetStayOnMount.Enable`).
-- **Soul Keeper Guardian Travel Safety** - Guardians are automatically despawned on cross-map teleport and taxi flights, preventing orphaned guardians on old maps. Cooldowns are preserved for re-summoning.
+- **Soul Keeper Guardian Travel Safety** - Soul Keeper guardians are automatically despawned on cross-map teleport and taxi flights, preventing orphaned guardians on old maps. Explicit `IsSoulKeeperGuardian()` marker check ensures warlock/hunter/DK pets are never affected — only creatures with the Soul Keeper marker (81100) are touched. Cooldowns are preserved for re-summoning.
 - Some AC modules from other people integrated and kept up-to-date
 
 Notice: I also have some MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' if you can pay massive amounts of gold, QoL Spells (Detect Invisibility to see easter eggs with endless duration, Stealth without Movement Speed Reduction), Human Reputation Bonus for everyone on Login, an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.

@@ -68,18 +68,18 @@ THOUGHTS&RANTS:
   - "Five bugs, five root causes, zero in common. Transmog NPC invisible because CanBeSeen checks GetOwner() but TEMPSUMMON_TIMED_DESPAWN doesn't set UNIT_FIELD_SUMMONEDBY. Reagent bank lag because Execute() is fire-and-forget — the menu refresh query beats the write. Chat format broken because PSendSysMessage uses fmt::format but I wrote printf. Stat stacking because OnPlayerUnequip doesn't fire on swaps. Speed not level-scaled by design choice but should be for balance. Every single one is a different category of mistake. I'm learning five lessons at once. Dattebayo."
 
 ACTIVE_WORK:
-  ENCHANTS_SUM_PAGE:
-  - TASK: Add [Sum] button to .enchants gossip menu
-  - PROBLEM: No quick way to see total equipped enchant stats at a glance
-  - SOLUTION: First button in .enchants opens aggregated summary page showing
-    all stat totals, speed (with overcap warning), fly stage, effective flight %.
-    Back button returns to normal .enchants item list.
-  - CHANGES:
-    1. ADDED: LOTTO_ACTION_ENCHANTS_SUM (30006) to gossip action enum
-    2. ADDED: ShowEnchantsSummary() — iterates equipped items, resolves enchant IDs,
-       aggregates stats into std::map (sorted alphabetically), shows speed/fly totals
-    3. MODIFIED: ShowEnchantsMenu — Sum button inserted as FIRST gossip item (before pagination)
-    4. MODIFIED: HandleLotteryGossipSelect — routes LOTTO_ACTION_ENCHANTS_SUM to ShowEnchantsSummary
+  GUARDIAN_TRAVEL_SAFETY_HARDENING:
+  - TASK: Add explicit IsSoulKeeperGuardian() checks to travel safety system
+  - PROBLEM: User reported warlock/hunter/DK pets lost during taxi/teleport
+  - ANALYSIS: DespawnGuardianForTravel was already correctly scoped via _activeGuardians
+    map lookup (only Soul Keeper entries stored there). But implicit scoping is fragile.
+  - SOLUTION: Added explicit IsSoulKeeperGuardian() checks as belt-and-suspenders:
+    1. DespawnGuardianForTravel: checks marker before despawn, logs if mismatch
+    2. OnPlayerLogout: checks marker before despawn
+    3. OnCreatureRemoveWorld: only cleans tracking maps for Soul Keeper guardians
+    4. Updated all comments to explicitly state warlock/hunter/DK pets untouched
+  - NOTE: If pet loss persists, it's likely vanilla AC behavior (UnsummonPetTemporaryIfAny
+    on cross-map teleport + ResummonPetTemporaryUnSummonedIfAny on arrival)
   - STATUS: SHIPPED 🍥
 
 LATEST_CUSTOM_SPELL:
