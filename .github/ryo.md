@@ -20,35 +20,40 @@ COMPLETED_TASKS:
   [x] - Lottery Enchants: Stat Stacking Fix + Speed Scaling + Format Fix 🍥
   [x] - Transmogrifier Summon Fix (SetOwnerGUID for CanBeSeen) 🍥
   [x] - Reagent Bank Withdraw Lag Fix (DirectExecute) 🍥
+  [x] - Batch 2: Pagination, grey readability, slot/GUID tags, .ramhelp, README 🍥
+  [x] - Batch 3: Revert speed scaling, fix >7 enchant cache bug, mount-style flying 🍥
+  [x] - Batch 4: Durability 777 persist, Mobility Boost (double jump + full flight) 🍥
 
 LATEST_FEATURE:
-  LOTTERY_ENCHANT_BUGFIX_BATCH:
-  - TASK: Fix 5 bugs across .special, reagent bank, and lottery enchant system
-  - BUGS_FIXED:
-    1. TRANSMOG_INVISIBLE: npc_transmogrifierAI::CanBeSeen() checks GetOwner()==player
-       for TempSummons. TEMPSUMMON_TIMED_DESPAWN doesn't set UNIT_FIELD_SUMMONEDBY.
-       GetOwner() returned nullptr → NPC invisible. Fix: SetOwnerGUID after SummonCreature.
-    2. REAGENT_BANK_LAG: WithdrawItem used async Execute() for writes, then async
-       read for menu refresh. Write not committed before read → stale amounts.
-       Fix: DirectExecute() for withdraw writes.
-    3. SPEED_LEVEL_SCALING: Speed enchants now level-scaled via ScaleEnchantAmount.
-       At level 40, a 10% roll gives 5%. Prevents disproportionate low-level mobility.
-       FormatEnchantLine updated to show scaled + max values.
-    4. FORMAT_STRINGS: PSendSysMessage uses Acore::StringFormat (fmt::format) but code
-       used printf %s/%u → literal '%s%s%u' in chat. Fixed ALL calls to {} format.
-       Also fixed custom_commands.cpp %.1f → {:.1f} for guardianscale/petscale.
-    5. STAT_STACKING: OnPlayerUnequip does NOT fire on item swaps (right-click equip).
-       Old stats never unapplied → infinite stacking. Fix: FullRecalcLotteryStats —
-       unapply all tracked, reapply only equipped items. Per-player s_appliedItems
-       tracking set. Level-up recalc simplified to use same full-recalc function.
+  MOBILITY_BOOST_AND_DURABILITY_FIX:
+  - TASK: Durability 777 fix + Mobility Boost dual-mode system (double jump / full flight)
+  - CHANGES:
+    1. DURABILITY_777_PERSIST: Item::LoadFromDB resets ITEM_FIELD_MAXDURABILITY to
+       template value (0 for cloaks). Our 777 marker was lost on relog. Fix: re-stamp
+       777/777 on all lottery-enchanted items in LoadLotteryEnchantsForPlayer after
+       cache load. Also added SQL cleanup for slot_index >= 7 rows on server startup.
+    2. MOBILITY_BOOST: Renamed "Flying" → "Mobility Boost". Two modes:
+       - Full Flight (level >= 60, flylock OFF): sustained flight, same as flying mount
+       - Double Jump (level < 60 OR flylock ON): SetCanFly(true) as trigger, OnPlayerUpdate
+         detects IsFlying() → KnockbackFrom(pos, 0, 15) upward + SetCanFly(false).
+         One use per airborne session, resets on landing. Fall damage tracked from
+         activation point via SetFallInformation. DH-style agility in boss fights.
+    3. PLAYER_H_UPDATE: GetLotteryCanFly() returns raw m_lotteryCanFly (no flylock check).
+       New HasLotteryFullFlight() accessor: has fly + level >= 60 + not locked.
+    4. UNIT_CPP_UPDATE: Flight speed floor only applies in HasLotteryFullFlight() mode.
+    5. FLYLOCK_REWORK: .flylock messages updated. Shows "Double Jump mode" when locking,
+       "Full flight active" when unlocking at 60+. Checks for fly enchant before toggling.
   - FILES_CHANGED:
-    * random_enchants.cpp: Full recalc system, speed scaling, fmt format strings,
-      removed 100-line delta level-up function (replaced with FullRecalcLotteryStats),
-      doc comments updated
-    * custom_commands.cpp: SetOwnerGUID after SummonCreature, fmt format fixes
-    * ReagentBank.cpp: Execute→DirectExecute for withdraw writes
-  - BUILD: CLEAN 🍥
-  - STATUS: READY_FOR_TEST 🍥
+    * random_enchants.cpp: RecalcLotterySpeedAndFly dual-mode, OnPlayerUpdate double jump,
+      s_doubleJumpUsed tracking, LoadLotteryEnchantsForPlayer durability restamp,
+      OnStartup SQL cleanup for duplicates, FormatEnchantLine renamed to Mobility Boost,
+      flylock command messages updated, header comments rewritten, GameTime.h re-added
+    * Player.h: GetLotteryCanFly returns raw, added HasLotteryFullFlight()
+    * Unit.cpp: Flight speed check uses HasLotteryFullFlight()
+    * README.md (module): Mobility Boost section with table of modes
+    * README.md (repo): Updated lottery enchants description
+  - BUILD: TESTING 🍥
+  - STATUS: DEPLOYING 🍥
 
 SCALING_FORMULAS:
   BEST_RATIO_DESIGN:  Pick max of (meleeAP/expectedMelee, rangedAP/expectedRanged, maxSP/expectedSpell)

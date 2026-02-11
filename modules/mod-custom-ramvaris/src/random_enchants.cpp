@@ -14,12 +14,12 @@
  * - Pool includes: primary stats (STR/AGI/INT/SPI/STA), combat ratings, spell power,
  *   haste, crit, hit, expertise, armor pen, resilience, AND all elemental resistances.
  * - Pool EXCLUDES: Dodge, Parry, Defense (overcapping with multiple items)
- * - CUSTOM ENCHANTS: Movespeed (1-25% per roll, cap +100% = 200% base, stacking,
+ * CUSTOM ENCHANTS: Movespeed (1-25% per roll, cap +100% = 200% base, stacking,
  *   affects run + swim + flight, NOT level-scaled — 10% rolled = 10% at any level)
- *   and Flying (1% chance, 3 stages: 100%/200%/300% flight speed, combined with
- *   speed bonus up to 600%, NO level scaling).
+ *   and Mobility Boost (1% chance, 3 stages: 100%/200%/300% flight speed, combined
+ *   with speed bonus up to 600%, NO level scaling).
  * - `.enchants` paginated gossip menu; `.reroll` gossip-based Keep/Take flow (500g)
- * - `.flylock` toggles flying ability on/off
+ * - `.flylock` locks full flight, switches to double jump mode
  * - NO quality-based tier filtering — the percentile system handles balance naturally.
  *   A grey item can roll god-tier stats if RNG blesses you. Any quality, any tier.
  * - 7 color tiers by percentile (~14.29% each): Grey→White→Green→Blue→Purple→Orange→Red
@@ -56,15 +56,25 @@
  * intentionally makes mounts obsolete as enchant speed grows (epic mount = 200%,
  * but +100% enchant speed unmounted = 200% without needing a mount).
  *
- * Fly grants SetCanFly + flight speed (flying mount behavior).
- * On ground: space = normal jump. In air/falling: space = start flying.
- * Jump off cliff → fall → press space = fly. Don't press = splat.
+ * MOBILITY BOOST (renamed from "Flying"):
  * 1% overall chance in the dice pool.
  * Sub-roll: 75%=Stage1 (100%), 20%=Stage2 (200%), 5%=Stage3 (300%). Only highest
  * stage counts across ALL equipped items. Effective fly speed = flyStageRate ×
  * (1 + speedBonus). Max: 3.0 × 2.0 = 600% flight speed. Works everywhere.
  * BG flag carriers auto-drop the flag when airborne.
- * .flylock toggles flying on/off even if you have the enchant.
+ *
+ * TWO MODES based on level and .flylock:
+ *   FULL FLIGHT (level >= 60, .flylock OFF):
+ *     SetCanFly(true) → flying mount behavior. On ground: space = jump.
+ *     In air/falling: space = start flying. Sustained flight with stage speed.
+ *   DOUBLE JUMP (level < 60 OR .flylock ON):
+ *     SetCanFly(true) as trigger → when player presses space while falling, the
+ *     client enters fly state → OnPlayerUpdate detects IsFlying() → applies upward
+ *     KnockbackFrom(0, 15) → SetCanFly(false). Player arcs up then falls normally.
+ *     One double jump per airborne session, resets on landing. Resets fall damage
+ *     tracking to the activation point. Useful in boss fights where flying would
+ *     risk boss reset.
+ *   .flylock toggles between full flight and double jump for level 60+ players.
  *
  * ITEM SOURCES:
  * Uses PLAYERHOOK_ON_STORE_NEW_ITEM — catches ALL item acquisition (loot, craft, quest,
@@ -240,6 +250,11 @@ static std::unordered_set<uint32> s_vendorBuying;
 // Equip tracking: player GUID → set of item GUIDs with currently applied enchants.
 // Used to prevent double-applying on item swaps where OnPlayerUnequip doesn't fire.
 static std::unordered_map<uint32, std::unordered_set<uint32>> s_appliedItems;
+
+// Double jump tracking: player GUID → has used double jump this airborne session.
+// Reset when the player lands on the ground. Only active for players with fly enchant
+// who are in double-jump mode (level <60 or flylock ON).
+static std::unordered_map<uint32, bool> s_doubleJumpUsed;
 
 // =============================================================================
 // Helper functions — Custom enchant ID detection
@@ -619,7 +634,11 @@ static void ApplyAllLotteryEnchantsForItem(Player* player, uint32 itemGuid, bool
 
 // =============================================================================
 // Speed/Fly Recalculation — scans ALL equipped items, updates Player fields,
-// triggers UpdateSpeed and SetCanFly. Called on equip/unequip/login/logout.
+// triggers UpdateSpeed and SetCanFly/double-jump. Called on equip/unequip/login.
+//
+// MOBILITY BOOST MODES:
+//   Full Flight:  level >= 60 AND not flylock → sustained flying, flight speed
+//   Double Jump:  level < 60 OR flylock → one upward boost per airborne session
 // =============================================================================
 static void RecalcLotterySpeedAndFly(Player* player)
 {
@@ -644,8 +663,6 @@ static void RecalcLotterySpeedAndFly(Player* player)
         {
             if (IsCustomSpeedEnchant(enchantId))
             {
-                // Speed does NOT level-scale — 10% rolled = 10% at any level.
-                // The raw rolled value applies immediately and permanently.
                 uint32 rawPct = GetSpeedPct(enchantId);
                 totalSpeedBonus += float(rawPct) / 100.0f;
             }
@@ -658,10 +675,7 @@ static void RecalcLotterySpeedAndFly(Player* player)
         }
     }
 
-    // Cap speed bonus at +100% (200% base speed total)
     totalSpeedBonus = std::min(totalSpeedBonus, 1.0f);
-
-    // Fly speed rate: stage 1=1.0, stage 2=2.0, stage 3=3.0
     float flyRate = float(highestFlyStage);
 
     player->SetLotterySpeedBonus(totalSpeedBonus);
@@ -672,20 +686,20 @@ static void RecalcLotterySpeedAndFly(Player* player)
     player->UpdateSpeed(MOVE_RUN, true);
     player->UpdateSpeed(MOVE_SWIM, true);
 
-    bool canFly = player->GetLotteryCanFly();
-    if (canFly)
-    {
-        player->UpdateSpeed(MOVE_FLIGHT, true);
+    bool hasFlyEnchant = player->GetLotteryCanFly();
+    bool fullFlight    = player->HasLotteryFullFlight();
+    bool doubleJump    = hasFlyEnchant && !fullFlight;
+    uint32 pg          = player->GetGUID().GetCounter();
 
-        // Flying mount behavior: SetCanFly(true) enables MOVEMENTFLAG_CAN_FLY.
-        // On ground: space = normal jump. In air/falling: space = start flying.
-        // Jump off cliff → fall → press space = fly. Don't press = splat.
+    if (fullFlight)
+    {
+        // Full flight mode: sustained flying with flight speed calculations.
+        player->UpdateSpeed(MOVE_FLIGHT, true);
         player->SetCanFly(true);
 
-        // Drop BG flag if currently flying in a battleground
+        // BG flag carrier enforcement
         if (player->InBattleground() && player->IsFlying())
         {
-            // WSG flags + EOTS flag
             if (player->HasAura(23335) || player->HasAura(23333) || player->HasAura(34976))
             {
                 player->RemoveAurasDueToSpell(23335);
@@ -696,14 +710,27 @@ static void RecalcLotterySpeedAndFly(Player* player)
             }
         }
     }
+    else if (doubleJump)
+    {
+        // Double jump mode: SetCanFly enables the space-bar trigger while airborne.
+        // OnPlayerUpdate detects IsFlying() → applies upward knockback → removes fly.
+        // If double jump was already used this airborne session, leave CAN_FLY off
+        // until the player lands (OnPlayerUpdate handles re-enabling).
+        if (!s_doubleJumpUsed[pg])
+            player->SetCanFly(true);
+
+        // Transition from full-fly to double-jump while airborne: the player
+        // is currently flying and toggled flylock or leveled down (hypothetical).
+        // They keep flying this one time; OnPlayerUpdate will handle landing transition.
+    }
     else
     {
-        // Remove flying if no enchant (or flylocked) and player is airborne
+        // No fly enchant — disable flight entirely.
+        s_doubleJumpUsed.erase(pg);
         if (player->IsFlying())
         {
             player->SetCanFly(false);
-            // Feather fall to prevent splat
-            player->CastSpell(player, 130, true); // Slow Fall
+            player->CastSpell(player, 130, true); // Slow Fall to prevent splat
         }
         else
         {
@@ -1105,6 +1132,35 @@ static void LoadLotteryEnchantsForPlayer(Player* player)
     // Apply stats via full recalc (swap-safe, initializes tracking set clean)
     FullRecalcLotteryStats(player);
 
+    // Re-stamp 777/777 durability on items with lottery enchants.
+    // Item::LoadFromDB resets ITEM_FIELD_MAXDURABILITY to the template value (0 for
+    // cloaks, etc.), wiping our visual marker. We restore it here on every login.
+    {
+        std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
+        auto restampDurability = [&](Item* item) {
+            if (!item) return;
+            uint32 guid = item->GetGUID().GetCounter();
+            auto it = s_lotteryCache.find(guid);
+            if (it != s_lotteryCache.end() && !it->second.empty())
+            {
+                item->SetUInt32Value(ITEM_FIELD_MAXDURABILITY, 777);
+                item->SetUInt32Value(ITEM_FIELD_DURABILITY, 777);
+                item->SetState(ITEM_CHANGED, player);
+            }
+        };
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            restampDurability(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+            restampDurability(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        {
+            Bag* pBag = player->GetBagByPos(bag);
+            if (!pBag) continue;
+            for (uint32 s = 0; s < pBag->GetBagSize(); ++s)
+                restampDurability(pBag->GetItemByPos(s));
+        }
+    }
+
     if (loadedEnchants > 0)
         LOG_DEBUG("module", "LotteryEnchants: Loaded {} enchants for player {} (level {})",
                   loadedEnchants, player->GetName(), player->GetLevel());
@@ -1155,12 +1211,13 @@ static void UnloadLotteryEnchantsForPlayer(Player* player)
     player->SetLotteryCanFly(false);
     player->SetCanFly(false);
 
-    // Clean up gossip state
+    // Clean up gossip state + double jump tracking
     s_pendingRerolls.erase(pg);
     s_rerollPage.erase(pg);
     s_enchantsPage.erase(pg);
     s_enchantsItemList.erase(pg);
     s_rerollItemList.erase(pg);
+    s_doubleJumpUsed.erase(pg);
 }
 
 // Cleanup helper — deletes lottery enchants for a destroyed item from DB + cache.
@@ -1192,7 +1249,7 @@ static std::string FormatEnchantLine(uint32 enchantId, uint8 playerLevel)
     {
         uint32 stage = GetFlyStage(enchantId);
         uint32 flyPct = stage * 100;
-        return std::string("|cffFF00FF") + std::to_string(flyPct) + "% Flying (Stage " + std::to_string(stage) + ")|r";
+        return std::string("|cffFF00FF+Mobility Boost Stage ") + std::to_string(stage) + " (" + std::to_string(flyPct) + "% flight speed)|r";
     }
 
     SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchantId);
@@ -1939,20 +1996,63 @@ public:
         HandleLotteryGossipSelect(player, action);
     }
 
-    // BG flag enforcement: flying flag carriers in battlegrounds drop the flag.
-    // Cheap check — only does HasAura when both IsFlying + InBattleground are true.
+    // =========================================================================
+    // OnPlayerUpdate — Double Jump mechanics + BG flag enforcement.
+    //
+    // DOUBLE JUMP (Mobility Boost, level <60 or flylock):
+    // SetCanFly(true) is set in RecalcLotterySpeedAndFly to enable the space-bar
+    // trigger while airborne. When the player presses space while falling, the
+    // client transitions to MOVEMENTFLAG_FLYING → IsFlying() becomes true.
+    // We detect this, apply an upward knockback, disable CAN_FLY, and mark the
+    // double jump as used until the player lands on the ground.
+    //
+    // FULL FLIGHT (level 60+, not flylock):
+    // No intervention needed — player flies normally. Only BG flag enforcement.
+    // =========================================================================
     void OnPlayerUpdate(Player* player, uint32 /*diff*/) override
     {
         if (!IsEnabled() || !player) return;
-        if (!player->IsFlying() || !player->InBattleground()) return;
 
-        if (player->HasAura(23335) || player->HasAura(23333) || player->HasAura(34976))
+        bool hasFlyEnchant = player->GetLotteryCanFly();
+        bool fullFlight    = player->HasLotteryFullFlight();
+        bool doubleJump    = hasFlyEnchant && !fullFlight;
+        uint32 pg          = player->GetGUID().GetCounter();
+
+        // --- Double jump mode ---
+        if (doubleJump)
         {
-            player->RemoveAurasDueToSpell(23335);
-            player->RemoveAurasDueToSpell(23333);
-            player->RemoveAurasDueToSpell(34976);
-            ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cffFF0000You can't carry a flag while flying! Flag dropped.|r");
+            if (player->IsFlying() && !s_doubleJumpUsed[pg])
+            {
+                // Player pressed space while airborne → client entered "flying" state.
+                // Apply upward knockback and remove CAN_FLY to simulate a double jump.
+                player->SetCanFly(false);
+                player->KnockbackFrom(player->GetPositionX(), player->GetPositionY(), 0.0f, 15.0f);
+
+                // Reset fall tracking so fall damage only counts from the double-jump
+                // activation point, not the original cliff edge.
+                player->SetFallInformation(getMSTime(), player->GetPositionZ());
+
+                s_doubleJumpUsed[pg] = true;
+            }
+            else if (!player->IsFalling() && !player->IsFlying() && s_doubleJumpUsed[pg])
+            {
+                // Player landed on ground — reset double jump for next airborne session.
+                s_doubleJumpUsed[pg] = false;
+                player->SetCanFly(true);
+            }
+        }
+
+        // --- BG flag enforcement (applies to both fly modes) ---
+        if (player->IsFlying() && player->InBattleground())
+        {
+            if (player->HasAura(23335) || player->HasAura(23333) || player->HasAura(34976))
+            {
+                player->RemoveAurasDueToSpell(23335);
+                player->RemoveAurasDueToSpell(23333);
+                player->RemoveAurasDueToSpell(34976);
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cffFF0000You can't carry a flag while flying! Flag dropped.|r");
+            }
         }
     }
 
@@ -2003,28 +2103,36 @@ public:
         return true;
     }
 
-    // .flylock — Toggle flying on/off even if you have fly enchant
+    // .flylock — Toggle between full flight and double jump mode
     static bool HandleFlylockCommand(ChatHandler* handler)
     {
         if (!IsEnabled(handler)) return true;
         Player* player = handler->GetPlayer();
         if (!player) return false;
 
+        if (!player->GetLotteryCanFly())
+        {
+            handler->PSendSysMessage("|cffFF4444You don't have a Mobility Boost enchant.|r");
+            return true;
+        }
+
         bool currentlyLocked = player->IsLotteryFlyLocked();
         player->SetLotteryFlyLocked(!currentlyLocked);
 
         if (!currentlyLocked)
         {
-            // Locking: disable flying
-            handler->PSendSysMessage("|cffFF8800Flying LOCKED. You will not fly even with a fly enchant.|r");
-            RecalcLotterySpeedAndFly(player);
+            // Locking: full flight disabled → double jump mode
+            handler->PSendSysMessage("|cffFF8800Mobility Boost: Flight LOCKED → Double Jump mode.|r");
         }
         else
         {
-            // Unlocking: re-enable if has enchant
-            handler->PSendSysMessage("|cff00FF00Flying UNLOCKED.|r");
-            RecalcLotterySpeedAndFly(player);
+            // Unlocking: full flight (if level 60+) or keep double jump (<60)
+            if (player->GetLevel() >= 60)
+                handler->PSendSysMessage("|cff00FF00Mobility Boost: Flight UNLOCKED → Full flight active.|r");
+            else
+                handler->PSendSysMessage("|cff00FF00Mobility Boost: Flight UNLOCKED → Double Jump continues until level 60.|r");
         }
+        RecalcLotterySpeedAndFly(player);
 
         return true;
     }
@@ -2071,10 +2179,16 @@ public:
             "WHERE ii.`guid` IS NULL"
         );
 
+        // Clean up duplicate enchants beyond MAX_LOTTERY_SLOTS (slot_index 0-6).
+        // Old bug: re-login accumulated enchants. This purges any excess rows.
+        CharacterDatabase.Execute(
+            "DELETE FROM `character_item_lottery_enchants` WHERE `slot_index` >= 7"
+        );
+
         BuildEnchantPoolsFromDBC();
 
         LOG_INFO("module", "LotteryEnchants: System initialized — DB-based, up to {} enchants per item, "
-                 "level-scaled stats + Movespeed + Flying enchants.",
+                 "level-scaled stats + Movespeed + Mobility Boost enchants.",
                  sConfigMgr->GetOption<uint32>("CustomRamvaris.LotteryEnchants.MaxSlots", MAX_LOTTERY_SLOTS));
     }
 };

@@ -130,20 +130,26 @@ Core patch: Player fields `m_lotterySpeedBonus`, injected into `Unit::UpdateSpee
 final `SetSpeed()` call — survives any aura recalculation.
 **NOT level-scaled** — 10% rolled = 10% at any level, always the raw rolled value.
 
-#### Fly Enchants
+#### Mobility Boost (formerly "Fly Enchants")
 1% leftover chance before the regular pool. Sub-roll: 75% Stage 1 (100% flight speed),
 20% Stage 2 (200%), 5% Stage 3 (300%). Custom enchant IDs 900101–900103.
 Only the HIGHEST stage across all equipped items counts.
 Effective flight speed floor = `flyStageRate × (1 + speedBonus)`. Max: 3.0 × 2.0 = **600%**
 flight speed — full superman mode. Speed bonus from enchants multiplies the fly stage rate.
 Flying everywhere — no zone restrictions. BG flag auto-drops when airborne.
-Core patch: Player fields `m_lotteryFlySpeedRate` + `m_lotteryCanFly`, injected into
-`Unit::UpdateSpeed(MOVE_FLIGHT)`. Slow Fall (spell 130) cast on fly disable to prevent death.
-**No level scaling** on flight. Use `.flylock` to voluntarily disable flight.
+Core patch: Player fields `m_lotteryFlySpeedRate` + `m_lotteryCanFly` + `HasLotteryFullFlight()`,
+injected into `Unit::UpdateSpeed(MOVE_FLIGHT)`.
 
-**Flying Mount Behavior**: Flight uses MOVEMENTFLAG_CAN_FLY (same as flying mounts).
-On ground, space = normal jump. In the air or falling, space = start flying.
-Jump off a cliff → fall → press space = fly. Don't press = splat.
+**Two Modes** based on level and `.flylock`:
+
+| Mode | Condition | Behavior |
+|------|-----------|----------|
+| **Full Flight** | Level ≥ 60, `.flylock` OFF | Flying mount behavior. Ground: space = jump. Air/falling: space = sustained flight. |
+| **Double Jump** | Level < 60 OR `.flylock` ON | One upward boost per airborne session (DH-style). Press space while falling → arc up → fall again. Resets on landing. |
+
+`.flylock` lets level 60+ players switch between full flight and double jump. Useful in boss
+fights where flying could accidentally reset the boss. Level <60 players are always in double
+jump mode regardless of `.flylock`.
 
 #### Reroll (Gossip Menu)
 `.reroll` opens a paginated gossip menu listing eligible bag items. Select an item → pay 500g →
