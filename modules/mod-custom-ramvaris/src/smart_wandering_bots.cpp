@@ -13,17 +13,27 @@
  *   4. A configurable cooldown prevents zone-border flapping from rapid spawn/despawn cycles
  *   5. Per-player tracking: each player has their own set of smart-spawned bots
  *
+ * FACTION BALANCING:
+ *   When BalancedFaction.Enable = 1, the total spawn count is split evenly between
+ *   Alliance and Horde. Each half is spawned separately using faction-specific spare
+ *   pools. If one faction has no available bots or no valid spawn nodes in the zone,
+ *   the remaining count goes to the other faction. This ensures zones aren't dominated
+ *   by one side and the world feels alive with both factions present.
+ *
  * PERFORMANCE:
  *   - Only MinAmount–MaxAmount bots exist at any time (vs. hundreds globally)
  *   - Only the player's current zone has loaded grids with bots in them
  *   - DespawnWandererBot handles both live bots AND pending spawn queue entries
  *   - Spawn stagger (500ms per bot) is handled by the existing BotDataMgr::Update() loop
+ *   - Config reads use sConfigMgr which caches values — no disk I/O per call
+ *   - Zone change handler is O(n) in current bot count — fast for 5–15 bots
  *
  * CONFIG (in custom_ramvaris.conf.dist):
- *   CustomRamvaris.SmartWanderingBots.Enable           = 0
- *   CustomRamvaris.SmartWanderingBots.MinAmount         = 5
- *   CustomRamvaris.SmartWanderingBots.MaxAmount         = 15
- *   CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown = 30
+ *   CustomRamvaris.SmartWanderingBots.Enable                   = 0
+ *   CustomRamvaris.SmartWanderingBots.MinAmount                = 5
+ *   CustomRamvaris.SmartWanderingBots.MaxAmount                = 15
+ *   CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown       = 30
+ *   CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable   = 0
  */
 
 #include "ScriptMgr.h"
@@ -85,6 +95,11 @@ private:
             && sConfigMgr->GetOption<bool>("CustomRamvaris.SmartWanderingBots.Enable", false);
     }
 
+    static bool IsBalancedFactionEnabled()
+    {
+        return sConfigMgr->GetOption<bool>("CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable", false);
+    }
+
     void HandleZoneChange(Player* player, uint32 newZone)
     {
         ObjectGuid guid = player->GetGUID();
@@ -121,16 +136,65 @@ private:
             return;
         }
 
-        // Spawn new bots in the target zone
-        std::vector<uint32> entries;
-        uint32 spawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, count, &entries);
+        uint32 totalSpawned = 0;
+        std::vector<uint32> allEntries;
+        allEntries.reserve(count);
 
-        if (spawned > 0)
+        if (IsBalancedFactionEnabled())
         {
-            state.spawnedEntries = std::move(entries);
+            // Faction-balanced spawning: split count evenly between Alliance and Horde
+            uint32 allianceCount = count / 2;
+            uint32 hordeCount    = count - allianceCount;  // Horde gets the odd remainder
+
+            // Spawn Alliance half
+            std::vector<uint32> allianceEntries;
+            uint32 aSpawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, allianceCount, &allianceEntries, ALLIANCE);
+
+            // Spawn Horde half
+            std::vector<uint32> hordeEntries;
+            uint32 hSpawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, hordeCount, &hordeEntries, HORDE);
+
+            // If one faction couldn't fill its half (no spare bots or no nodes),
+            // give the remainder to the other faction as fallback
+            if (aSpawned < allianceCount && hSpawned > 0)
+            {
+                uint32 remainder = allianceCount - aSpawned;
+                std::vector<uint32> extraEntries;
+                uint32 extra = BotDataMgr::SpawnWanderingBotsInZone(newZone, remainder, &extraEntries, HORDE);
+                hSpawned += extra;
+                hordeEntries.insert(hordeEntries.end(), extraEntries.begin(), extraEntries.end());
+            }
+            else if (hSpawned < hordeCount && aSpawned > 0)
+            {
+                uint32 remainder = hordeCount - hSpawned;
+                std::vector<uint32> extraEntries;
+                uint32 extra = BotDataMgr::SpawnWanderingBotsInZone(newZone, remainder, &extraEntries, ALLIANCE);
+                aSpawned += extra;
+                allianceEntries.insert(allianceEntries.end(), extraEntries.begin(), extraEntries.end());
+            }
+
+            totalSpawned = aSpawned + hSpawned;
+            allEntries.insert(allEntries.end(), allianceEntries.begin(), allianceEntries.end());
+            allEntries.insert(allEntries.end(), hordeEntries.begin(), hordeEntries.end());
+
+            BOT_LOG_INFO("module", "SmartWandering: Balanced spawn in zone {} — {} Alliance, {} Horde (player {})",
+                newZone, aSpawned, hSpawned, player->GetName());
+        }
+        else
+        {
+            // Standard spawning: all factions, natural distribution from spare pool
+            totalSpawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, count, &allEntries);
+        }
+
+        if (totalSpawned > 0)
+        {
+            state.spawnedEntries = std::move(allEntries);
             state.currentZoneId = newZone;
-            BOT_LOG_INFO("module", "SmartWandering: Spawned {} bots in zone {} for player {}",
-                spawned, newZone, player->GetName());
+            if (!IsBalancedFactionEnabled())
+            {
+                BOT_LOG_INFO("module", "SmartWandering: Spawned {} bots in zone {} for player {}",
+                    totalSpawned, newZone, player->GetName());
+            }
         }
         else
         {

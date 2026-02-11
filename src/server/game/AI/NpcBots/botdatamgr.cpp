@@ -580,24 +580,50 @@ public:
         }
         else
         {
-            ASSERT(bracketEntry);
-
-            bracketPcts[bracketEntry->minLevel / 10] = 100u;
-            switch (team)
+            // Smart Wandering faction support: bracketEntry may be nullptr
+            // when doing zone-specific faction-filtered spawning (not BG/arena).
+            // In that case, use default wanderer level brackets.
+            if (bracketEntry)
             {
-                case ALLIANCE:
-                    if (!found_maxlevel_node_a)
-                        return false;
-                    break;
-                case HORDE:
-                    if (!found_maxlevel_node_h)
-                        return false;
-                    break;
-                case TEAM_OTHER:
-                default:
-                    if (!found_maxlevel_node_n)
-                        return false;
-                    break;
+                bracketPcts[bracketEntry->minLevel / 10] = 100u;
+            }
+            else
+            {
+                bracketPcts = BotMgr::GetBotWandererLevelBrackets();
+            }
+
+            // Zone mode relaxes the max-level node requirement (same as team=-1 zone path)
+            if (zoneFilter == -1)
+            {
+                switch (team)
+                {
+                    case ALLIANCE:
+                        if (!found_maxlevel_node_a)
+                            return false;
+                        break;
+                    case HORDE:
+                        if (!found_maxlevel_node_h)
+                            return false;
+                        break;
+                    case TEAM_OTHER:
+                    default:
+                        if (!found_maxlevel_node_n)
+                            return false;
+                        break;
+                }
+            }
+            else
+            {
+                // Zone mode: just need any spawn nodes that match
+                bool hasNodes = false;
+                switch (team)
+                {
+                    case ALLIANCE: hasNodes = !spawns_a.empty(); break;
+                    case HORDE:    hasNodes = !spawns_h.empty(); break;
+                    default:       hasNodes = !spawns_n.empty(); break;
+                }
+                if (!hasNodes)
+                    return false;
             }
 
             for (auto const& kv : _spareBotIdsPerClassMap)
@@ -611,7 +637,8 @@ public:
                     if (int32(botTeam) != team)
                         continue;
 
-                    if (BotDataMgr::GetMinLevelForBotClass(kv.first) > bracketEntry->maxLevel)
+                    // Skip level check when no bracket entry (zone mode uses all levels)
+                    if (bracketEntry && BotDataMgr::GetMinLevelForBotClass(kv.first) > bracketEntry->maxLevel)
                         continue;
 
                     teamSpareBotIdsPerClass.push_back({kv.first, spareBotId});
@@ -792,15 +819,15 @@ void BotDataMgr::Update(uint32 diff)
 /// Smart Wandering API: Spawn wandering bots at WanderNodes in a specific zone.
 /// Uses the existing WanderingBotsGenerator infrastructure with zone-filtered node collection.
 /// Returns the number of bots successfully queued for spawning.
-uint32 BotDataMgr::SpawnWanderingBotsInZone(uint32 zoneId, uint32 count, std::vector<uint32>* outEntries)
+uint32 BotDataMgr::SpawnWanderingBotsInZone(uint32 zoneId, uint32 count, std::vector<uint32>* outEntries, int32 team)
 {
     if (sBotGen->GetSpareBotsCount() == 0 || count == 0)
         return 0;
 
     uint32 spawned = 0;
-    // team=-1 means all factions (natural distribution based on spare bot pool)
-    // immediate=false (queued, 500ms stagger spawn via Update)
-    sBotGen->GenerateWanderingBotsToSpawn(count, -1, -1, false, nullptr, nullptr, spawned, static_cast<int32>(zoneId), outEntries);
+    // team=-1: all factions (natural distribution), 0=Alliance, 1=Horde
+    // bracketEntry=nullptr: use default wanderer level brackets for zone spawning
+    sBotGen->GenerateWanderingBotsToSpawn(count, -1, team, false, nullptr, nullptr, spawned, static_cast<int32>(zoneId), outEntries);
     return spawned;
 }
 

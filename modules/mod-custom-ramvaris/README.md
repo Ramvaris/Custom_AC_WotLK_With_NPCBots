@@ -17,10 +17,10 @@ Global toggle ON, all sub-features OFF by default. Safe to ignore or delete for 
 | **Login Spell Grants** | `LoginSpellGrants.Enable` | Yes — custom DBC spells |
 | **Dark Azeroth Weather** | `DarkAzeroth.Enable` | No |
 | **.special** (NPC summon menu) | `SpecialCommand.Enable` | Yes — custom creature_template |
-| **.mountup** (auto-mount) | `MountUp.Enable` | No |
 | **.guardianscale** (SK guardian size) | `GuardianScale.Enable` | No |
 | **.petscale** (pet size) | `PetScale.Enable` | No |
 | **Pet Stay on Mount** | `PetStayOnMount.Enable` | No — core patch |
+| **Lottery Enchants** | `LotteryEnchants.Enable` | Yes — character DB table |
 
 ## Config Structure
 
@@ -35,10 +35,11 @@ CustomRamvaris.LillyGossip.Enable = 0
 CustomRamvaris.LoginSpellGrants.Enable = 0
 CustomRamvaris.DarkAzeroth.Enable = 0
 CustomRamvaris.SpecialCommand.Enable = 0
-CustomRamvaris.MountUp.Enable = 0
 CustomRamvaris.GuardianScale.Enable = 0
 CustomRamvaris.PetScale.Enable = 0
 CustomRamvaris.PetStayOnMount.Enable = 0
+CustomRamvaris.LotteryEnchants.Enable = 0
+CustomRamvaris.LotteryEnchants.MaxSlots = 7
 ```
 
 ## Feature Details
@@ -69,6 +70,9 @@ On login, automatically grants utility spells and unlocks profession dual/triple
 Handles Draenei racial fixes (Gift of the Naaru universal version), Blood Elf Warrior Arcane Torrent,
 Diplomacy for all, Pick Pocket for all.
 
+**Unlearns on login**: 81002 (Water Form), 81003 (Uber Cheetah), 81008 (Masterful Levitation) —
+replaced by the lottery enchant speed/fly system.
+
 ### Mend Pet Scale (REMOVED)
 Replaced by `.guardianscale` and `.petscale` commands — see below.
 
@@ -78,14 +82,68 @@ Biome-aware bad weather system — hot zones get thunderstorms, cold zones get s
 
 ### Custom Commands
 - `.special` — Gossip menu to summon NPCs, open bank, open mailbox
-- `.mountup` — Auto-mount based on riding skill (flying in Outland/Northrend, ground elsewhere)
 - `.guardianscale` — Doubles Soul Keeper guardian visual scale each use (caps at 5x base). Only works on Soul Keeper guardians.
 - `.petscale` — Doubles any pet visual scale each use (Hunter/Warlock/DK pets, caps at 5x base)
+- `.enchants` — Opens paginated gossip menu showing all lottery enchants on equipped + bag items. Click an item to see its enchant details. Color-coded by tier.
+- `.reroll` — Opens paginated gossip menu listing eligible bag items (weapons, armor, accessories). Select an item to pay 1000g and reroll enchants. Preview shows rolled stats with Take (apply) / Keep (discard) options. Gold deducted on roll, not on accept.
+- `.flylock` — Toggles flight lock. When locked, lottery fly enchants won't grant flight even if you have a flying stage. Useful for avoiding accidental flight in dungeons/raids.
 
 ### Pet Stay on Mount
 Core patch: pets stay summoned when the player mounts up instead of being dismissed.
 Pets run alongside the mounted player. Only affects mount-up — other dismiss triggers
 (vehicle entry, teleport, logout) work as normal. Reverts to vanilla behavior when OFF.
+
+### Lottery Enchants
+Diablo-style random enchantments on ALL acquired gear (loot, craft, quest, group roll, vendor purchase,
+mail). Uses `PLAYERHOOK_ON_STORE_NEW_ITEM` — the universal catch-all from `Player::StoreNewItem`.
+Scans SpellItemEnchantment.dbc at startup for pure-stat AND pure-resistance enchants.
+
+**No Class Filtering** — any stat/resist can roll on any class. Self-balancing through randomness:
+a warrior rolling INT+SPI+FIRE_RES is a "crap roll" that dilutes power. The dilution IS the balance.
+Pool includes primary stats, combat ratings, spell power, haste, crit, hit, expertise, armor pen,
+resilience, AND all elemental resistances (Holy/Fire/Nature/Frost/Shadow/Arcane).
+Pool **excludes**: Dodge, Parry, Defense (overcapping too easily with multiple items).
+
+Up to 7 enchants per item with cascading chances
+(70% → 60% → 50% → 50% → 50% → 40% → 40%). Quality-tiered: item quality caps the max value tier.
+
+**Level Scaling**: Stats grow linearly with player level — `max(1, round(base * level / 80))`.
+Level 1 = 1.25%, Level 40 = 50%, Level 80 = 100%. Stats automatically recalculate on level-up
+via delta-based application (no full unapply/reapply needed).
+
+#### Speed Enchants
+Movespeed is a REGULAR type in the dice pool with equal weight alongside STR, AGI, etc.
+Rolls +1% to +25% speed (custom enchant IDs 900001–900025). Stacks additively across all
+equipped items, capped at +100% total (200% base speed). Affects MOVE_RUN + MOVE_SWIM.
+Multiplicative with aura buffs (e.g., +50% enchant × 1.15 paladin aura = 172.5% speed).
+Core patch: Player fields `m_lotterySpeedBonus`, injected into `Unit::UpdateSpeed()` before
+final `SetSpeed()` call — survives any aura recalculation. **No level scaling** on speed.
+
+#### Fly Enchants
+1% leftover chance before the regular pool. Sub-roll: 75% Stage 1 (100% flight speed),
+20% Stage 2 (200%), 5% Stage 3 (300%). Custom enchant IDs 900101–900103.
+Only the HIGHEST stage across all equipped items counts. Capped at 600% flight speed.
+Flying everywhere — no zone restrictions. BG flag auto-drops when airborne.
+Core patch: Player fields `m_lotteryFlySpeedRate` + `m_lotteryCanFly`, injected into
+`Unit::UpdateSpeed(MOVE_FLIGHT)`. Slow Fall (spell 130) cast on fly disable to prevent death.
+**No level scaling** on flight. Use `.flylock` to voluntarily disable flight.
+
+#### Reroll (Gossip Menu)
+`.reroll` opens a paginated gossip menu listing eligible bag items. Select an item → pay 1000g →
+enchants are rolled and previewed. Choose **Take** (apply enchants, set 777 durability) or
+**Keep** (discard new roll, keep existing enchants). Gold deducted on roll, NOT on accept —
+prevents reopen abuse. First enchant guaranteed (100%), rest use normal cascade.
+
+#### Enchant Viewer (Gossip Menu)
+`.enchants` opens a paginated gossip menu showing all items with lottery enchants (equipped + bags).
+Click an item to drill down into its enchant details. Color-coded by tier:
+- **Item name color** (by enchant count): Grey(1), White(2), Green(3), Blue(4), Purple(5), Orange(6), Red(7)
+- **Stat value color** (by percentile): Grey → White → Green → Blue → Purple → Orange → Red (~14.29% each)
+
+Enchants stored in custom DB table `character_item_lottery_enchants` — completely decoupled from
+item enchantment slots. Stacks additively with profession enchants (no conflict). Server applies
+stats on equip, character sheet shows correct totals. Items with lottery enchants get 777/777
+durability as a visual marker.
 
 ## SQL Setup
 
@@ -102,7 +160,10 @@ commands.lua) that were ported to C++. They are kept for reference only — ALE 
 
 - This module is a "dead module" — it won't break anything but won't do anything useful
 - You can safely delete the entire `modules/mod-custom-ramvaris/` folder
-- The custom spell IDs (81002, 81003, 81005, 81007, 81008, 81011, 81013) don't exist in standard DBC
+- The custom spell IDs (81005, 81007, 81011, 81013) don't exist in standard DBC
+- Spells 81002 (Water Form), 81003 (Uber Cheetah), 81008 (Levitation) are actively unlearned on login
+- Custom enchant IDs 900001–900025 (Speed) and 900101–900103 (Fly) are module-internal, not in DBC
+- Core patches: Player.h (lottery speed/fly fields), Unit.cpp (UpdateSpeed injection)
 - The custom NPC entries (290011, 299900-299903, 300000, 200002, 190011) don't exist in standard DB
 
 ## License

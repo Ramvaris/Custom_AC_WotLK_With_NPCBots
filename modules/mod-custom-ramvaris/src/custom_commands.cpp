@@ -1,14 +1,14 @@
 /*
- * Custom Player Commands — .special, .mountup, .guardianscale, .petscale
- * Config: CustomRamvaris.SpecialCommand.Enable, CustomRamvaris.MountUp.Enable,
+ * Custom Player Commands — .special, .guardianscale, .petscale
+ * Config: CustomRamvaris.SpecialCommand.Enable,
  *         CustomRamvaris.GuardianScale.Enable, CustomRamvaris.PetScale.Enable
  *
- * .special     — Opens a gossip menu to summon custom NPCs, open bank, open mailbox.
- *                NPCs spawn as temporary summons for 60 seconds.
- * .mountup     — Auto-mount based on riding skill and current zone.
- *                If already mounted: dismount and cast 81003 (custom speed buff).
- * .guardianscale — Doubles Soul Keeper guardian visual scale (caps at 5x base).
- * .petscale    — Doubles any pet visual scale (Hunter/Warlock/DK, caps at 5x base).
+ * .special        — Opens a gossip menu to summon custom NPCs, open bank, open mailbox.
+ *                   NPCs spawn as temporary summons for 60 seconds.
+ * .guardianscale  — Doubles Soul Keeper guardian visual scale (caps at 5x base).
+ * .petscale       — Doubles any pet visual scale (Hunter/Warlock/DK, caps at 5x base).
+ *
+ * (.mountup removed — lottery enchant speed/fly system replaces manual mounting.)
  */
 
 #include "ScriptMgr.h"
@@ -34,13 +34,6 @@ enum CustomCommandConstants
     SPECIAL_GOSSIP_SENDER       = 99999,    // Identifies .special gossip selections
     SPECIAL_ACTION_OPEN_BANK    = 100,
     SPECIAL_ACTION_OPEN_MAIL    = 101,
-
-    CUSTOM_SPEED_BUFF_SPELL     = 81003,    // Cast on dismount
-    COLD_WEATHER_FLYING_SPELL   = 54197,
-
-    MOUNT_SPELL_310_FLY         = 42668,    // Artisan flying mount
-    MOUNT_SPELL_150_FLY         = 42667,    // Expert flying mount
-    MOUNT_SPELL_100_GROUND      = 42683,    // Epic ground mount
 
     MAX_VISUAL_SCALE            = 5,        // Cap for .guardianscale / .petscale
 };
@@ -69,12 +62,6 @@ static bool IsSpecialEnabled()
 {
     return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
            sConfigMgr->GetOption<bool>("CustomRamvaris.SpecialCommand.Enable", false);
-}
-
-static bool IsMountUpEnabled()
-{
-    return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
-           sConfigMgr->GetOption<bool>("CustomRamvaris.MountUp.Enable", false);
 }
 
 static bool IsGuardianScaleEnabled()
@@ -124,7 +111,6 @@ public:
         static ChatCommandTable commandTable =
         {
             { "special",       HandleSpecialCommand,       SEC_PLAYER, Console::No },
-            { "mountup",       HandleMountupCommand,       SEC_PLAYER, Console::No },
             { "guardianscale", HandleGuardianScaleCommand, SEC_PLAYER, Console::No },
             { "petscale",      HandlePetScaleCommand,      SEC_PLAYER, Console::No },
         };
@@ -156,65 +142,6 @@ public:
 
         SendDynamicGossipText(player, "Select a service or an NPC to summon for 60 seconds:");
         SendGossipMenuFor(player, 0x7FFFFFFF, player->GetGUID());
-        return true;
-    }
-
-    // --- .mountup command ---
-    static bool HandleMountupCommand(ChatHandler* handler)
-    {
-        if (!IsMountUpEnabled())
-        {
-            handler->SendSysMessage("This command is not enabled on this server.");
-            return true;
-        }
-
-        Player* player = handler->GetPlayer();
-        if (!player)
-            return false;
-
-        // If already mounted, dismount and cast custom speed buff
-        if (player->IsMounted())
-        {
-            player->Dismount();
-            player->CastSpell(player, CUSTOM_SPEED_BUFF_SPELL, false);
-            return true;
-        }
-
-        uint16 ridingLevel = player->GetSkillValue(SKILL_RIDING);
-        uint32 currentMapId = player->GetMapId();
-
-        // Maps where flying is normally allowed
-        static const std::unordered_set<uint32> flyingMaps =
-        {
-            0, 1, 530, 571,       // Main continents
-            401, 443, 461,        // Misc instances
-            482, 512, 540,        // Misc instances
-        };
-
-        bool canFly = false;
-        if (flyingMaps.count(currentMapId))
-        {
-            if (currentMapId == 571) // Northrend requires Cold Weather Flying
-                canFly = player->HasSpell(COLD_WEATHER_FLYING_SPELL);
-            else
-                canFly = true;
-        }
-
-        if (canFly)
-        {
-            if (ridingLevel >= 300)
-                player->CastSpell(player, MOUNT_SPELL_310_FLY, true);
-            else if (ridingLevel >= 225)
-                player->CastSpell(player, MOUNT_SPELL_150_FLY, true);
-            else
-                player->CastSpell(player, MOUNT_SPELL_100_GROUND, true);
-        }
-        else
-        {
-            // Ground mount only
-            player->CastSpell(player, MOUNT_SPELL_100_GROUND, true);
-        }
-
         return true;
     }
 

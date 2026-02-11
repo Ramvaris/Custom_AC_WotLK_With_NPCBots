@@ -92,13 +92,14 @@ void SoulKeeper::LoadSouls(Player* player)
 {
     if (!player) return;
 
-    uint32 guid = player->GetGUID().GetCounter();
-    _caughtSouls[guid].clear();
+    uint32 accountId = player->GetSession()->GetAccountId();
+    _caughtSouls[accountId].clear();
 
     // ORDER BY caught_at ensures consistent soul ordering across server restarts
+    // Account-based: all characters on the same account share one soul collection
     QueryResult result = CharacterDatabase.Query(
-        "SELECT creature_entry, custom_name, display_id, scale_factor FROM character_soul_keeper WHERE owner_guid = {} ORDER BY caught_at ASC",
-        guid);
+        "SELECT creature_entry, custom_name, display_id, scale_factor FROM character_soul_keeper WHERE account_id = {} ORDER BY caught_at ASC",
+        accountId);
 
     if (!result)
         return;
@@ -111,7 +112,7 @@ void SoulKeeper::LoadSouls(Player* player)
         soul.customName    = fields[1].Get<std::string>();
         soul.displayId     = fields[2].Get<uint32>();
         soul.scaleFactor   = fields[3].Get<float>();
-        _caughtSouls[guid].push_back(soul);
+        _caughtSouls[accountId].push_back(soul);
     } while (result->NextRow());
 }
 
@@ -123,9 +124,9 @@ void SoulKeeper::SaveSoul(Player* player, SoulData const& soul)
     CharacterDatabase.EscapeString(safeName);
 
     CharacterDatabase.Execute(
-        "INSERT INTO character_soul_keeper (owner_guid, creature_entry, custom_name, display_id, scale_factor, caught_at) "
+        "INSERT INTO character_soul_keeper (account_id, creature_entry, custom_name, display_id, scale_factor, caught_at) "
         "VALUES ({}, {}, '{}', {}, {}, {})",
-        player->GetGUID().GetCounter(),
+        player->GetSession()->GetAccountId(),
         soul.creatureEntry,
         safeName,
         soul.displayId,
@@ -137,7 +138,7 @@ void SoulKeeper::SaveSoul(Player* player, SoulData const& soul)
 bool SoulKeeper::HasSoul(Player* player, uint32 entry)
 {
     if (!player) return false;
-    auto& souls = _caughtSouls[player->GetGUID().GetCounter()];
+    auto& souls = _caughtSouls[player->GetSession()->GetAccountId()];
     for (const auto& soul : souls)
     {
         if (soul.creatureEntry == entry) return true;
@@ -258,10 +259,11 @@ void SoulKeeper::ShowSoulList(Player* player, uint32 page)
 {
     if (!player) return;
 
+    uint32 accountId  = player->GetSession()->GetAccountId();
     uint32 playerGuid = player->GetGUID().GetCounter();
 
-    // Ensure souls are loaded
-    auto& souls = _caughtSouls[playerGuid];
+    // Ensure souls are loaded (account-based collection)
+    auto& souls = _caughtSouls[accountId];
     if (souls.empty())
     {
         LoadSouls(player);
@@ -420,6 +422,7 @@ bool SoulKeeper::HandleGossipSelect(Player* player, uint32 /*sender*/, uint32 ac
 {
     if (!player) return false;
 
+    uint32 accountId  = player->GetSession()->GetAccountId();
     uint32 playerGuid = player->GetGUID().GetCounter();
     CloseGossipMenuFor(player);
 
@@ -453,7 +456,7 @@ bool SoulKeeper::HandleGossipSelect(Player* player, uint32 /*sender*/, uint32 ac
 
         case SOUL_ACTION_LAST_PAGE:
         {
-            auto& souls = _caughtSouls[playerGuid];
+            auto& souls = _caughtSouls[accountId];
             if (souls.empty())
             {
                 ShowSoulList(player, 0);
@@ -489,7 +492,7 @@ bool SoulKeeper::HandleGossipSelect(Player* player, uint32 /*sender*/, uint32 ac
             if (action >= SOUL_ACTION_SUMMON_BASE)
             {
                 uint32 index = action - SOUL_ACTION_SUMMON_BASE;
-                auto& souls = _caughtSouls[playerGuid];
+                auto& souls = _caughtSouls[accountId];
                 if (index < souls.size())
                 {
                     SummonGuardian(player, souls[index].creatureEntry);
@@ -515,8 +518,8 @@ void SoulKeeper::AddGuardian(Player* player, Unit* victim)
     Creature* creature = victim->ToCreature();
 
     // Ensure souls are loaded for duplicate checks
-    uint32 playerGuid = player->GetGUID().GetCounter();
-    if (_caughtSouls[playerGuid].empty())
+    uint32 accountId = player->GetSession()->GetAccountId();
+    if (_caughtSouls[accountId].empty())
     {
         LoadSouls(player);
     }
@@ -552,8 +555,8 @@ void SoulKeeper::AddGuardian(Player* player, Unit* victim)
     if (newSoul.scaleFactor <= 0.0f)
         newSoul.scaleFactor = 1.0f;
 
-    // Add to Memory
-    _caughtSouls[player->GetGUID().GetCounter()].push_back(newSoul);
+    // Add to Memory (account-based collection)
+    _caughtSouls[player->GetSession()->GetAccountId()].push_back(newSoul);
 
     // Persist to DB
     SaveSoul(player, newSoul);
@@ -599,8 +602,8 @@ void SoulKeeper::SummonGuardian(Player* player, uint32 entry)
         }
     }
 
-    // Find the Soul
-    auto& souls = _caughtSouls[player->GetGUID().GetCounter()];
+    // Find the Soul (account-based collection)
+    auto& souls = _caughtSouls[player->GetSession()->GetAccountId()];
     SoulData* targetSoul = nullptr;
     for (auto& soul : souls)
     {
@@ -1432,8 +1435,9 @@ void SoulKeeper::RenameGuardian(Player* player, std::string const& newName)
     if (!player) return;
 
     uint32 guid = player->GetGUID().GetCounter();
+    uint32 accountId = player->GetSession()->GetAccountId();
     
-    // Check if player has an active guardian
+    // Check if player has an active guardian (character-keyed)
     auto it = _activeGuardians.find(guid);
     if (it == _activeGuardians.end())
     {
@@ -1454,8 +1458,8 @@ void SoulKeeper::RenameGuardian(Player* player, std::string const& newName)
 
     uint32 creatureEntry = guardian->GetEntry();
 
-    // Find the soul in memory and update it
-    auto& souls = _caughtSouls[guid];
+    // Find the soul in memory and update it (account-based collection)
+    auto& souls = _caughtSouls[accountId];
     for (auto& soul : souls)
     {
         if (soul.creatureEntry == creatureEntry)
@@ -1472,10 +1476,10 @@ void SoulKeeper::RenameGuardian(Player* player, std::string const& newName)
             std::string safeName = finalName;
             CharacterDatabase.EscapeString(safeName);
 
-            // Update database
+            // Update database (account-based)
             CharacterDatabase.Execute(
-                "UPDATE character_soul_keeper SET custom_name = '{}' WHERE owner_guid = {} AND creature_entry = {}",
-                safeName, guid, creatureEntry);
+                "UPDATE character_soul_keeper SET custom_name = '{}' WHERE account_id = {} AND creature_entry = {}",
+                safeName, accountId, creatureEntry);
 
             // Apply name to currently summoned guardian IMMEDIATELY (not just on resummon)
             guardian->SetName(finalName);
@@ -1557,8 +1561,9 @@ public:
             return;
 
         uint32 guid = player->GetGUID().GetCounter();
+        uint32 accountId = player->GetSession()->GetAccountId();
 
-        // Save cooldowns + clean up guardian if still present
+        // Save cooldowns + clean up guardian if still present (character-keyed)
         auto it = sSoulKeeper->_activeGuardians.find(guid);
         if (it != sSoulKeeper->_activeGuardians.end())
         {
@@ -1576,7 +1581,8 @@ public:
         }
 
         // Clear per-player caches to prevent memory growth
-        sSoulKeeper->_caughtSouls.erase(guid);
+        // Soul collection is account-keyed, UI state is character-keyed
+        sSoulKeeper->_caughtSouls.erase(accountId);
         sSoulKeeper->_currentGossipPage.erase(guid);
         sSoulKeeper->_currentSortMode.erase(guid);
     }
@@ -1650,13 +1656,13 @@ public:
             return true;
         }
 
-        // Load souls if not loaded
-        if (sSoulKeeper->_caughtSouls[player->GetGUID().GetCounter()].empty())
+        // Load souls if not loaded (account-based)
+        if (sSoulKeeper->_caughtSouls[player->GetSession()->GetAccountId()].empty())
         {
             sSoulKeeper->LoadSouls(player);
         }
 
-        auto& souls = sSoulKeeper->_caughtSouls[player->GetGUID().GetCounter()];
+        auto& souls = sSoulKeeper->_caughtSouls[player->GetSession()->GetAccountId()];
         uint32 idx = index.value();
 
         if (idx > souls.size())
@@ -1723,13 +1729,13 @@ public:
             return true;
         }
 
-        // Load souls if not loaded
-        if (sSoulKeeper->_caughtSouls[player->GetGUID().GetCounter()].empty())
+        // Load souls if not loaded (account-based)
+        if (sSoulKeeper->_caughtSouls[player->GetSession()->GetAccountId()].empty())
         {
             sSoulKeeper->LoadSouls(player);
         }
 
-        auto& souls = sSoulKeeper->_caughtSouls[player->GetGUID().GetCounter()];
+        auto& souls = sSoulKeeper->_caughtSouls[player->GetSession()->GetAccountId()];
         if (souls.empty())
         {
             handler->SendSysMessage("|cff888888No souls captured yet.|r");
@@ -1872,18 +1878,21 @@ public:
         ObjectGuid ownerGuid = creature->GetOwnerGUID();
         if (!ownerGuid.IsPlayer()) 
             return;
+
+        // Check BEFORE global map lookup — IsSoulKeeperGuardian() is a single field read
+        // (GetUInt32Value), far cheaper than ObjectAccessor::GetPlayer() which locks a global map.
+        if (!creature->IsSoulKeeperGuardian())
+            return;
         
         // === BOT FILTERING ===
         // CRITICAL PERFORMANCE FIX: Skip guardians owned by NPC bots!
         // With 100+ bots each having guardians, OnUnitUpdate fires hundreds of times per second.
         // Each = 3× spell iteration × 8 slots × 20 aura checks = ~48,000 aura iterations/second!
         // Only process guardians of REAL players to prevent server death spiral.
-        Player* ownerPlayer = ObjectAccessor::GetPlayer(*creature, ownerGuid);
-        if (ownerPlayer && ownerPlayer->IsNPCBot())
+        Player* owner = ObjectAccessor::GetPlayer(*creature, ownerGuid);
+        if (!owner)
             return;
-
-        // Extra safety: ensure this is one of our Soul Keeper guardians
-        if (!creature->IsSoulKeeperGuardian())
+        if (owner->IsNPCBot())
             return;
         
         ObjectGuid guardianGuid = creature->GetGUID();
@@ -1910,10 +1919,6 @@ public:
         // This ensures we play nice with SmartAI, ScriptedAI, CombatAI, etc.
         if (creature->HasUnitState(UNIT_STATE_CASTING | UNIT_STATE_STUNNED | 
                                    UNIT_STATE_CONFUSED | UNIT_STATE_FLEEING))
-            return;
-
-        Player* owner = ObjectAccessor::GetPlayer(*creature, ownerGuid);
-        if (!owner)
             return;
 
         CreatureTemplate const* cInfo = creature->GetCreatureTemplate();
@@ -2790,6 +2795,11 @@ public:
     void OnCreatureRemoveWorld(Creature* creature) override
     {
         if (!creature)
+            return;
+
+        // Skip non-player-owned creatures (~95% of all creatures: wild mobs, NPCs, etc.)
+        // Avoids 4 unnecessary hash lookups per creature despawn
+        if (!creature->GetOwnerGUID().IsPlayer())
             return;
 
         sSoulKeeper->_guardianScaling.erase(creature->GetGUID());

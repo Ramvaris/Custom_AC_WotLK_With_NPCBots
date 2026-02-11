@@ -652,6 +652,12 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_INS_NPCBOT_LOG, "INSERT INTO characters_npcbot_logs (entry, owner, mapid, inmap, inworld, type, param1, param2, param3, param4, param5) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
     PrepareStatement(CHAR_SEL_NPCBOT_ACC_BOT_COUNT, "SELECT COUNT(entry) FROM characters_npcbot WHERE owner IN (SELECT guid FROM characters WHERE account = ?);", CONNECTION_SYNCH);
     // End NPCBots
+
+    // Lottery Enchants (mod-custom-ramvaris)
+    PrepareStatement(CHAR_INS_ITEM_LOTTERY_ENCHANT, "INSERT INTO character_item_lottery_enchants (item_guid, slot_index, enchant_id) VALUES (?, ?, ?)", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_SEL_ITEM_LOTTERY_ENCHANTS_BY_OWNER, "SELECT le.item_guid, le.slot_index, le.enchant_id FROM character_item_lottery_enchants le INNER JOIN item_instance ii ON le.item_guid = ii.guid WHERE ii.owner_guid = ? ORDER BY le.item_guid, le.slot_index", CONNECTION_SYNCH);
+    PrepareStatement(CHAR_DEL_ITEM_LOTTERY_ENCHANTS, "DELETE FROM character_item_lottery_enchants WHERE item_guid = ?", CONNECTION_ASYNC);
+    // End Lottery Enchants
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

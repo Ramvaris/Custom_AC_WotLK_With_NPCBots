@@ -20,13 +20,161 @@
 CustomRamvaris.Enable = 1
 
 ###################################################################################################
-# FEATURE TOGGLES
+#                                                                                                 #
+#  SECTION 1: FEATURES THAT WORK WITHOUT CUSTOM DBC / MPQ FILES                                  #
+#  These can be used by ANYONE on a stock AzerothCore client (3.3.5a).                            #
+#  No custom spells, creatures, or client data needed.                                            #
+#                                                                                                 #
+###################################################################################################
+
 #
-# Each feature can be independently enabled/disabled.
-# Global toggle must be ON for any feature to work.
-# Features marked [NO DB] work without custom database entries.
-# Features marked [CUSTOM DB] require custom creature_template / DBC data.
+# CustomRamvaris.LotteryEnchants.Enable
+#     Diablo-style lottery enchantments on ALL acquired gear (loot, craft, quest,
+#     group roll, vendor purchase, mail). Uses PLAYERHOOK_ON_STORE_NEW_ITEM —
+#     the universal catch-all from Player::StoreNewItem.
+#     Scans SpellItemEnchantment DBC at startup for pure stat + resistance enchants.
+#     NO class filtering — any stat/resist rolls on any class. Self-balancing:
+#     a warrior rolling INT+SPI+FIRE_RES is a crap roll. Dilution IS the balance.
+#     Pool includes primary stats, combat ratings, spell power, all secondaries,
+#     AND all elemental resistances (Holy/Fire/Nature/Frost/Shadow/Arcane).
+#     Pool EXCLUDES: Dodge, Parry, Defense (overcapping with multiple items).
+#     Up to 7 enchants per item via cascading 70/60/50/50/50/40/40% chances.
+#     Stats stored in custom DB table — completely decoupled from item slots.
+#     Level-scaled: stats grow linearly from 1.25% (level 1) to 100% (level 80).
+#     Stats update automatically on level-up (delta-based recalculation).
+#     SPEED: Regular dice pool entry. +1-25% per roll, stacks to +100% (200% base),
+#            affects run+swim, multiplicative with auras. Core patch in UpdateSpeed.
+#     FLY: 1% leftover chance. Sub-roll 75/20/5% for Stage 1/2/3 (100/200/300%).
+#          Only highest stage counts. Flying everywhere, BG flag drops if airborne.
+#          .flylock command to voluntarily disable flight.
+#     Commands: .enchants (paginated gossip viewer), .reroll (gossip-based reroll
+#              with Take/Keep flow, gold on roll), .flylock (toggle flight lock).
+#     7 color tiers (~14.29% each): grey→white→green→blue→purple→orange→RED.
+#     Item name color = enchant COUNT (1=grey..7=red), stat color = VALUE percentile.
+#     Items with lottery enchants get 777/777 durability as visual marker.
+#     Default: 0 (OFF)
 #
+
+CustomRamvaris.LotteryEnchants.Enable = 0
+
+#
+# CustomRamvaris.LotteryEnchants.MaxSlots
+#     Maximum number of lottery enchant slots per item (1-7).
+#     Each slot has decreasing roll chance (70% → 60% → 50% → 50% → 50% → 40% → 40%).
+#     Item name color in `.enchants` reflects count: 1=grey, 2=white, 3=green,
+#     4=blue, 5=purple, 6=orange, 7=red. Stat value color = percentile of global max.
+#     Items with lottery enchants get 777/777 durability as visual marker.
+#     Default: 7
+#
+
+CustomRamvaris.LotteryEnchants.MaxSlots = 7
+
+#
+# CustomRamvaris.SmartWanderingBots.Enable
+#     Zone-aware dynamic bot spawning — the performance-friendly alternative to
+#     global wandering bots. Spawns MinAmount–MaxAmount bots ONLY in the player's
+#     current zone and despawns them on zone change.
+#     REQUIRES NpcBot.WanderingBots.Continents.Count = 0 in npcbots.conf!
+#     Without this, the normal global system runs alongside smart bots.
+#     Core patch: extends BotDataMgr with zone-specific spawn/despawn API.
+#     [NO DB] — uses existing WanderNode system, no custom data needed!
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.SmartWanderingBots.Enable = 0
+
+#
+# CustomRamvaris.SmartWanderingBots.MinAmount
+#     Minimum number of bots to spawn when entering a new zone.
+#     Actual count is randomized between MinAmount and MaxAmount.
+#     Some zones may have fewer WanderNodes than requested — spawns what fits.
+#     Default: 5
+#
+
+CustomRamvaris.SmartWanderingBots.MinAmount = 0
+
+#
+# CustomRamvaris.SmartWanderingBots.MaxAmount
+#     Maximum number of bots to spawn when entering a new zone.
+#     Keep this low for single-player servers — performance is king.
+#     Default: 15
+#
+
+CustomRamvaris.SmartWanderingBots.MaxAmount = 2
+
+#
+# CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown
+#     Cooldown in seconds between zone-change spawns.
+#     Prevents rapid spawn/despawn flapping when riding along zone borders.
+#     Set higher (60+) for extra stability, lower (10) for faster response.
+#     Default: 30
+#
+
+CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown = 30
+
+#
+# CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable
+#     When ON, smart wandering bots try to maintain an even Alliance/Horde ratio.
+#     If the random spawn pool is 3 Alliance and 1 Horde, the system adds extra
+#     Horde bots to match. Neutral/hostile bots don't count toward the ratio.
+#     [NO DB] — works with vanilla client
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable = 1
+
+#
+# CustomRamvaris.DarkAzeroth.Enable
+#     Dark Azeroth — biome-aware bad weather across all zones.
+#     Hot zones get thunderstorms, cold zones get snow, others get rain.
+#     5% sunny, 25% light, 30% medium, 40% heavy weather.
+#     Triggers on login and zone change.
+#     [NO DB] — works with vanilla client, no custom data needed!
+#     Hint: If WEATHER in Stormwind and other cities is wanted, you need to
+#     update the WEATHER entry for those zones in the SQL database.
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.DarkAzeroth.Enable = 0
+
+#
+# CustomRamvaris.GuardianScale.Enable
+#     .guardianscale command — doubles Soul Keeper guardian visual scale (caps at 5x).
+#     Only affects Soul Keeper guardians (IsSoulKeeperGuardian check).
+#     [NO DB] — works with vanilla client
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.GuardianScale.Enable = 0
+
+#
+# CustomRamvaris.PetScale.Enable
+#     .petscale command — doubles any pet visual scale (Hunter/Warlock/DK).
+#     Only affects proper pets (IsPet check), not guardians or totems.
+#     [NO DB] — works with vanilla client
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.PetScale.Enable = 0
+
+#
+# CustomRamvaris.PetStayOnMount.Enable
+#     Keeps pets summoned when the player mounts up instead of dismissing them.
+#     Pets will run alongside the mounted player. Only affects mounting — other
+#     dismiss triggers (vehicle, teleport, logout) are unchanged.
+#     Core patch to Unit::Mount() — reverts to vanilla behavior when OFF.
+#     [NO DB] — works with vanilla client
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.PetStayOnMount.Enable = 0
+
+###################################################################################################
+#                                                                                                 #
+#  SECTION 2: FEATURES REQUIRING CUSTOM DBC / MPQ / CREATURE DATA                                #
+#  These need custom spells, creature_template entries, or client-side data.                      #
+#  Won't do anything useful without the matching server/client data in place.                     #
+#                                                                                                 #
 ###################################################################################################
 
 #
@@ -64,27 +212,16 @@ CustomRamvaris.LillyGossip.Enable = 0
 #
 # CustomRamvaris.LoginSpellGrants.Enable
 #     Auto-learn utility spells and profession specializations on login.
-#     Grants: custom spells (81002, 81003, 81005, 81007, 81008, 81013),
+#     Grants: custom spells (81005, 81007, 81013),
 #             Diplomacy for all, Pick Pocket for all, Draenei racial fixes,
 #             BE Warrior Arcane Torrent, profession dual/triple spec unlock.
+#     UNLEARNS on login: 81002 (Water Form), 81003 (Uber Cheetah), 81008 (Levitation)
+#     — replaced by lottery enchant speed/fly system.
 #     [CUSTOM DB] — needs custom DBC spell entries
 #     Default: 0 (OFF)
 #
 
 CustomRamvaris.LoginSpellGrants.Enable = 0
-
-#
-# CustomRamvaris.DarkAzeroth.Enable
-#     Dark Azeroth — biome-aware bad weather across all zones.
-#     Hot zones get thunderstorms, cold zones get snow, others get rain.
-#     5% sunny, 25% light, 30% medium, 40% heavy weather.
-#     Triggers on login and zone change.
-#     [NO DB] — works with vanilla client, no custom data needed!
-#     Hint: If WEATHER in Stormwind and other cities is wanted, you need to update the WEATHER entry for those zones in the SQL database
-#     Default: 0 (OFF)
-#
-
-CustomRamvaris.DarkAzeroth.Enable = 0
 
 #
 # CustomRamvaris.SpecialCommand.Enable
@@ -95,105 +232,3 @@ CustomRamvaris.DarkAzeroth.Enable = 0
 #
 
 CustomRamvaris.SpecialCommand.Enable = 0
-
-#
-# CustomRamvaris.MountUp.Enable
-#     .mountup command — auto-mount based on riding skill and current zone.
-#     If already mounted: dismount and cast speed buff (81003).
-#     Supports flying (Outland, Northrend with Cold Weather Flying, etc.)
-#     [NO DB] — works with vanilla client
-#     Default: 0 (OFF)
-#
-
-CustomRamvaris.MountUp.Enable = 0
-
-#
-# CustomRamvaris.GuardianScale.Enable
-#     .guardianscale command — doubles Soul Keeper guardian visual scale (caps at 5x).
-#     Only affects Soul Keeper guardians (IsSoulKeeperGuardian check).
-#     [NO DB] — works with vanilla client
-#     Default: 0 (OFF)
-#
-
-CustomRamvaris.GuardianScale.Enable = 0
-
-#
-# CustomRamvaris.PetScale.Enable
-#     .petscale command — doubles any pet visual scale (Hunter/Warlock/DK).
-#     Only affects proper pets (IsPet check), not guardians or totems.
-#     [NO DB] — works with vanilla client
-#     Default: 0 (OFF)
-#
-
-CustomRamvaris.PetScale.Enable = 0
-
-#
-# CustomRamvaris.PetStayOnMount.Enable
-#     Keeps pets summoned when the player mounts up instead of dismissing them.
-#     Pets will run alongside the mounted player. Only affects mounting — other
-#     dismiss triggers (vehicle, teleport, logout) are unchanged.
-#     Core patch to Unit::Mount() — reverts to vanilla behavior when OFF.
-#     [NO DB] — works with vanilla client
-#     Default: 0 (OFF)
-#
-
-CustomRamvaris.PetStayOnMount.Enable = 0
-
-#
-# CustomRamvaris.RandomEnchants.Enable
-#     Diablo-style random enchantments on looted/crafted/quest/roll gear.
-#     Scans SpellItemEnchantment DBC at startup for pure stat enchants,
-#     builds class-specific pools (primary stats per class + all secondaries).
-#     Up to 3 enchants per item via cascading 70%/65%/60% chance, quality-tiered.
-#     Stat design: Hybrid classes get ALL primary stats, Spirit only for Priest,
-#     no Attack Power / Ranged AP, compressed spellpower, all WotLK secondaries.
-#     Uses PROP_ENCHANTMENT_SLOT_0/1/2 (7/8/9) — never conflicts with player enchants.
-#     Merged from mod-random-enchants with complete rewrite and class-specific filtering.
-#     [NO DB] — pure C++ from DBC data, no SQL tables needed!
-#     Default: 0 (OFF)
-#
-
-CustomRamvaris.RandomEnchants.Enable = 0
-
-#
-# CustomRamvaris.SmartWanderingBots.Enable
-#     Zone-aware dynamic bot spawning — the performance-friendly alternative to
-#     global wandering bots. Spawns MinAmount–MaxAmount bots ONLY in the player's
-#     current zone and despawns them on zone change.
-#     REQUIRES NpcBot.WanderingBots.Continents.Count = 0 in npcbots.conf!
-#     Without this, the normal global system runs alongside smart bots.
-#     Core patch: extends BotDataMgr with zone-specific spawn/despawn API.
-#     [NO DB] — uses existing WanderNode system, no custom data needed!
-#     Default: 0 (OFF)
-#
-
-CustomRamvaris.SmartWanderingBots.Enable = 0
-
-#
-# CustomRamvaris.SmartWanderingBots.MinAmount
-#     Minimum number of bots to spawn when entering a new zone.
-#     Actual count is randomized between MinAmount and MaxAmount.
-#     Some zones may have fewer WanderNodes than requested — spawns what fits.
-#     Default: 5
-#
-
-CustomRamvaris.SmartWanderingBots.MinAmount = 5
-
-#
-# CustomRamvaris.SmartWanderingBots.MaxAmount
-#     Maximum number of bots to spawn when entering a new zone.
-#     Keep this low for single-player servers — performance is king.
-#     Default: 15
-#
-
-CustomRamvaris.SmartWanderingBots.MaxAmount = 15
-
-#
-# CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown
-#     Cooldown in seconds between zone-change spawns.
-#     Prevents rapid spawn/despawn flapping when riding along zone borders.
-#     Set higher (60+) for extra stability, lower (10) for faster response.
-#     Default: 30
-#
-
-CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown = 30

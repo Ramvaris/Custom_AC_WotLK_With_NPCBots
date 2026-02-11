@@ -558,6 +558,12 @@ enum CharacterDatabaseStatements : uint32
     CHAR_SEL_NPCBOT_ACC_BOT_COUNT,
     // End NPCBot
 
+    // Lottery Enchants (mod-custom-ramvaris)
+    CHAR_INS_ITEM_LOTTERY_ENCHANT,
+    CHAR_SEL_ITEM_LOTTERY_ENCHANTS_BY_OWNER,
+    CHAR_DEL_ITEM_LOTTERY_ENCHANTS,
+    // End Lottery Enchants
+
     MAX_CHARACTERDATABASE_STATEMENTS
 };
 

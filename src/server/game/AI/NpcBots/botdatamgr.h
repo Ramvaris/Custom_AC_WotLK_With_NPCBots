@@ -239,7 +239,7 @@ class BotDataMgr
         static void GenerateWanderingBots();
 
         /// Smart Wandering: spawn bots at WanderNodes in a specific zone. Returns count spawned.
-        static uint32 SpawnWanderingBotsInZone(uint32 zoneId, uint32 count, std::vector<uint32>* outEntries = nullptr);
+        static uint32 SpawnWanderingBotsInZone(uint32 zoneId, uint32 count, std::vector<uint32>* outEntries = nullptr, int32 team = -1);
         /// Smart Wandering: get total unspawned wandering bot count from the spare pool.
         static uint32 GetAvailableWanderingBotCount();
         static bool GenerateBattlegroundBots(Player const* groupLeader, Group const* group, BattlegroundQueue* queue, PvPDifficultyEntry const* bracketEntry, GroupQueueInfo const* gqinfo);

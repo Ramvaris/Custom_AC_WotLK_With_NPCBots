@@ -89,18 +89,21 @@ private:
 
     // ========================================================================
     // Custom spell grants (requires custom DBC entries)
+    // Unlearns 81002 (Water Form), 81003 (Uber Cheetah), 81008 (Levitation)
+    // — replaced by lottery enchant Movespeed/Flying system.
     // ========================================================================
     static void GrantCustomSpells(Player* player, uint8 playerClass)
     {
-        LearnIfMissing(player, 81002); // Custom utility spell
-        LearnIfMissing(player, 81003); // Custom utility spell
+        // Unlearn spells replaced by lottery enchant speed/fly system
+        RemoveIfKnown(player, 81002); // Water Form — swim speed now from enchants
+        RemoveIfKnown(player, 81003); // Aspect of Uber Cheetah — run speed now from enchants
+        RemoveIfKnown(player, 81008); // Masterful Levitation — flying now from enchants
 
         // 81005 — not for Rogues
         if (playerClass != CLASS_ROGUE)
             LearnIfMissing(player, 81005);
 
         LearnIfMissing(player, 81007); // Custom utility spell
-        LearnIfMissing(player, 81008); // Custom utility spell
 
         // Diplomacy (Human racial reputation bonus) — for everyone
         LearnIfMissing(player, 20599);

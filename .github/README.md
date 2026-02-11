@@ -29,10 +29,11 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 -> All Ore- and Flower-Nodes respawn in 120 seconds instead of 24 hours to 7 days.
 - **Working Language Comprehension** - NPCs speaking Orcish/Thalassian/etc. are actually readable if your character knows the language (via skill or aura). Non-speakers get the original scrambled text with proper language tags. No Client-Mod neccesary.
 - **Pet Stay on Mount** - Pets stay summoned when mounting up instead of being dismissed. They run alongside the player. Config-gated (`CustomRamvaris.PetStayOnMount.Enable`).
+- **Warrior Stance Freedom** - All 228 warrior spells and talents have been stance-neutralized in Spell.dbc. Warriors can use ANY ability in ANY stance (Battle/Defensive/Berserker). Non-warrior forms (Druid Bear/Cat, Rogue Stealth) are untouched. Applied via `tools/warrior_stance_neutralizer.py`. Client-side DBC must also be patched (user responsibility).
 - **Soul Keeper Guardian Travel Safety** - Guardians are automatically despawned on cross-map teleport and taxi flights, preventing orphaned guardians on old maps. Cooldowns are preserved for re-summoning.
 - Some AC modules from other people integrated and kept up-to-date
 
-Notice: I also have some LUA-Script / MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' if you can pay massive amounts of gold, QoL Spells for any race/class on login (Aspect of the Uber Cheetah / 40% / No Dazzle, Levitation over water and mounted that does not dispel, Detect Invisibility (To see all the easter eggs) with endless duration, Stealth without Movement Speed Reduction, the Druid waterform), Human Reputation Bonus for everyone on Login, 70% of the time bad weather (Weather Effects on all parts of the world, like in Stormwind, etc., Storms, Snow, Desert Wind, etc.), an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
+Notice: I also have some MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' if you can pay massive amounts of gold, QoL Spells for any race/class on login (Aspect of the Uber Cheetah / 40% / No Dazzle, Levitation over water and mounted that does not dispel, Detect Invisibility (To see all the easter eggs) with endless duration, Stealth without Movement Speed Reduction, the Druid waterform), Human Reputation Bonus for everyone on Login, an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
 
 ### Included Modules
 
@@ -56,14 +57,15 @@ These modules are from the amazing AzerothCore community. Full credit to the ori
 
 | Module | Description |
 |--------|-------------|
-| **mod-soul-keeper** | Capture creature souls and summon them as intelligent guardians - Collect 'em all! |
+| **mod-soul-keeper** | Capture creature souls and summon them as intelligent guardians — account-based collection shared across all characters! |
 | **mod-solo-sustain** | Damage-based life/mana leech for solo play - Recount/MSBT compatible! |
-| **mod-custom-ramvaris** | Private server customizations — custom spells, NPC gossip, dark weather, utility commands |
+| **mod-custom-ramvaris** | Private server customizations — custom spells, NPC gossip, dark weather, utility commands, random enchants |
 
 #### Soul Keeper Features
 **Soul Capture & Summoning:**
 - Capture any dead creature's soul (including elites, bosses, rares)
 - Summon captured souls as combat guardians that fight alongside you
+- **Account-based collection** — all characters on the same account share one soul library
 - Guardians scale with player level and stats
 - Custom naming support - rename your guardians!
 
@@ -123,7 +125,7 @@ All guardian output scales with YOUR gear and level - no overpowered captured bo
 
 #### ⚡ Performance Optimizations
 
-**Latest:** Fixed critical performance regression with 100+ NPCBots active — custom module hooks now filter bot entities early, preserving full functionality for real players while eliminating unnecessary processing overhead.
+**Latest:** Fixed critical performance regression with 100+ NPCBots active — custom module hooks now filter bot entities early, preserving full functionality for real players while eliminating unnecessary processing overhead. Soul Keeper's `OnUnitUpdate` reordered for cheap field-read checks before expensive global map lookups. `OnCreatureRemoveWorld` now skips non-player-owned creatures (~95% of despawns). Random enchants `appliedCount` double-count bug fixed.
 
 #### Solo Sustain Features
 - **Passive leech** - No need to cast spells, just deal damage!
@@ -147,8 +149,8 @@ All of Ramvaris' private server Lua customizations ported to C++ for performance
 - **`.guardianscale`** — Double Soul Keeper guardian visual scale each use (caps at 5x)
 - **`.petscale`** — Double any pet visual scale each use (Hunter/Warlock/DK, caps at 5x)
 - **Pet Stay on Mount** — Core patch: pets stay summoned when mounting up instead of being dismissed
-- **Random Enchants** — Diablo-style class-specific random enchants on looted/crafted/quest gear. Pure C++ from DBC data — no SQL tables. Scans SpellItemEnchantment DBC at startup, builds class-appropriate stat pools. Hybrid classes get ALL primary stats, Spirit only for Priest, no AP/RAP, compressed spellpower, all WotLK secondaries. Up to 3 enchants per item (70%/65%/60% cascading chance). Uses PROP_ENCHANTMENT_SLOT_0/1/2 — never conflicts with player enchants. Merged from mod-random-enchants with complete rewrite.
-- **Smart Wandering Bots** — Zone-aware dynamic bot spawning instead of global. Spawns MinAmount–MaxAmount bots ONLY in the player's current zone, despawns on zone change. Core patch extends BotDataMgr with zone-specific spawn/despawn API. 30s cooldown prevents zone-border flapping. Per-player tracking for multi-player support. The performance fix for servers with NPCBots.
+- **Random Enchants** — Diablo-style class-specific random enchants on looted/crafted/quest gear. Pure C++ from DBC data — no SQL tables. Scans SpellItemEnchantment DBC at startup, builds class-appropriate stat pools. Hybrid classes get ALL primary stats, Spirit only for Priest, no AP/RAP, compressed spellpower, all WotLK secondaries. Up to 3 enchants per item (70%/65%/60% cascading chance). Items with existing random properties ("of the Bear") are EXTENDED with bonus enchants in unused PROP slots, not skipped. Uses PROP_ENCHANTMENT_SLOT_0/1/2 — never conflicts with player enchants. Merged from mod-random-enchants with complete rewrite.
+- **Smart Wandering Bots** — Zone-aware dynamic bot spawning instead of global. Spawns MinAmount–MaxAmount bots ONLY in the player's current zone, despawns on zone change. Optional faction balancing to even out Alliance/Horde ratio. Core patch extends BotDataMgr with zone-specific spawn/despawn API. 30s cooldown prevents zone-border flapping. Per-player tracking for multi-player support. The performance fix for servers with NPCBots.
 
 **Config:**
 ```ini
@@ -161,6 +163,7 @@ CustomRamvaris.SmartWanderingBots.Enable = 0 # Zone-aware bot spawning (set NpcB
 CustomRamvaris.SmartWanderingBots.MinAmount = 5
 CustomRamvaris.SmartWanderingBots.MaxAmount = 15
 CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown = 30
+CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable = 0  # Even out Alliance/Horde ratio
 ```
 
 ### 🌿 Database Tweaks

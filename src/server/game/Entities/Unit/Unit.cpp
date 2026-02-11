@@ -15650,6 +15650,28 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced)
             speed = min_speed;
     }
 
+    // =========================================================================
+    // Lottery Enchant Speed/Fly — mod-custom-ramvaris
+    // Applies bonus base speed (MOVE_RUN, MOVE_SWIM) and flight speed (MOVE_FLIGHT)
+    // from lottery enchants. Multiplicative with all aura-based speed modifiers.
+    // =========================================================================
+    if (IsPlayer())
+    {
+        Player* plr = ToPlayer();
+        if (mtype == MOVE_RUN || mtype == MOVE_SWIM)
+        {
+            float lotteryBonus = plr->GetLotterySpeedBonus();
+            if (lotteryBonus > 0.0f)
+                speed *= (1.0f + lotteryBonus);
+        }
+        else if (mtype == MOVE_FLIGHT && plr->GetLotteryCanFly())
+        {
+            float lotteryFlyRate = plr->GetLotteryFlySpeedRate();
+            if (lotteryFlyRate > speed)
+                speed = lotteryFlyRate;
+        }
+    }
+
     SetSpeed(mtype, speed, forced);
 }
 

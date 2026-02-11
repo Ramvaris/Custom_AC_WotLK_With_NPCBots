@@ -76,7 +76,9 @@ class SoulKeeper
 public:
     static SoulKeeper* instance();
 
-    // Data Storage: Map<PlayerGUIDLow, List<Souls>>
+    // Data Storage: Map<AccountId, List<Souls>>
+    // Account-based: all characters on the same account share one soul collection.
+    // Prevents DB bloat from duplicate collections across alts.
     std::unordered_map<uint32, std::vector<SoulData>> _caughtSouls;
     
     // Active Guardians: Map<PlayerGUIDLow, GuardianGUID>

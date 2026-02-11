@@ -2412,6 +2412,25 @@ public:
 
     uint8 m_forced_speed_changes[MAX_MOVE_TYPE];
 
+    // =========================================================================
+    // Lottery Enchant Speed/Fly — mod-custom-ramvaris
+    // Base speed bonus from lottery enchants, multiplicative with aura effects.
+    // Fly enchant grants SetCanFly ability with enchant-determined flight speed.
+    // =========================================================================
+    float m_lotterySpeedBonus{0.0f};     // 0.0–1.0 (additive base multiplier, cap +100%)
+    float m_lotteryFlySpeedRate{0.0f};   // Highest fly stage rate: 0=none, 1.0/2.0/3.0 (cap 6.0)
+    bool  m_lotteryCanFly{false};        // Has any fly enchant equipped
+    bool  m_lotteryFlyLocked{false};     // .flylock toggle
+
+    [[nodiscard]] float GetLotterySpeedBonus() const { return m_lotterySpeedBonus; }
+    void SetLotterySpeedBonus(float b) { m_lotterySpeedBonus = std::min(b, 1.0f); }
+    [[nodiscard]] float GetLotteryFlySpeedRate() const { return m_lotteryFlySpeedRate; }
+    void SetLotteryFlySpeedRate(float r) { m_lotteryFlySpeedRate = std::min(r, 6.0f); }
+    [[nodiscard]] bool GetLotteryCanFly() const { return m_lotteryCanFly && !m_lotteryFlyLocked; }
+    void SetLotteryCanFly(bool v) { m_lotteryCanFly = v; }
+    [[nodiscard]] bool IsLotteryFlyLocked() const { return m_lotteryFlyLocked; }
+    void SetLotteryFlyLocked(bool v) { m_lotteryFlyLocked = v; }
+
     [[nodiscard]] bool HasAtLoginFlag(AtLoginFlags f) const { return m_atLoginFlags & f; }
     void SetAtLoginFlag(AtLoginFlags f) { m_atLoginFlags |= f; }
     void RemoveAtLoginFlag(AtLoginFlags flags, bool persist = false);
