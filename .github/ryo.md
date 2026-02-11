@@ -24,25 +24,38 @@ COMPLETED_TASKS:
   [x] - Batch 3: Revert speed scaling, fix >7 enchant cache bug, mount-style flying 🍥
   [x] - Batch 4: Durability 777 persist, Mobility Boost (double jump + full flight) 🍥
   [x] - Batch 5: Double jump apex fix, GUID tag removal, gossip cleanup 🍥
+  [x] - Batch 6: Double jump complete rewrite — state machine + MovementHandlerScript 🍥
 
 LATEST_FEATURE:
-  DOUBLE_JUMP_FIX_AND_CLEANUP:
-  - TASK: Fix infinite-kick-to-sky double jump bug + gossip menu cleanup
+  DOUBLE_JUMP_REWRITE:
+  - TASK: Complete rewrite of double jump — proper platformer-style using core opcodes
+  - PROBLEM: Previous approach polled movement flags in OnPlayerUpdate for both trigger
+    AND landing detection. At knockback apex, flags briefly clear → false landing →
+    instant reset → infinite re-trigger → player kicked to sky endlessly.
+    Even the s_doubleJumpFellAfter "falling phase" fix was fragile.
+  - SOLUTION: State machine + MovementHandlerScript for opcode-driven detection
   - CHANGES:
-    1. DOUBLE_JUMP_FIX: Old landing detection checked `!IsFalling() && !IsFlying()`
-       which was TRUE at the knockback apex (movement flags briefly clear during upward
-       arc) → instant reset → infinite re-trigger → player launched to orbit.
-       Fix: Added s_doubleJumpFellAfter tracking map. Landing detection now requires
-       the player to go through a FALLING phase after the jump before accepting a
-       "landed" state. Sequence: jump fires → IsFalling() seen → IsFalling()==false
-       → reset. Also reduced knockback speedZ from 15 to 7.5 for natural jump feel.
-    2. GUID_TAG_REMOVAL: Removed hex GUID suffix (#XXXX) from .enchants and .reroll
-       gossip menus. Enchant count + slot prefix is sufficient. Deleted MakeGuidTag().
+    1. STATE_MACHINE: DoubleJumpState enum (DJ_GROUNDED / DJ_AIRBORNE / DJ_USED)
+       with s_djState and s_djJumpTime tracking maps. Replaced s_doubleJumpUsed
+       and s_doubleJumpFellAfter entirely.
+    2. MOVEMENT_SCRIPT: New LotteryEnchants_MovementScript (MovementHandlerScript)
+       hooks into OnPlayerMove for precise opcode detection:
+       - MSG_MOVE_JUMP (0x0BB): GROUNDED → AIRBORNE, records timestamp
+       - MSG_MOVE_FALL_LAND (0x0C9): USED → GROUNDED (re-enable SetCanFly),
+         or AIRBORNE → GROUNDED (unused double jump, just reset)
+    3. ON_PLAYER_UPDATE: Reduced to ONLY handling DJ_AIRBORNE → DJ_USED transition.
+       Checks IsFlying() (space pressed mid-air with CAN_FLY), enforces 300ms delay,
+       applies KnockbackFrom(pos, 0, 7.96f) for vanilla jump velocity, then
+       SetCanFly(false) + state = DJ_USED.
+    4. CONSTANTS: DOUBLE_JUMP_MIN_DELAY_MS=300, DOUBLE_JUMP_Z_SPEED=7.96f
+       (vanilla WoW jump z-velocity, not arbitrary values)
+  - ARCHITECTURE: Split responsibilities cleanly:
+    * MovementHandlerScript: Precise jump/landing detection via client opcodes
+    * OnPlayerUpdate: Mid-air trigger only (IsFlying + delay check + knockback)
+    * No movement flag polling for landing — MSG_MOVE_FALL_LAND is definitive
   - FILES_CHANGED:
-    * random_enchants.cpp: s_doubleJumpFellAfter map, OnPlayerUpdate rewrite,
-      RecalcLotterySpeedAndFly cleanup paths, UnloadLotteryEnchantsForPlayer cleanup,
-      removed MakeGuidTag, removed GUID tags from ShowEnchantsMenu/ShowRerollMenu
-    * README.md (repo): Double jump description clarified
+    * random_enchants.cpp: Complete double jump rewrite (~100 lines changed)
+    * README.md: Updated double jump description with state machine details
   - BUILD: CLEAN 🍥
   - STATUS: SHIPPED 🍥
 

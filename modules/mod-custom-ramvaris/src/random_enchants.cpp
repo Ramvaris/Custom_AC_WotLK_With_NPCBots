@@ -68,13 +68,12 @@
  *     SetCanFly(true) → flying mount behavior. On ground: space = jump.
  *     In air/falling: space = start flying. Sustained flight with stage speed.
  *   DOUBLE JUMP (level < 60 OR .flylock ON):
- *     SetCanFly(true) as trigger → player presses space while falling → client
- *     enters fly state → OnPlayerUpdate detects IsFlying() → applies upward
- *     KnockbackFrom(0, 7.5) → SetCanFly(false). Player arcs up then falls.
- *     One double jump per airborne session. Landing detection requires the
- *     player to go through a FALLING phase first (prevents false resets at the
- *     knockback apex where movement flags briefly clear). Resets fall damage
- *     tracking to the activation point.
+ *     SetCanFly(true) enables space-bar in mid-air. On ground jump: state machine
+ *     enters AIRBORNE. After 300ms delay, next space press triggers the double jump:
+ *     pure vertical SMSG_MOVE_KNOCK_BACK (speedXY=0, speedZ=7.96 — exact vanilla
+ *     jump velocity). SetCanFly(false) prevents further jumps. Landing detected via
+ *     MSG_MOVE_FALL_LAND opcode (MovementHandlerScript), which resets to GROUNDED
+ *     and re-enables SetCanFly(true). Fall damage tracked from activation height.
  *   .flylock toggles between full flight and double jump for level 60+ players.
  *
  * ITEM SOURCES:
@@ -102,6 +101,7 @@
 #include "ObjectMgr.h"
 #include "ScriptedGossip.h"
 #include "WorldPacket.h"
+#include "GameTime.h"
 #include "Opcodes.h"
 
 using namespace Acore::ChatCommands;
@@ -252,12 +252,26 @@ static std::unordered_set<uint32> s_vendorBuying;
 // Used to prevent double-applying on item swaps where OnPlayerUnequip doesn't fire.
 static std::unordered_map<uint32, std::unordered_set<uint32>> s_appliedItems;
 
-// Double jump tracking: player GUID → has used double jump this airborne session.
-// Reset when the player lands after going through a falling phase.
-// s_doubleJumpFellAfter prevents false landing detection at the knockback apex
-// (brief moment where both IsFalling() and IsFlying() are false during upward arc).
-static std::unordered_map<uint32, bool> s_doubleJumpUsed;
-static std::unordered_map<uint32, bool> s_doubleJumpFellAfter;
+// Double jump state machine — tracks airborne phase per player.
+// GROUNDED:  On ground, SetCanFly(true) if has enchant. Ready for first jump.
+// AIRBORNE:  In air after ground jump. SetCanFly stays on. Waiting for space press.
+//            Minimum delay before accepting double jump (prevent instant activation).
+// USED:      Double jump fired. SetCanFly(false). Waiting for MSG_MOVE_FALL_LAND.
+// State transitions:
+//   GROUNDED → AIRBORNE:  MSG_MOVE_JUMP received (ground jump via MovementHandlerScript)
+//   AIRBORNE → USED:      OnPlayerUpdate detects IsFlying() + delay elapsed → knockback
+//   USED → GROUNDED:      MSG_MOVE_FALL_LAND received (landing via MovementHandlerScript)
+enum DoubleJumpState : uint8 { DJ_GROUNDED = 0, DJ_AIRBORNE = 1, DJ_USED = 2 };
+static std::unordered_map<uint32, DoubleJumpState> s_djState;
+static std::unordered_map<uint32, uint32> s_djJumpTime; // getMSTime() when first jump detected
+
+// Minimum delay (ms) between ground jump and double jump activation.
+// Prevents instant double-jump when pressing space too fast. At 300ms the player
+// has gained visible height, making the double jump feel intentional.
+static constexpr uint32 DOUBLE_JUMP_MIN_DELAY_MS = 300;
+
+// Vanilla WoW jump z-velocity. Matches the client's hardcoded initial jump speed.
+static constexpr float DOUBLE_JUMP_Z_SPEED = 7.96f;
 
 // =============================================================================
 // Helper functions — Custom enchant ID detection
@@ -708,18 +722,18 @@ static void RecalcLotterySpeedAndFly(Player* player)
     }
     else if (doubleJump)
     {
-        // Double jump mode: SetCanFly enables the space-bar trigger while airborne.
-        // OnPlayerUpdate detects IsFlying() → applies upward knockback → removes fly.
-        // If double jump was already used this airborne session, leave CAN_FLY off
-        // until the player lands (OnPlayerUpdate handles re-enabling).
-        if (!s_doubleJumpUsed[pg])
+        // Double jump mode: SetCanFly enables space-bar trigger while airborne.
+        // State machine: GROUNDED→AIRBORNE (MSG_MOVE_JUMP) → USED (IsFlying detected)
+        //                → GROUNDED (MSG_MOVE_FALL_LAND). See OnPlayerMove.
+        auto st = s_djState.count(pg) ? s_djState[pg] : DJ_GROUNDED;
+        if (st != DJ_USED)
             player->SetCanFly(true);
     }
     else
     {
         // No fly enchant — disable flight entirely.
-        s_doubleJumpUsed.erase(pg);
-        s_doubleJumpFellAfter.erase(pg);
+        s_djState.erase(pg);
+        s_djJumpTime.erase(pg);
         if (player->IsFlying())
         {
             player->SetCanFly(false);
@@ -1210,8 +1224,8 @@ static void UnloadLotteryEnchantsForPlayer(Player* player)
     s_enchantsPage.erase(pg);
     s_enchantsItemList.erase(pg);
     s_rerollItemList.erase(pg);
-    s_doubleJumpUsed.erase(pg);
-    s_doubleJumpFellAfter.erase(pg);
+    s_djState.erase(pg);
+    s_djJumpTime.erase(pg);
 }
 
 // Cleanup helper — deletes lottery enchants for a destroyed item from DB + cache.
@@ -1987,22 +2001,15 @@ public:
     }
 
     // =========================================================================
-    // OnPlayerUpdate — Double Jump mechanics + BG flag enforcement.
+    // OnPlayerUpdate — Double Jump: mid-air flying detection.
     //
-    // DOUBLE JUMP (Mobility Boost, level <60 or flylock):
-    // SetCanFly(true) is set in RecalcLotterySpeedAndFly to enable the space-bar
-    // trigger while airborne. When the player presses space while falling, the
-    // client transitions to MOVEMENTFLAG_FLYING → IsFlying() becomes true.
-    // We detect this, apply an upward knockback, disable CAN_FLY, and mark the
-    // double jump as used.
+    // When a double-jump player presses space while airborne, the client enters
+    // "flying" state (because SetCanFly is true). We detect this here, apply a
+    // pure vertical knockback matching vanilla jump velocity, and disable CAN_FLY
+    // so no further jumps are possible. Landing is detected via MSG_MOVE_FALL_LAND
+    // in the MovementHandlerScript, not here.
     //
-    // LANDING DETECTION: Requires the player to enter a FALLING phase after the
-    // double jump before accepting a "landed" state. This prevents false resets
-    // at the knockback apex (movement flags briefly clear during upward arc).
-    // Sequence: jump used → IsFalling() seen → IsFalling()==false → reset.
-    //
-    // FULL FLIGHT (level 60+, not flylock):
-    // No intervention needed — player flies normally. Only BG flag enforcement.
+    // Full flight players are unaffected — they fly normally.
     // =========================================================================
     void OnPlayerUpdate(Player* player, uint32 /*diff*/) override
     {
@@ -2013,37 +2020,27 @@ public:
         bool doubleJump    = hasFlyEnchant && !fullFlight;
         uint32 pg          = player->GetGUID().GetCounter();
 
-        // --- Double jump mode ---
+        // --- Double jump: detect mid-air space press ---
         if (doubleJump)
         {
-            if (player->IsFlying() && !s_doubleJumpUsed[pg])
+            auto st = s_djState.count(pg) ? s_djState[pg] : DJ_GROUNDED;
+
+            if (st == DJ_AIRBORNE && player->IsFlying())
             {
-                // Player pressed space while airborne → client entered "flying" state.
-                // Apply upward knockback and remove CAN_FLY to simulate a double jump.
-                player->SetCanFly(false);
-                player->KnockbackFrom(player->GetPositionX(), player->GetPositionY(), 0.0f, 7.5f);
-
-                // Reset fall tracking so fall damage only counts from the double-jump
-                // activation point, not the original cliff edge.
-                player->SetFallInformation(getMSTime(), player->GetPositionZ());
-
-                s_doubleJumpUsed[pg] = true;
-                s_doubleJumpFellAfter[pg] = false;
-            }
-            else if (s_doubleJumpUsed[pg])
-            {
-                // Track whether a falling phase has occurred since the double jump.
-                // Without this, the brief IsFalling()==false at the knockback apex
-                // would immediately reset the jump, causing infinite kick-to-sky.
-                if (player->IsFalling())
-                    s_doubleJumpFellAfter[pg] = true;
-
-                // Only accept landing when we've been through a falling phase first.
-                if (s_doubleJumpFellAfter[pg] && !player->IsFalling() && !player->IsFlying())
+                // Enforce minimum delay — player must gain some height first
+                uint32 jumpTime = s_djJumpTime.count(pg) ? s_djJumpTime[pg] : 0;
+                if (getMSTimeDiff(jumpTime, getMSTime()) >= DOUBLE_JUMP_MIN_DELAY_MS)
                 {
-                    s_doubleJumpUsed[pg] = false;
-                    s_doubleJumpFellAfter[pg] = false;
-                    player->SetCanFly(true);
+                    // Apply pure vertical boost — same z-velocity as a vanilla jump.
+                    // speedXY = 0 (no horizontal displacement), speedZ = 7.96.
+                    player->SetCanFly(false);
+                    player->KnockbackFrom(player->GetPositionX(), player->GetPositionY(),
+                                          0.0f, DOUBLE_JUMP_Z_SPEED);
+
+                    // Reset fall tracking so fall damage counts from double-jump height
+                    player->SetFallInformation(getMSTime(), player->GetPositionZ());
+
+                    s_djState[pg] = DJ_USED;
                 }
             }
         }
@@ -2200,6 +2197,61 @@ public:
 };
 
 // =============================================================================
+// MovementHandlerScript — precise opcode-level jump/landing detection.
+//
+// MSG_MOVE_JUMP:      Client jumped from the ground. Transitions GROUNDED → AIRBORNE.
+// MSG_MOVE_FALL_LAND: Client touched the ground after falling. Resets to GROUNDED.
+//
+// This is FAR more reliable than polling IsFalling()/IsFlying() in OnPlayerUpdate,
+// which suffers from transient flag states during knockback arcs.
+// =============================================================================
+class LotteryEnchants_MovementScript : public MovementHandlerScript
+{
+public:
+    LotteryEnchants_MovementScript()
+        : MovementHandlerScript("LotteryEnchants_MovementScript",
+            {MOVEMENTHOOK_ON_PLAYER_MOVE}) { }
+
+    void OnPlayerMove(Player* player, MovementInfo /*movementInfo*/, uint32 opcode) override
+    {
+        if (!IsEnabled() || !player) return;
+
+        bool hasFlyEnchant = player->GetLotteryCanFly();
+        bool fullFlight    = player->HasLotteryFullFlight();
+        bool doubleJump    = hasFlyEnchant && !fullFlight;
+        if (!doubleJump) return;
+
+        uint32 pg = player->GetGUID().GetCounter();
+        auto st = s_djState.count(pg) ? s_djState[pg] : DJ_GROUNDED;
+
+        if (opcode == MSG_MOVE_JUMP && st == DJ_GROUNDED)
+        {
+            // Ground jump detected — start tracking for double jump.
+            s_djState[pg] = DJ_AIRBORNE;
+            s_djJumpTime[pg] = getMSTime();
+        }
+        else if (opcode == MSG_MOVE_FALL_LAND && st == DJ_USED)
+        {
+            // Player landed after double jump — reset state, re-enable CAN_FLY.
+            s_djState[pg] = DJ_GROUNDED;
+            player->SetCanFly(true);
+        }
+        else if (opcode == MSG_MOVE_FALL_LAND && st == DJ_AIRBORNE)
+        {
+            // Player landed without using double jump — reset to grounded.
+            s_djState[pg] = DJ_GROUNDED;
+        }
+    }
+
+private:
+    static bool IsEnabled()
+    {
+        return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
+               sConfigMgr->GetOption<bool>("CustomRamvaris.LotteryEnchants.Enable", false);
+    }
+};
+
+// =============================================================================
 // Script Registration
 // =============================================================================
 void AddSC_random_enchants()
@@ -2207,4 +2259,5 @@ void AddSC_random_enchants()
     new LotteryEnchants_PlayerScript();
     new LotteryEnchants_CommandScript();
     new LotteryEnchants_WorldScript();
+    new LotteryEnchants_MovementScript();
 }
