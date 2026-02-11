@@ -113,7 +113,8 @@ private:
     }
 
     // ========================================================================
-    // Racial adjustments (Draenei fixes, BE Warrior, Human Stoneform)
+    // Racial adjustments (Draenei fixes, BE Warrior, Human Stoneform,
+    // character-specific racial overrides)
     // ========================================================================
     static void GrantRacialAdjustments(Player* player, uint8 playerClass, uint8 playerRace)
     {
@@ -144,9 +145,35 @@ private:
         if (playerRace == RACE_BLOODELF && playerClass == CLASS_WARRIOR)
             LearnIfMissing(player, 81011); // Custom Arcane Torrent for Warriors
 
-        // --- Human Stoneform ---
+        // --- Human Stoneform (Holy Cleanse) ---
         if (playerRace == RACE_HUMAN)
             LearnIfMissing(player, 81013); // Custom Stoneform (handled by spell_human_stoneform.cpp)
+
+        // --- Character-specific racial overrides ---
+        // These run AFTER the engine's learnSkillRewardedSpells re-teaches racials
+        // from SkillLineAbility DBC on every login. The only way to persistently
+        // remove a DBC-linked racial is to strip it here, post-login.
+        ApplyCharacterRacialOverrides(player);
+    }
+
+    // ========================================================================
+    // Character-specific racial overrides
+    // Some characters have lore-specific racial swaps (e.g. a "half-human"
+    // Night Elf who trades Shadowmeld for Holy Cleanse).
+    // ========================================================================
+    static void ApplyCharacterRacialOverrides(Player* player)
+    {
+        uint32 guid = player->GetGUID().GetCounter();
+
+        switch (guid)
+        {
+            case 17: // Luna — Night Elf Warrior, "half-human" lore
+                RemoveIfKnown(player, 58984);  // Remove Shadowmeld (re-taught by SkillLineAbility DBC every login)
+                LearnIfMissing(player, 81013); // Grant Holy Cleanse (Human Stoneform)
+                break;
+            default:
+                break;
+        }
     }
 
     // ========================================================================
