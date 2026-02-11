@@ -15,8 +15,9 @@
  *   haste, crit, hit, expertise, armor pen, resilience, AND all elemental resistances.
  * - Pool EXCLUDES: Dodge, Parry, Defense (overcapping with multiple items)
  * - CUSTOM ENCHANTS: Movespeed (1-25% per roll, cap +100% = 200% base, stacking,
- *   affects run + swim + flight, NO level scaling) and Flying (1% chance, 3 stages:
- *   100%/200%/300% flight speed, combined with speed bonus up to 600%, NO level scaling).
+ *   affects run + swim + flight, LEVEL-SCALED like other stats) and Flying (1% chance,
+ *   3 stages: 100%/200%/300% flight speed, combined with speed bonus up to 600%,
+ *   NO level scaling for stages — you either can fly or you can't).
  * - `.enchants` paginated gossip menu; `.reroll` gossip-based Keep/Take flow (500g)
  * - `.flylock` toggles flying ability on/off
  * - NO quality-based tier filtering — the percentile system handles balance naturally.
@@ -31,6 +32,14 @@
  * item enchantment slots. Profession enchants live in slot 0 (PERM), ours live in a
  * DB table. They stack additively — no aura conflict, no override, pure bonus math.
  *
+ * EQUIP/UNEQUIP SAFETY:
+ * Item swaps (right-click to equip from inventory) fire OnPlayerEquip for the new
+ * item but do NOT always fire OnPlayerUnequip for the displaced item. Incremental
+ * apply/unapply would leave orphaned bonuses → infinite stat stacking. We use a
+ * full-recalc approach: on EVERY equip/unequip/login event, unapply all tracked
+ * enchants and reapply only for items CURRENTLY in equipment slots. A per-player
+ * tracking set (s_appliedItems) ensures we always know what to unapply.
+ *
  * LEVEL SCALING:
  * DBC enchant values are the level-80 maximum. At lower levels, stats scale linearly:
  *   scaledAmount = max(1, round(baseAmount * playerLevel / 80))
@@ -41,6 +50,7 @@
  * Speed modifies base character speed (run, swim, AND flight), multiplicative with
  * aura buffs. E.g. +50% from enchants × 15% paladin aura = 1.5 × 1.15 = 172.5%.
  * Capped at +100% from enchants (200% base speed). Individual rolls are 1-25%.
+ * LEVEL-SCALED: max(1, round(rawPct * level / 80)). At level 40, a 10% roll gives 5%.
  * Swimming is treated the same as running.
  * MOUNTED PLAYERS GET NO SPEED BONUS — mounts use vanilla 100% base speed. This
  * intentionally makes mounts obsolete as enchant speed grows (epic mount = 200%,
@@ -52,6 +62,13 @@
  * (1 + speedBonus). Max: 3.0 × 2.0 = 600% flight speed. Works everywhere.
  * BG flag carriers auto-drop the flag when airborne.
  * .flylock toggles flying on/off even if you have the enchant.
+ *
+ * DOUBLE-JUMP FLIGHT:
+ * Instead of GM-style instant flight (space = ascend), the system uses a
+ * double-jump mechanic: jump normally (space → arc), then after 300ms of
+ * freefall the CanFly flag is enabled, so pressing space again starts flight.
+ * Landing resets CanFly to false — the next space press is always a normal
+ * jump first. This gives a natural "jump, then fly" feel.
  *
  * ITEM SOURCES:
  * Uses PLAYERHOOK_ON_STORE_NEW_ITEM — catches ALL item acquisition (loot, craft, quest,
@@ -79,6 +96,7 @@
 #include "ScriptedGossip.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
+#include "GameTime.h"
 
 using namespace Acore::ChatCommands;
 
@@ -166,7 +184,7 @@ enum LotteryGossipAction : uint32
     LOTTO_ACTION_ENCHANTS_BACK   = 30005,
 };
 
-static constexpr uint32 ITEMS_PER_PAGE = 20;
+static constexpr uint32 ITEMS_PER_PAGE = 15;
 
 // Cascading roll chances per enchant slot
 static constexpr float ROLL_CHANCES[] = {
@@ -207,6 +225,7 @@ struct EnchantViewerItem
     uint32 itemEntry;
     uint32 enchantCount;
     bool   equipped;
+    uint8  equipSlot;   // Equipment slot index (0xFF for bag items)
 };
 static std::unordered_map<uint32, std::vector<EnchantViewerItem>> s_enchantsItemList;
 
@@ -219,9 +238,18 @@ struct RerollMenuItem
 };
 static std::unordered_map<uint32, std::vector<RerollMenuItem>> s_rerollItemList;
 
+// Double-jump flight: tracks the timestamp (ms) when a player started falling.
+// After 300ms of freefall, CanFly is enabled so the next space key starts flight.
+// Landing resets CanFly to false, restoring normal ground jump behavior.
+static std::unordered_map<uint32, uint32> s_flyJumpTimer;
+
 // Vendor purchase detection: player GUIDs currently in a BuyItemFromVendorSlot call.
 // Set in OnPlayerBeforeBuyItemFromVendor, checked+cleared in OnPlayerStoreNewItem.
 static std::unordered_set<uint32> s_vendorBuying;
+
+// Equip tracking: player GUID → set of item GUIDs with currently applied enchants.
+// Used to prevent double-applying on item swaps where OnPlayerUnequip doesn't fire.
+static std::unordered_map<uint32, std::unordered_set<uint32>> s_appliedItems;
 
 // =============================================================================
 // Helper functions — Custom enchant ID detection
@@ -309,14 +337,14 @@ static const char* GetValueColor(EnchantTier tier)
 {
     switch (tier)
     {
-        case TIER_GREY:   return "|cff9D9D9D";
+        case TIER_GREY:   return "|cffBBBBBB";
         case TIER_WHITE:  return "|cffFFFFFF";
         case TIER_GREEN:  return "|cff1EFF00";
         case TIER_BLUE:   return "|cff0070DD";
         case TIER_PURPLE: return "|cffA335EE";
         case TIER_ORANGE: return "|cffFF8000";
         case TIER_RED:    return "|cffFF0000";
-        default:          return "|cff9D9D9D";
+        default:          return "|cffBBBBBB";
     }
 }
 
@@ -324,7 +352,7 @@ static const char* GetCountColor(uint32 count)
 {
     switch (count)
     {
-        case 1:  return "|cff9D9D9D";
+        case 1:  return "|cffBBBBBB";
         case 2:  return "|cffFFFFFF";
         case 3:  return "|cff1EFF00";
         case 4:  return "|cff0070DD";
@@ -394,6 +422,42 @@ static std::string GetItemDisplayName(Player* player, ItemTemplate const* proto)
     if (ItemLocale const* il = sObjectMgr->GetItemLocale(proto->ItemId))
         ObjectMgr::GetLocaleString(il->Name, loc_idx, name);
     return name;
+}
+
+// Short equipment slot name for gossip labels (e.g., "Head", "MH", "Ring1")
+static const char* GetEquipSlotShort(uint8 slot)
+{
+    switch (slot)
+    {
+        case EQUIPMENT_SLOT_HEAD:      return "Head";
+        case EQUIPMENT_SLOT_NECK:      return "Neck";
+        case EQUIPMENT_SLOT_SHOULDERS: return "Shoulders";
+        case EQUIPMENT_SLOT_BODY:      return "Shirt";
+        case EQUIPMENT_SLOT_CHEST:     return "Chest";
+        case EQUIPMENT_SLOT_WAIST:     return "Waist";
+        case EQUIPMENT_SLOT_LEGS:      return "Legs";
+        case EQUIPMENT_SLOT_FEET:      return "Feet";
+        case EQUIPMENT_SLOT_WRISTS:    return "Wrists";
+        case EQUIPMENT_SLOT_HANDS:     return "Hands";
+        case EQUIPMENT_SLOT_FINGER1:   return "Ring1";
+        case EQUIPMENT_SLOT_FINGER2:   return "Ring2";
+        case EQUIPMENT_SLOT_TRINKET1:  return "Trink1";
+        case EQUIPMENT_SLOT_TRINKET2:  return "Trink2";
+        case EQUIPMENT_SLOT_BACK:      return "Back";
+        case EQUIPMENT_SLOT_MAINHAND:  return "MH";
+        case EQUIPMENT_SLOT_OFFHAND:   return "OH";
+        case EQUIPMENT_SLOT_RANGED:    return "Ranged";
+        case EQUIPMENT_SLOT_TABARD:    return "Tabard";
+        default:                       return "E";
+    }
+}
+
+// Short hex tag from item GUID for disambiguating duplicate item names in gossip
+static std::string MakeGuidTag(uint32 itemGuid)
+{
+    char buf[16];
+    snprintf(buf, sizeof(buf), " |cff666666#%04X|r", itemGuid & 0xFFFF);
+    return buf;
 }
 
 // Dynamic gossip text helper (NPC_TEXT_UPDATE packet)
@@ -571,6 +635,7 @@ static void RecalcLotterySpeedAndFly(Player* player)
 {
     float totalSpeedBonus = 0.0f;
     uint32 highestFlyStage = 0;
+    uint8 playerLevel = player->GetLevel();
 
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
@@ -589,7 +654,15 @@ static void RecalcLotterySpeedAndFly(Player* player)
         for (uint32 enchantId : enchants)
         {
             if (IsCustomSpeedEnchant(enchantId))
-                totalSpeedBonus += float(GetSpeedPct(enchantId)) / 100.0f;
+            {
+                // Speed IS level-scaled: max(1, round(rawPct * level / 80))
+                // At level 80 the full percentage applies. Lower levels get
+                // proportionally less speed, preventing disproportionate
+                // mobility at low levels where base speed is the same.
+                uint32 rawPct = GetSpeedPct(enchantId);
+                uint32 scaledPct = ScaleEnchantAmount(rawPct, playerLevel);
+                totalSpeedBonus += float(scaledPct) / 100.0f;
+            }
             else if (IsCustomFlyEnchant(enchantId))
             {
                 uint32 stage = GetFlyStage(enchantId);
@@ -617,7 +690,15 @@ static void RecalcLotterySpeedAndFly(Player* player)
     if (canFly)
     {
         player->UpdateSpeed(MOVE_FLIGHT, true);
-        player->SetCanFly(true);
+
+        // DOUBLE-JUMP SYSTEM: Don't auto-enable CanFly on ground.
+        // OnPlayerUpdate handles the ground→air transition:
+        //   jump → fall 300ms → CanFly(true) → space = ascend = fly.
+        //   land → CanFly(false) → back to normal jump.
+        // Only set CanFly here if the player is already airborne (e.g., login
+        // restoration, level-up while flying, equip change mid-flight).
+        if (player->IsFlying() || player->IsFalling())
+            player->SetCanFly(true);
 
         // Drop BG flag if currently flying in a battleground
         if (player->InBattleground() && player->IsFlying())
@@ -650,142 +731,56 @@ static void RecalcLotterySpeedAndFly(Player* player)
 }
 
 // =============================================================================
-// Level-up recalculation: delta-based stat adjustment for equipped items.
-// Speed/Fly enchants are skipped — they don't level-scale.
+// Full Recalc — swap-safe stat application.
+//
+// Item swaps (right-click to equip from inventory) fire OnPlayerEquip for the
+// new item but do NOT fire OnPlayerUnequip for the displaced item. Incremental
+// apply/unapply would leave the old item's bonuses orphaned → infinite stacking.
+//
+// This function does a FULL recalc: unapply everything tracked, then reapply
+// only for items that are CURRENTLY equipped. Called on every equip, unequip,
+// and login. Cost: ~19 slots × 7 enchants = 133 stat ops max — trivial.
 // =============================================================================
-static void RefreshLotteryEnchantsOnLevelUp(Player* player, uint8 oldLevel)
+static void FullRecalcLotteryStats(Player* player)
 {
+    uint32 pg = player->GetGUID().GetCounter();
+    auto& applied = s_appliedItems[pg];
+
+    // Step 1: Unapply all currently tracked items
+    for (uint32 itemGuid : applied)
+        ApplyAllLotteryEnchantsForItem(player, itemGuid, false);
+    applied.clear();
+
+    // Step 2: Apply enchants for items that are CURRENTLY equipped
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
         Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
         if (!item) continue;
 
         uint32 itemGuid = item->GetGUID().GetCounter();
-        std::vector<uint32> enchants;
         {
             std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
-            auto it = s_lotteryCache.find(itemGuid);
-            if (it == s_lotteryCache.end()) continue;
-            enchants = it->second;
-        }
-
-        if (enchants.empty()) continue;
-
-        for (uint32 enchantId : enchants)
-        {
-            // Speed/Fly enchants don't level-scale — skip entirely
-            if (IsCustomEnchant(enchantId))
+            if (s_lotteryCache.find(itemGuid) == s_lotteryCache.end())
                 continue;
-
-            SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchantId);
-            if (!pEnchant) continue;
-
-            for (int s = 0; s < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++s)
-            {
-                if (pEnchant->amount[s] == 0)
-                    continue;
-
-                uint32 base = pEnchant->amount[s];
-                uint32 oldScaled = ScaleEnchantAmount(base, oldLevel);
-                uint32 newScaled = ScaleEnchantAmount(base, player->GetLevel());
-
-                if (oldScaled == newScaled)
-                    continue;
-
-                int32 delta = int32(newScaled) - int32(oldScaled);
-                uint32 absDelta = std::abs(delta);
-                bool adding = (delta > 0);
-                uint32 enchantStatId = pEnchant->spellid[s];
-
-                if (pEnchant->type[s] == ITEM_ENCHANTMENT_TYPE_RESISTANCE)
-                {
-                    player->HandleStatFlatModifier(
-                        UnitMods(UNIT_MOD_RESISTANCE_START + enchantStatId),
-                        TOTAL_VALUE, float(absDelta), adding);
-                    continue;
-                }
-
-                if (pEnchant->type[s] != ITEM_ENCHANTMENT_TYPE_STAT)
-                    continue;
-
-                switch (enchantStatId)
-                {
-                    case ITEM_MOD_MANA:
-                        player->HandleStatFlatModifier(UNIT_MOD_MANA, BASE_VALUE, float(absDelta), adding);
-                        break;
-                    case ITEM_MOD_HEALTH:
-                        player->HandleStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE, float(absDelta), adding);
-                        break;
-                    case ITEM_MOD_AGILITY:
-                        player->HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, TOTAL_VALUE, float(absDelta), adding);
-                        player->UpdateStatBuffMod(STAT_AGILITY);
-                        break;
-                    case ITEM_MOD_STRENGTH:
-                        player->HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_VALUE, float(absDelta), adding);
-                        player->UpdateStatBuffMod(STAT_STRENGTH);
-                        break;
-                    case ITEM_MOD_INTELLECT:
-                        player->HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, TOTAL_VALUE, float(absDelta), adding);
-                        player->UpdateStatBuffMod(STAT_INTELLECT);
-                        break;
-                    case ITEM_MOD_SPIRIT:
-                        player->HandleStatFlatModifier(UNIT_MOD_STAT_SPIRIT, TOTAL_VALUE, float(absDelta), adding);
-                        player->UpdateStatBuffMod(STAT_SPIRIT);
-                        break;
-                    case ITEM_MOD_STAMINA:
-                        player->HandleStatFlatModifier(UNIT_MOD_STAT_STAMINA, TOTAL_VALUE, float(absDelta), adding);
-                        player->UpdateStatBuffMod(STAT_STAMINA);
-                        break;
-                    case ITEM_MOD_BLOCK_RATING:         player->ApplyRatingMod(CR_BLOCK, absDelta, adding); break;
-                    case ITEM_MOD_HIT_MELEE_RATING:     player->ApplyRatingMod(CR_HIT_MELEE, absDelta, adding); break;
-                    case ITEM_MOD_HIT_RANGED_RATING:    player->ApplyRatingMod(CR_HIT_RANGED, absDelta, adding); break;
-                    case ITEM_MOD_HIT_SPELL_RATING:     player->ApplyRatingMod(CR_HIT_SPELL, absDelta, adding); break;
-                    case ITEM_MOD_CRIT_MELEE_RATING:    player->ApplyRatingMod(CR_CRIT_MELEE, absDelta, adding); break;
-                    case ITEM_MOD_CRIT_RANGED_RATING:   player->ApplyRatingMod(CR_CRIT_RANGED, absDelta, adding); break;
-                    case ITEM_MOD_CRIT_SPELL_RATING:    player->ApplyRatingMod(CR_CRIT_SPELL, absDelta, adding); break;
-                    case ITEM_MOD_HASTE_RANGED_RATING:  player->ApplyRatingMod(CR_HASTE_RANGED, absDelta, adding); break;
-                    case ITEM_MOD_HASTE_SPELL_RATING:   player->ApplyRatingMod(CR_HASTE_SPELL, absDelta, adding); break;
-                    case ITEM_MOD_HIT_RATING:
-                        player->ApplyRatingMod(CR_HIT_MELEE, absDelta, adding);
-                        player->ApplyRatingMod(CR_HIT_RANGED, absDelta, adding);
-                        player->ApplyRatingMod(CR_HIT_SPELL, absDelta, adding);
-                        break;
-                    case ITEM_MOD_CRIT_RATING:
-                        player->ApplyRatingMod(CR_CRIT_MELEE, absDelta, adding);
-                        player->ApplyRatingMod(CR_CRIT_RANGED, absDelta, adding);
-                        player->ApplyRatingMod(CR_CRIT_SPELL, absDelta, adding);
-                        break;
-                    case ITEM_MOD_RESILIENCE_RATING:
-                        player->ApplyRatingMod(CR_CRIT_TAKEN_MELEE, absDelta, adding);
-                        player->ApplyRatingMod(CR_CRIT_TAKEN_RANGED, absDelta, adding);
-                        player->ApplyRatingMod(CR_CRIT_TAKEN_SPELL, absDelta, adding);
-                        break;
-                    case ITEM_MOD_HASTE_RATING:
-                        player->ApplyRatingMod(CR_HASTE_MELEE, absDelta, adding);
-                        player->ApplyRatingMod(CR_HASTE_RANGED, absDelta, adding);
-                        player->ApplyRatingMod(CR_HASTE_SPELL, absDelta, adding);
-                        break;
-                    case ITEM_MOD_EXPERTISE_RATING:     player->ApplyRatingMod(CR_EXPERTISE, absDelta, adding); break;
-                    case ITEM_MOD_ATTACK_POWER:
-                        player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER, TOTAL_VALUE, float(absDelta), adding);
-                        player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, float(absDelta), adding);
-                        break;
-                    case ITEM_MOD_RANGED_ATTACK_POWER:
-                        player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, float(absDelta), adding);
-                        break;
-                    case ITEM_MOD_MANA_REGENERATION:     player->ApplyManaRegenBonus(absDelta, adding); break;
-                    case ITEM_MOD_ARMOR_PENETRATION_RATING: player->ApplyRatingMod(CR_ARMOR_PENETRATION, absDelta, adding); break;
-                    case ITEM_MOD_SPELL_POWER:           player->ApplySpellPowerBonus(absDelta, adding); break;
-                    case ITEM_MOD_HEALTH_REGEN:          player->ApplyHealthRegenBonus(absDelta, adding); break;
-                    case ITEM_MOD_SPELL_PENETRATION:     player->ApplySpellPenetrationBonus(absDelta, adding); break;
-                    case ITEM_MOD_BLOCK_VALUE:
-                        player->HandleBaseModFlatValue(SHIELD_BLOCK_VALUE, float(absDelta), adding);
-                        break;
-                    default: break;
-                }
-            }
         }
+        ApplyAllLotteryEnchantsForItem(player, itemGuid, true);
+        applied.insert(itemGuid);
     }
+
+    // Step 3: Recalculate speed and fly from all equipped items
+    RecalcLotterySpeedAndFly(player);
+}
+
+// =============================================================================
+// Level-up recalculation: delta-based stat adjustment for equipped items.
+// Speed/Fly enchants are now also level-scaled, so they need recalculation too.
+// =============================================================================
+static void RefreshLotteryEnchantsOnLevelUp(Player* player, uint8 /*oldLevel*/)
+{
+    // Full recalc: unapply all at old-level values, reapply at new-level values.
+    // Handles DBC enchant scaling AND speed enchant scaling in one pass.
+    // Cost is negligible for an event that fires 80 times in a character's lifetime.
+    FullRecalcLotteryStats(player);
 }
 
 // =============================================================================
@@ -1026,8 +1021,8 @@ static void ApplyRolledEnchants(Player* player, Item* item, const std::vector<ui
     uint32 count = enchants.size();
     const char* verb = isReroll ? "rerolled" : "received";
     ChatHandler(player->GetSession()).PSendSysMessage(
-        "%s%s|r %s |cff00FF00%u|r lottery enchant%s! Use |cffFFFF00.enchants|r to view.",
-        GetCountColor(count), itemName.c_str(), verb, count, count == 1 ? "" : "s");
+        "{}{}|r {} |cff00FF00{}|r lottery enchant{}! Use |cffFFFF00.enchants|r to view.",
+        GetCountColor(count), itemName, verb, count, count == 1 ? "" : "s");
 }
 
 // =============================================================================
@@ -1070,7 +1065,7 @@ static void LoadLotteryEnchantsForPlayer(Player* player)
     PreparedQueryResult result = CharacterDatabase.Query(stmt);
     if (!result) return;
 
-    uint32 loadedItems = 0, loadedEnchants = 0;
+    uint32 loadedEnchants = 0;
 
     do
     {
@@ -1090,49 +1085,26 @@ static void LoadLotteryEnchantsForPlayer(Player* player)
     }
     while (result->NextRow());
 
-    // Apply stats for currently equipped items
-    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-    {
-        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-        if (!item) continue;
-
-        uint32 itemGuid = item->GetGUID().GetCounter();
-        std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
-        auto it = s_lotteryCache.find(itemGuid);
-        if (it != s_lotteryCache.end())
-        {
-            for (uint32 enchantId : it->second)
-                ApplyLotteryEnchantStat(player, enchantId, true);
-            ++loadedItems;
-        }
-    }
-
-    // Recalculate speed/fly from all equipped items
-    RecalcLotterySpeedAndFly(player);
+    // Apply stats via full recalc (swap-safe, initializes tracking set clean)
+    FullRecalcLotteryStats(player);
 
     if (loadedEnchants > 0)
-        LOG_DEBUG("module", "LotteryEnchants: Loaded {} enchants across {} equipped items for player {} (level {})",
-                  loadedEnchants, loadedItems, player->GetName(), player->GetLevel());
+        LOG_DEBUG("module", "LotteryEnchants: Loaded {} enchants for player {} (level {})",
+                  loadedEnchants, player->GetName(), player->GetLevel());
 }
 
 static void UnloadLotteryEnchantsForPlayer(Player* player)
 {
     if (!player) return;
 
-    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-    {
-        Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-        if (!item) continue;
+    uint32 pg = player->GetGUID().GetCounter();
 
-        uint32 itemGuid = item->GetGUID().GetCounter();
-        std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
-        auto it = s_lotteryCache.find(itemGuid);
-        if (it != s_lotteryCache.end())
-        {
-            for (uint32 enchantId : it->second)
-                ApplyLotteryEnchantStat(player, enchantId, false);
-        }
-    }
+    // Unapply all tracked enchants
+    auto& applied = s_appliedItems[pg];
+    for (uint32 itemGuid : applied)
+        ApplyAllLotteryEnchantsForItem(player, itemGuid, false);
+    applied.clear();
+    s_appliedItems.erase(pg);
 
     // Reset Player fields (speed/fly)
     player->SetLotterySpeedBonus(0.0f);
@@ -1141,12 +1113,12 @@ static void UnloadLotteryEnchantsForPlayer(Player* player)
     player->SetCanFly(false);
 
     // Clean up gossip state
-    uint32 pg = player->GetGUID().GetCounter();
     s_pendingRerolls.erase(pg);
     s_rerollPage.erase(pg);
     s_enchantsPage.erase(pg);
     s_enchantsItemList.erase(pg);
     s_rerollItemList.erase(pg);
+    s_flyJumpTimer.erase(pg);
 }
 
 // Cleanup helper — deletes lottery enchants for a destroyed item from DB + cache.
@@ -1171,8 +1143,12 @@ static std::string FormatEnchantLine(uint32 enchantId, uint8 playerLevel)
 {
     if (IsCustomSpeedEnchant(enchantId))
     {
-        uint32 pct = GetSpeedPct(enchantId);
-        return std::string("|cff00FFFF+") + std::to_string(pct) + "% Movespeed|r";
+        uint32 rawPct = GetSpeedPct(enchantId);
+        uint32 scaledPct = ScaleEnchantAmount(rawPct, playerLevel);
+        std::string line = std::string("|cff00FFFF+") + std::to_string(scaledPct) + "% Movespeed|r";
+        if (playerLevel < 80)
+            line += " |cff888888(max: " + std::to_string(rawPct) + "%)|r";
+        return line;
     }
     if (IsCustomFlyEnchant(enchantId))
     {
@@ -1319,12 +1295,13 @@ static void ShowRerollMenu(Player* player, uint32 page)
             if (!proto) continue;
 
             std::string name = GetItemDisplayName(player, proto);
+            std::string guidTag = MakeGuidTag(ri.itemGuid);
             std::string label;
             if (ri.enchantCount > 0)
                 label = std::string(GetCountColor(ri.enchantCount)) + name + "|r |cff888888(" +
-                        std::to_string(ri.enchantCount) + " enchants)|r";
+                        std::to_string(ri.enchantCount) + " enchants)|r" + guidTag;
             else
-                label = "|cff9D9D9D" + name + "|r |cff888888(no enchants)|r";
+                label = "|cffBBBBBB" + name + "|r |cff888888(no enchants)|r" + guidTag;
 
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, label,
                 LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_REROLL_BASE + (i - startIdx));
@@ -1453,7 +1430,7 @@ static void BuildEnchantsItemList(Player* player)
     auto& items = s_enchantsItemList[pg];
     items.clear();
 
-    auto addItem = [&](Item* item, bool equipped)
+    auto addItem = [&](Item* item, bool equipped, uint8 eqSlot = 0xFF)
     {
         if (!item) return;
         uint32 guid = item->GetGUID().GetCounter();
@@ -1465,12 +1442,12 @@ static void BuildEnchantsItemList(Player* player)
                 enchantCount = it->second.size();
         }
         if (enchantCount == 0) return;
-        items.push_back({guid, item->GetTemplate()->ItemId, enchantCount, equipped});
+        items.push_back({guid, item->GetTemplate()->ItemId, enchantCount, equipped, eqSlot});
     };
 
     // Equipped items first
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-        addItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), true);
+        addItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), true, slot);
 
     // Main backpack
     for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
@@ -1541,9 +1518,17 @@ static void ShowEnchantsMenu(Player* player, uint32 page)
             if (!proto) continue;
 
             std::string name = GetItemDisplayName(player, proto);
-            std::string status = ei.equipped ? "|cff00FF00[E]|r " : "";
-            std::string label = status + std::string(GetCountColor(ei.enchantCount)) + name +
-                                "|r |cff888888(" + std::to_string(ei.enchantCount) + ")|r";
+
+            // Equipped items: show slot name. Bag items: show GUID tag for duplicates.
+            std::string prefix;
+            std::string suffix;
+            if (ei.equipped)
+                prefix = "|cff00FF00[" + std::string(GetEquipSlotShort(ei.equipSlot)) + "]|r ";
+            else
+                suffix = MakeGuidTag(ei.itemGuid);
+
+            std::string label = prefix + std::string(GetCountColor(ei.enchantCount)) + name +
+                                "|r |cff888888(" + std::to_string(ei.enchantCount) + ")|r" + suffix;
 
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, label,
                 LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_ENCHANTS_BASE + (i - startIdx));
@@ -1678,7 +1663,7 @@ static void HandleLotteryGossipSelect(Player* player, uint32 action)
             if (player->GetMoney() < costCopper)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cffFF0000You need %ug. You have %ug.|r",
+                    "|cffFF0000You need {}g. You have {}g.|r",
                     REROLL_COST_GOLD, player->GetMoney() / 10000);
                 s_pendingRerolls.erase(pg);
                 return;
@@ -1686,7 +1671,7 @@ static void HandleLotteryGossipSelect(Player* player, uint32 action)
 
             // DEDUCT GOLD NOW (before showing results — prevents reopen abuse)
             player->ModifyMoney(-int32(costCopper));
-            ChatHandler(player->GetSession()).PSendSysMessage("|cffFFD700-%ug|r — Rolling...", REROLL_COST_GOLD);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cffFFD700-{}g|r — Rolling...", REROLL_COST_GOLD);
 
             // Roll enchants (NOT applied yet)
             std::vector<uint32> rolled = RollNewEnchants(item, true);
@@ -1875,18 +1860,20 @@ public:
         RollLotteryEnchants(player, item);
     }
 
-    void OnPlayerEquip(Player* player, Item* it, uint8, uint8, bool) override
+    void OnPlayerEquip(Player* player, Item* /*it*/, uint8, uint8, bool) override
     {
-        if (!IsEnabled() || !player || !it) return;
-        ApplyAllLotteryEnchantsForItem(player, it->GetGUID().GetCounter(), true);
-        RecalcLotterySpeedAndFly(player);
+        if (!IsEnabled() || !player) return;
+        // Full recalc on every equip — swap-safe. OnPlayerUnequip does NOT fire
+        // when items are swapped via right-click, so incremental apply would
+        // leave the displaced item's bonuses orphaned → infinite stacking.
+        FullRecalcLotteryStats(player);
     }
 
-    void OnPlayerUnequip(Player* player, Item* it) override
+    void OnPlayerUnequip(Player* player, Item* /*it*/) override
     {
-        if (!IsEnabled() || !player || !it) return;
-        ApplyAllLotteryEnchantsForItem(player, it->GetGUID().GetCounter(), false);
-        RecalcLotterySpeedAndFly(player);
+        if (!IsEnabled() || !player) return;
+        // Full recalc — handles edge cases where multiple items change in one frame
+        FullRecalcLotteryStats(player);
     }
 
     void OnPlayerLogin(Player* player) override
@@ -1914,20 +1901,88 @@ public:
         HandleLotteryGossipSelect(player, action);
     }
 
-    // Periodic BG flag check: if player is flying in a BG with a flag, drop it.
-    // Very cheap checks — only does HasAura when both IsFlying + InBattleground are true.
+    // Double-jump flight + BG flag enforcement.
+    //
+    // DOUBLE-JUMP MECHANIC:
+    // Players with a fly enchant don't get instant GM-style flight. Instead:
+    //   1. Ground: CanFly=false → normal jump (space = arc upward then fall)
+    //   2. Falling 300ms: CanFly=true → player can now press space to ascend
+    //   3. Flying: CanFly=true → normal flight controls (space=up, X=down)
+    //   4. Land: CanFly=false → back to step 1 (next space = normal jump)
+    // This gives a "jump, then fly" feel instead of instant space-to-ascend.
+    //
+    // BG FLAG CHECK:
+    // Flying flag carriers in battlegrounds drop the flag immediately.
     void OnPlayerUpdate(Player* player, uint32 /*diff*/) override
     {
         if (!IsEnabled() || !player) return;
-        if (!player->IsFlying() || !player->InBattleground()) return;
 
-        if (player->HasAura(23335) || player->HasAura(23333) || player->HasAura(34976))
+        uint32 pg = player->GetGUID().GetCounter();
+
+        // --- Double-jump flight state machine ---
+        if (player->GetLotteryCanFly() && !player->IsLotteryFlyLocked())
         {
-            player->RemoveAurasDueToSpell(23335);
-            player->RemoveAurasDueToSpell(23333);
-            player->RemoveAurasDueToSpell(34976);
-            ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cffFF0000You can't carry a flag while flying! Flag dropped.|r");
+            bool isFalling = player->IsFalling();
+            bool isFlying  = player->IsFlying();
+            bool canFlySet = player->CanFly();
+
+            if (!isFalling && !isFlying && canFlySet)
+            {
+                // LANDED — disable CanFly so next space = normal jump
+                player->SetCanFly(false);
+                s_flyJumpTimer.erase(pg);
+            }
+            else if (isFalling && !canFlySet)
+            {
+                // AIRBORNE from a jump, CanFly not yet enabled.
+                // After 300ms of falling, enable CanFly so second space = fly.
+                uint32 now = static_cast<uint32>(GameTime::GetGameTimeMS().count());
+                auto it = s_flyJumpTimer.find(pg);
+                if (it == s_flyJumpTimer.end())
+                {
+                    s_flyJumpTimer[pg] = now;
+                }
+                else if (now - it->second >= 300)
+                {
+                    player->SetCanFly(true);
+                    player->UpdateSpeed(MOVE_FLIGHT, true);
+                    s_flyJumpTimer.erase(pg);
+                }
+            }
+            else if (!isFalling && !isFlying)
+            {
+                // On ground, no flight state — clean timer
+                s_flyJumpTimer.erase(pg);
+            }
+            // If already flying or falling with CanFly → do nothing, let them fly.
+        }
+        else if (player->CanFly())
+        {
+            // Player lost fly capability (flylocked or enchant removed) but
+            // still has CanFly flag set → remove it gracefully
+            if (player->IsFlying())
+            {
+                player->SetCanFly(false);
+                player->CastSpell(player, 130, true); // Slow Fall
+            }
+            else
+            {
+                player->SetCanFly(false);
+            }
+            s_flyJumpTimer.erase(pg);
+        }
+
+        // --- BG flag check: flying flag carriers drop the flag ---
+        if (player->IsFlying() && player->InBattleground())
+        {
+            if (player->HasAura(23335) || player->HasAura(23333) || player->HasAura(34976))
+            {
+                player->RemoveAurasDueToSpell(23335);
+                player->RemoveAurasDueToSpell(23333);
+                player->RemoveAurasDueToSpell(34976);
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cffFF0000You can't carry a flag while flying! Flag dropped.|r");
+            }
         }
     }
 

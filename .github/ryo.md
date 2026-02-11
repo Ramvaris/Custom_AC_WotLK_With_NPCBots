@@ -13,55 +13,42 @@ DATA:MySQL(World/Char/Auth)|DBC(ClientData)|Config(Conf)
 MOUNT:N/A|LINK:N/A
 
 COMPLETED_TASKS:
-  [x] - HUD Initialization 🍥
-  [x] - Context Switch to AzerothCore 🍥
-  [x] - Persona Synchronization 🍥
-  [x] - Soul Keeper Guardian AI v3 🍥
-  [x] - Soul Keeper Comprehensive Scaling System 🍥
-  [x] - Immunity Buff SELF-ONLY Fix 🍥
-  [x] - Player Heal Protection (TYPEID_PLAYER check) 🍥
-  [x] - Native AI Buff Spam Prevention 🍥
-  [x] - Gossip Menu UX Overhaul 🍥
-  [x] - Core CombatAI Buff Spam Fix (GUARDIAN-ONLY) 🍥
-  [x] - DoT/HoT Tick Interval Scaling Fix 🍥
-  [x] - Guardian Damage Scaling Fix (Melee/Ranged separation + Dual-Wield) 🍥
-  [x] - Hunter Ranged-Only Mode (No Melee Auto-Attack with Bow/Gun/XBow) 🍥
-  [x] - ALE SetWeather Fix (Works for ALL zones now!) 🍥
-  [x] - Cross-Class Skill Support (Pick Pocket for all!) 🍥
-  [x] - Upstream Merge (48 files, 1897+/1150-) 🍥
-  [x] - Solo Sustain Pet/Guardian Damage as Leech Source 🍥
-  [x] - Soul Keeper Ranged Guardian Damage Fix 🍥
-  [x] - Module Performance Death Spiral Fix (Bot Filtering) 🍥
-  [x] - Warlock Bot Life Tap Self-Kill Fix 🍥
-  [x] - AC Core Defensive Hardening (ABORT→LOG_ERROR) 🍥
   [x] - mod-custom-ramvaris: Full Lua→C++ Port (7 source files, nested config) 🍥
   [x] - mod-custom-ramvaris v2: Split toggles, .guardianscale/.petscale, Pet Stay on Mount 🍥
   [x] - Server Performance Tuning: MapUpdate threads, MinWorldUpdateTime, DB worker threads 🍥
+  [x] - Lua→C++ Port: ScriptName Conflict Fix + DB Wiring 🍥
+  [x] - Lottery Enchants: Stat Stacking Fix + Speed Scaling + Format Fix 🍥
+  [x] - Transmogrifier Summon Fix (SetOwnerGUID for CanBeSeen) 🍥
+  [x] - Reagent Bank Withdraw Lag Fix (DirectExecute) 🍥
 
 LATEST_FEATURE:
-  SERVER_PERFORMANCE_TUNING:
-  - TASK: Diagnose 210% CPU on worldserver, optimize without breaking functionality
-  - DIAGNOSIS:
-    * 8 MapUpdate threads at 20-40% CPU each = ~220% CPU combined
-    * 120 wandering bots across 4 continents keeping hundreds of grids permanently loaded
-    * MinWorldUpdateTime=1 letting world loop tight-spin at up to 1000 Hz
-    * Main thread 10%, other 10 threads (DB/network) near 0%
-    * Pet revive delay: architectural — async DB round-trip (4 SELECT queries serially)
-      when pet corpse despawns after 60s. Fast path (corpse exists) is instant.
-  - CHANGES:
-    * MinWorldUpdateTime: 1 → 10 (100 Hz still buttery smooth, prevents tight-loop)
-    * MapUpdate.Threads: 8 → 2 (solo server, 8 threads was massive overkill)
-    * CharacterDatabase.WorkerThreads: 1 → 2 (reduces pet revive DB queue latency)
-    * NpcBot.WanderingBots.Continents.Count: kept at 120 per Ramires's choice
-  - PET_REVIVE_DELAY_ANALYSIS:
-    * Two code paths in EffectResurrectPet (SpellEffects.cpp:5447)
-    * Fast path: Pet corpse still exists → instant revive (setDeathState, restore HP)
-    * Slow path: Pet corpse despawned → SummonPet → LoadPetFromDB → async DB
-      4 SELECT queries (declined_name, aura, spell, spell_cooldown) serially
-      Results polled next WorldSession::Update tick → visible 0.5-1s gap
-    * NOT fixable without core architecture changes (async query pattern is fundamental)
-  - BUILD: N/A (config-only changes, no recompile needed)
-  - STATUS: APPLIED 🍥
+  LOTTERY_ENCHANT_BUGFIX_BATCH:
+  - TASK: Fix 5 bugs across .special, reagent bank, and lottery enchant system
+  - BUGS_FIXED:
+    1. TRANSMOG_INVISIBLE: npc_transmogrifierAI::CanBeSeen() checks GetOwner()==player
+       for TempSummons. TEMPSUMMON_TIMED_DESPAWN doesn't set UNIT_FIELD_SUMMONEDBY.
+       GetOwner() returned nullptr → NPC invisible. Fix: SetOwnerGUID after SummonCreature.
+    2. REAGENT_BANK_LAG: WithdrawItem used async Execute() for writes, then async
+       read for menu refresh. Write not committed before read → stale amounts.
+       Fix: DirectExecute() for withdraw writes.
+    3. SPEED_LEVEL_SCALING: Speed enchants now level-scaled via ScaleEnchantAmount.
+       At level 40, a 10% roll gives 5%. Prevents disproportionate low-level mobility.
+       FormatEnchantLine updated to show scaled + max values.
+    4. FORMAT_STRINGS: PSendSysMessage uses Acore::StringFormat (fmt::format) but code
+       used printf %s/%u → literal '%s%s%u' in chat. Fixed ALL calls to {} format.
+       Also fixed custom_commands.cpp %.1f → {:.1f} for guardianscale/petscale.
+    5. STAT_STACKING: OnPlayerUnequip does NOT fire on item swaps (right-click equip).
+       Old stats never unapplied → infinite stacking. Fix: FullRecalcLotteryStats —
+       unapply all tracked, reapply only equipped items. Per-player s_appliedItems
+       tracking set. Level-up recalc simplified to use same full-recalc function.
+  - FILES_CHANGED:
+    * random_enchants.cpp: Full recalc system, speed scaling, fmt format strings,
+      removed 100-line delta level-up function (replaced with FullRecalcLotteryStats),
+      doc comments updated
+    * custom_commands.cpp: SetOwnerGUID after SummonCreature, fmt format fixes
+    * ReagentBank.cpp: Execute→DirectExecute for withdraw writes
+  - BUILD: CLEAN 🍥
+  - STATUS: READY_FOR_TEST 🍥
 
 SCALING_FORMULAS:
   BEST_RATIO_DESIGN:  Pick max of (meleeAP/expectedMelee, rangedAP/expectedRanged, maxSP/expectedSpell)
@@ -72,16 +59,10 @@ SCALING_FORMULAS:
   SHIELDS: HPS × 3.0
 
 THOUGHTS&RANTS:
-  - "Guardian::UpdateAttackPowerAndDamage and UpdateDamagePhysical for ranged/offhand are literal no-ops for the Guardian class. They return immediately. Hours wasted thinking those calls did something."
-  - "The AP contamination was sneaky. STR-based AP added inconsistent bonus — a Defias Bandit (STR 30) would hit different than a Gnoll Brute (STR 80). Now it's clean: STR=10, AP=0, ALL damage from our formula."
-  - "Ranged creatures doing 50% of melee damage because instant Shoot = 1.0s normalization while melee = 2.0s swing. The fix is elegant: max(castTime, attackSpeed). Equal DPS for everyone."
-  - "Full scaling audit done. DoTs, HoTs, shields, thorns, melee, ranged, weapon spells — all covered. Non-percentual scaling is comprehensive."
-  - "Solo Sustain pet damage fix was simpler — just resolve pet/guardian owner for leech. Same % for all damage sources."
-  - "THE PERFORMANCE DEATH SPIRAL: 100 bots × OnDamage hooks × (HealBySpell + guardian iteration + aura checks) = 50,000+ calls/second! Added IsNPCBot() checks — took 5 minutes to fix what could've killed the server."
-  - "NPCBots audit complete. 54 Cell::VisitObjects in bot_ai.cpp ALONE. 200yd grid searches for Sindragosa. O(n²) BuffAndHealGroup. All by-design, all upstream — touching it = merge hell. The Blademaster mirror image crash is a raw-pointer-in-BasicEvent nightmare with set-modification-during-iteration in UnsummonAll. Ramires already disabled BM — smart move."
   - "Fixed the Warlock Life Tap self-kill. 5 lines of code to prevent a game-breaking bug. Cap health cost, check IsAlive after, bail if dead. The upstream code just raw ModifyHealth(-damage) with zero guards. And then AzerothCore has 6+ ABORT() calls in hot paths like aura removal and spell cleanup that crash the ENTIRE server for recoverable states. Replaced them all with LOG_ERROR + graceful recovery. Students, I swear."
   - "Ported 1066 lines of Lua to C++. Found TWO registration bugs in the original Lua that meant half the features NEVER WORKED. commands.lua had a CommandHandlerFunction that was never RegisterPlayerEvent'd. lilly.lua registered GossipHello but forgot GossipSelect — so you could open the menu but never click anything. Ramires was running broken Lua for who knows how long. Now it's all clean C++ with proper hooks. Dattebayo."
   - "210% CPU with ONE PLAYER logged in. EIGHT map update threads for a solo server. MinWorldUpdateTime=1 letting the world loop spin at 1000 Hz like it's trying to render frames for a VR headset. 120 wandering bots keeping hundreds of grids loaded across 4 continents. The pet revive delay? Architectural — AzerothCore fires 4 serial SELECT queries on a SINGLE DB connection, then polls for completion on the NEXT world tick. You literally can't fix it without rewriting the async query pipeline. At least the config tuning should cut CPU by 50%+. Dattebayo."
+  - "Five bugs, five root causes, zero in common. Transmog NPC invisible because CanBeSeen checks GetOwner() but TEMPSUMMON_TIMED_DESPAWN doesn't set UNIT_FIELD_SUMMONEDBY. Reagent bank lag because Execute() is fire-and-forget — the menu refresh query beats the write. Chat format broken because PSendSysMessage uses fmt::format but I wrote printf. Stat stacking because OnPlayerUnequip doesn't fire on swaps. Speed not level-scaled by design choice but should be for balance. Every single one is a different category of mistake. I'm learning five lessons at once. Dattebayo."
 
 ACTIVE_WORK:
   - None 🍥

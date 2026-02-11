@@ -12,7 +12,6 @@
 void AddSC_spell_human_stoneform();
 
 // NPC Scripts
-void AddSC_npc_summon_flavor();
 void AddSC_npc_lilly_gossip();
 
 // Player Scripts
@@ -33,7 +32,6 @@ void AddSC_smart_wandering_bots();
 void Addmod_custom_ramvarisScripts()
 {
     AddSC_spell_human_stoneform();
-    AddSC_npc_summon_flavor();
     AddSC_npc_lilly_gossip();
     AddSC_player_login_grants();
     AddSC_dark_azeroth_weather();

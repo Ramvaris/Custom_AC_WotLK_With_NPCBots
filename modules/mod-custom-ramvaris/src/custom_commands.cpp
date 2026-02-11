@@ -22,6 +22,7 @@
 #include "Opcodes.h"
 #include "ScriptedGossip.h"
 #include "Config.h"
+#include "npc_summon_flavor.h"
 
 using namespace Acore::ChatCommands;
 
@@ -113,6 +114,7 @@ public:
             { "special",       HandleSpecialCommand,       SEC_PLAYER, Console::No },
             { "guardianscale", HandleGuardianScaleCommand, SEC_PLAYER, Console::No },
             { "petscale",      HandlePetScaleCommand,      SEC_PLAYER, Console::No },
+            { "ramhelp",       HandleRamhelpCommand,       SEC_PLAYER, Console::No },
         };
         return commandTable;
     }
@@ -142,6 +144,46 @@ public:
 
         SendDynamicGossipText(player, "Select a service or an NPC to summon for 60 seconds:");
         SendGossipMenuFor(player, 0x7FFFFFFF, player->GetGUID());
+        return true;
+    }
+
+    // --- .ramhelp command ---
+    // Lists ALL custom slash commands from every custom module on the server.
+    // Always available — no config gate. Every player can see the help.
+    static bool HandleRamhelpCommand(ChatHandler* handler)
+    {
+        handler->SendSysMessage("|cff00CCFF=== Ramvaris Custom Commands ===|r");
+
+        // mod-custom-ramvaris
+        handler->SendSysMessage("|cffFFD700[mod-custom-ramvaris]|r");
+        handler->SendSysMessage("  .special        — Summon custom NPCs / Open bank / Open mailbox");
+        handler->SendSysMessage("  .enchants       — View lottery enchants on all your items (gossip)");
+        handler->SendSysMessage("  .reroll         — Reroll lottery enchants on a bag item (500g)");
+        handler->SendSysMessage("  .flylock        — Toggle flight on/off (if you have a fly enchant)");
+        handler->SendSysMessage("  .guardianscale  — Double your Soul Keeper guardian's visual size");
+        handler->SendSysMessage("  .petscale       — Double your pet's visual size (Hunter/Lock/DK)");
+        handler->SendSysMessage("  .ramhelp        — This help page");
+
+        // mod-soul-keeper
+        handler->SendSysMessage("|cffFFD700[mod-soul-keeper]|r");
+        handler->SendSysMessage("  .soul absorb    — Capture a creature into your soul collection");
+        handler->SendSysMessage("  .soul summon    — Open soul list / summon guardian by index");
+        handler->SendSysMessage("  .soul dismiss   — Dismiss your active Soul Keeper guardian");
+        handler->SendSysMessage("  .soul return    — Recall guardian back (60s cooldown)");
+        handler->SendSysMessage("  .soul rename    — Rename your summoned guardian");
+        handler->SendSysMessage("  .soul search    — Search captured souls by name");
+
+        // mod-guildhouse
+        handler->SendSysMessage("|cffFFD700[mod-guildhouse]|r");
+        handler->SendSysMessage("  .gh teleport    — Teleport to your guild house");
+        handler->SendSysMessage("  .gh butler      — Spawn the Guild House Butler (GM only)");
+
+        // mod-transmog
+        handler->SendSysMessage("|cffFFD700[mod-transmog]|r");
+        handler->SendSysMessage("  .transmog       — Toggle transmog visual visibility");
+        handler->SendSysMessage("  .transmog portable — Summon a portable transmogrifier NPC");
+
+        handler->SendSysMessage("|cff00CCFF================================|r");
         return true;
     }
 
@@ -184,12 +226,12 @@ public:
 
         if (currentScale >= static_cast<float>(MAX_VISUAL_SCALE))
         {
-            handler->PSendSysMessage("Guardian is already at maximum scale (%.0fx).", currentScale);
+            handler->PSendSysMessage("Guardian is already at maximum scale ({:.0f}x).", currentScale);
             return true;
         }
 
         skGuardian->SetObjectScale(newScale);
-        handler->PSendSysMessage("Guardian scale: %.1fx -> %.1fx", currentScale, newScale);
+        handler->PSendSysMessage("Guardian scale: {:.1f}x -> {:.1f}x", currentScale, newScale);
         return true;
     }
 
@@ -222,12 +264,12 @@ public:
 
         if (currentScale >= static_cast<float>(MAX_VISUAL_SCALE))
         {
-            handler->PSendSysMessage("Pet is already at maximum scale (%.0fx).", currentScale);
+            handler->PSendSysMessage("Pet is already at maximum scale ({:.0f}x).", currentScale);
             return true;
         }
 
         pet->SetObjectScale(newScale);
-        handler->PSendSysMessage("Pet scale: %.1fx -> %.1fx", currentScale, newScale);
+        handler->PSendSysMessage("Pet scale: {:.1f}x -> {:.1f}x", currentScale, newScale);
         return true;
     }
 };
@@ -260,10 +302,19 @@ public:
         else if (action >= 1 && action <= SUMMON_MAP_SIZE)
         {
             uint32 npcId = SummonMap[action - 1].entry;
-            player->SummonCreature(npcId,
+            if (Creature* summon = player->SummonCreature(npcId,
                 player->GetPositionX(), player->GetPositionY(),
                 player->GetPositionZ(), player->GetOrientation(),
-                TEMPSUMMON_TIMED_DESPAWN, 60000);
+                TEMPSUMMON_TIMED_DESPAWN, 60000))
+            {
+                // Set owner GUID so NPC scripts with owner-based CanBeSeen work
+                // (e.g., npc_transmogrifier portable NPC visibility gate).
+                // TEMPSUMMON_TIMED_DESPAWN doesn't set UNIT_FIELD_SUMMONEDBY —
+                // without this, GetOwner() returns nullptr and the NPC is invisible.
+                summon->SetOwnerGUID(player->GetGUID());
+
+                DoSummonFlavorText(summon, player);
+            }
         }
     }
 };

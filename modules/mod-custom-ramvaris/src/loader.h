@@ -11,11 +11,11 @@
 // Spell Scripts
 void AddSC_spell_human_stoneform();
 
-// NPC Scripts (summon flavor text for 7 custom NPCs)
-void AddSC_npc_summon_flavor();
-
 // NPC Scripts (Lilly helper NPC — full gossip + summon flavor)
 void AddSC_npc_lilly_gossip();
+
+// NPC flavor text is NOT registered here — it's a centralized function
+// called from the .special command handler (see npc_summon_flavor.h).
 
 // Player Scripts (login spell grants, profession unlocks, racial adjustments)
 void AddSC_player_login_grants();
