@@ -50,7 +50,7 @@ enum class SelectTargetMethod
 };
 
 // default predicate function to select target based on distance, player and/or aura criteria
-struct DefaultTargetSelector : public Acore::unary_function<Unit*, bool>
+struct DefaultTargetSelector
 {
     Unit const* me;
     float m_dist;
@@ -108,7 +108,7 @@ struct DefaultTargetSelector : public Acore::unary_function<Unit*, bool>
 
 // Target selector for spell casts checking range, auras and attributes
 /// @todo: Add more checks from Spell::CheckCast
-struct SpellTargetSelector : public Acore::unary_function<Unit*, bool>
+struct SpellTargetSelector
 {
 public:
     SpellTargetSelector(Unit* caster, uint32 spellId);
@@ -122,7 +122,7 @@ private:
 // Very simple target selector, will just skip main target
 // NOTE: When passing to UnitAI::SelectTarget remember to use 0 as position for random selection
 //       because tank will not be in the temporary list
-struct NonTankTargetSelector : public Acore::unary_function<Unit*, bool>
+struct NonTankTargetSelector
 {
 public:
     NonTankTargetSelector(Creature* source, bool playerOnly = true) : _source(source), _playerOnly(playerOnly) { }
@@ -134,7 +134,7 @@ private:
 };
 
 // Simple selector for units using mana
-struct PowerUsersSelector : public Acore::unary_function<Unit*, bool>
+struct PowerUsersSelector
 {
     Unit const* _me;
     Powers const _power;
@@ -169,7 +169,7 @@ struct PowerUsersSelector : public Acore::unary_function<Unit*, bool>
 };
 
 // Simple selector based on range and Los
-struct RangeSelector : public Acore::unary_function<Unit*, bool>
+struct RangeSelector
 {
     RangeSelector(Unit const* unit, float maxDist, bool playerOnly, bool inLos, float minDist = 0.f) : _me(unit), _minDist(minDist), _maxDist(maxDist), _playerOnly(playerOnly), _inLos(inLos) {}
 

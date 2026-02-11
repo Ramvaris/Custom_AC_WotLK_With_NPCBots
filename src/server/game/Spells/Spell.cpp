@@ -9258,8 +9258,7 @@ namespace Acore
 
     WorldObjectSpellTargetCheck::~WorldObjectSpellTargetCheck()
     {
-        if (_condSrcInfo)
-            delete _condSrcInfo;
+        delete _condSrcInfo;
     }
 
     bool WorldObjectSpellTargetCheck::operator()(WorldObject* target)

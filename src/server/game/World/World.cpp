@@ -1567,7 +1567,8 @@ void World::UpdateRealmCharCount(uint32 accountId)
 {
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_COUNT);
     stmt->SetData(0, accountId);
-    _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt).WithPreparedCallback(std::bind(&World::_UpdateRealmCharCount, this, std::placeholders::_1,accountId)));
+    _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt).WithPreparedCallback(
+        [this, accountId](PreparedQueryResult result) { _UpdateRealmCharCount(std::move(result), accountId); }));
 }
 
 void World::_UpdateRealmCharCount(PreparedQueryResult resultCharCount,uint32 accountId)

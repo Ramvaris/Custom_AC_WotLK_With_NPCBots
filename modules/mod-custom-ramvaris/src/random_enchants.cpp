@@ -293,20 +293,6 @@ static EnchantTier GetTierFromValue(uint32 value)
     return TIER_RED;
 }
 
-static EnchantTier GetMaxTierForQuality(uint32 quality)
-{
-    switch (quality)
-    {
-        case ITEM_QUALITY_POOR:      return TIER_GREY;
-        case ITEM_QUALITY_NORMAL:    return TIER_WHITE;
-        case ITEM_QUALITY_UNCOMMON:  return TIER_GREEN;
-        case ITEM_QUALITY_RARE:      return TIER_BLUE;
-        case ITEM_QUALITY_EPIC:      return TIER_PURPLE;
-        case ITEM_QUALITY_LEGENDARY: return TIER_RED;
-        default:                     return TIER_GREEN;
-    }
-}
-
 static bool IsAllowedStatType(uint32 statType)
 {
     switch (statType)
@@ -666,9 +652,7 @@ static void RecalcLotterySpeedAndFly(Player* player)
     player->UpdateSpeed(MOVE_RUN, true);
     player->UpdateSpeed(MOVE_SWIM, true);
 
-    bool hasFlyEnchant = player->GetLotteryCanFly();
-    bool fullFlight    = player->HasLotteryFullFlight();
-    uint32 pg          = player->GetGUID().GetCounter();
+    bool fullFlight = player->HasLotteryFullFlight();
 
     if (fullFlight)
     {

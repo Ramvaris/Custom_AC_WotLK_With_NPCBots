@@ -26,6 +26,13 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
   - **NPCBots Sindragosa Search Optimization** - Reduced grid search radius from 200yd to 80yd (Sindragosa's arena is ~60yd across). With 100+ bots, the old 200yd search was scanning massive grid areas every tick.
   - **Warlock Bot Life Tap Fix** - Prevents NPCBot warlocks from killing themselves with Life Tap (capped health cost + alive guard)
   - **Aura Duration Zero-Tick Fix** - Prevents periodic aura ticks from firing when duration has already reached zero (changed `>= 0` to `> 0` in AuraEffect::Update). Fixes debuffs visually at 0s but still ticking for several seconds under server load.
+- C++17 modernization & performance fixes (zero behavior change):
+  - **Memory Leak Fix** - `Player::addSpell` leaked `PlayerSpell*` on LEARN_SPELL error path (even had a `// mem leak` comment). Now properly `delete`s before map erase.
+  - **std::bind → Lambda** - All 10 `std::bind` calls in `src/server/game/` replaced with inline lambdas. 2 were in hot combat paths (weapon crit + offhand damage, called every combat tick per weapon). Lambdas inline and avoid heap allocation — `std::bind` cannot.
+  - **Deprecated unary_function Removed** - `Acore::unary_function` (deprecated C++11, removed C++17) stripped from 7 functors and its template definition deleted from Common.h. Nobody used the inherited typedefs.
+  - **Double Map Lookups** - `count()+operator[]` patterns in Battlefield.cpp replaced with `try_emplace()` (single hash lookup instead of two).
+  - **Operator Precedence Warning** - SpellInfo.cpp `&&` within `||` — added explicit parentheses. Zero build warnings from game library now.
+  - **Dead Code Cleaned** - Unused `GetMaxTierForQuality()`, `hasFlyEnchant`, `pg` removed from random_enchants.cpp.
 - Some QoL stuff
 -> Looting of mobs that were killed by a players pet without the player doing damage to it
 -> All Ore- and Flower-Nodes respawn in 120 seconds instead of 24 hours to 7 days.

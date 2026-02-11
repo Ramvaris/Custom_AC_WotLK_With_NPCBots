@@ -1566,10 +1566,10 @@ SpellCastResult SpellInfo::CheckLocation(uint32 map_id, uint32 zone_id, uint32 a
         }
 
         if (!areaEntry ||
-            (!player || (player->GetMapId() != 0 && player->GetMapId() != 1)) &&
+            ((!player || (player->GetMapId() != 0 && player->GetMapId() != 1)) &&
             (!areaEntry->IsFlyable() ||
                 (strict && (areaEntry->flags & AREA_FLAG_NO_FLY_ZONE) != 0) ||
-                (player && !player->canFlyInZone(map_id, zone_id, this))))
+                (player && !player->canFlyInZone(map_id, zone_id, this)))))
         {
             return SPELL_FAILED_INCORRECT_AREA;
         }

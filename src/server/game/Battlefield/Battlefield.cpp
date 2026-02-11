@@ -269,8 +269,8 @@ void Battlefield::InvitePlayersInZoneToWar()
                     continue;
                 if (m_PlayersInWar[player->GetTeamId()].size() + m_InvitedPlayers[player->GetTeamId()].size() < m_MaxPlayer)
                     InvitePlayerToWar(player);
-                else if (m_PlayersWillBeKick[player->GetTeamId()].count(player->GetGUID()) == 0)// Battlefield is full of players
-                    m_PlayersWillBeKick[player->GetTeamId()][player->GetGUID()] = GameTime::GetGameTime().count() + 10;
+                else // Battlefield is full of players
+                    m_PlayersWillBeKick[player->GetTeamId()].try_emplace(player->GetGUID(), GameTime::GetGameTime().count() + 10);
             }
         }
 }
@@ -293,8 +293,7 @@ void Battlefield::InvitePlayerToWar(Player* player)
     // If the player does not match minimal level requirements for the battlefield, kick him
     if (player->GetLevel() < m_MinLevel)
     {
-        if (m_PlayersWillBeKick[player->GetTeamId()].count(player->GetGUID()) == 0)
-            m_PlayersWillBeKick[player->GetTeamId()][player->GetGUID()] = GameTime::GetGameTime().count() + 10;
+        m_PlayersWillBeKick[player->GetTeamId()].try_emplace(player->GetGUID(), GameTime::GetGameTime().count() + 10);
         return;
     }
 

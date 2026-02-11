@@ -280,8 +280,10 @@ void WorldSession::HandleOpenItemOpcode(WorldPacket& recvPacket)
         {
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_GIFT_BY_ITEM);
             stmt->SetData(0, item->GetGUID().GetCounter());
+            auto itemGuidCounter = item->GetGUID().GetCounter();
             _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt)
-                .WithPreparedCallback(std::bind(&WorldSession::HandleOpenWrappedItemCallback, this, bagIndex, slot, item->GetGUID().GetCounter(), std::placeholders::_1)));
+                .WithPreparedCallback([this, bagIndex, slot, itemGuidCounter](PreparedQueryResult result) {
+                    HandleOpenWrappedItemCallback(bagIndex, slot, itemGuidCounter, std::move(result)); }));
         }
         else
         {

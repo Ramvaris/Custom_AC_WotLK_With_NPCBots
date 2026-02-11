@@ -3288,9 +3288,13 @@ bool Player::_addSpell(uint32 spellId, uint8 addSpecMask, bool temporary, bool l
     if (spellInfo->HasEffect(SPELL_EFFECT_LEARN_SPELL))
     {
         LOG_INFO("entities.player", "TRYING TO LEARN SPELL WITH EFFECT LEARN 2: {}, PLAYER: {}", spellId, GetGUID().ToString());
-        m_spells.erase(spellInfo->Id); // mem leak, but should never happen
+        auto itr = m_spells.find(spellInfo->Id);
+        if (itr != m_spells.end())
+        {
+            delete itr->second;
+            m_spells.erase(itr);
+        }
         return false;
-        //ABORT();
     }
     // pussywizard: cast passive spells (including all talents without SPELL_EFFECT_LEARN_SPELL) with additional checks
     else if (spellInfo->IsPassive() || (spellInfo->HasAttribute(SPELL_ATTR0_DO_NOT_DISPLAY) && spellInfo->Stances))
@@ -7216,7 +7220,8 @@ void Player::UpdateWeaponDependentCritAuras(WeaponAttackType attackType)
     }
 
     float amount = 0.0f;
-    amount += GetTotalAuraModifier(SPELL_AURA_MOD_WEAPON_CRIT_PERCENT, std::bind(&Unit::CheckAttackFitToAuraRequirement, this, attackType, std::placeholders::_1));
+    amount += GetTotalAuraModifier(SPELL_AURA_MOD_WEAPON_CRIT_PERCENT,
+        [this, attackType](AuraEffect const* aurEff) { return CheckAttackFitToAuraRequirement(attackType, aurEff); });
 
     // these auras don't have item requirement (only Combat Expertise in 3.3.5a)
     amount += GetTotalAuraModifier(SPELL_AURA_MOD_CRIT_PCT);

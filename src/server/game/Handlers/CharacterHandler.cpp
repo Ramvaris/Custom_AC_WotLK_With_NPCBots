@@ -266,7 +266,8 @@ void WorldSession::HandleCharEnumOpcode(WorldPacket& /*recvData*/)
     stmt->SetData(0, PET_SAVE_AS_CURRENT);
     stmt->SetData(1, GetAccountId());
 
-    _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt).WithPreparedCallback(std::bind(&WorldSession::HandleCharEnum, this, std::placeholders::_1)));
+    _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt).WithPreparedCallback(
+        [this](PreparedQueryResult result) { HandleCharEnum(std::move(result)); }));
 }
 
 void WorldSession::HandleCharCreateOpcode(WorldPacket& recvData)
@@ -1370,7 +1371,8 @@ void WorldSession::HandleCharRenameOpcode(WorldPacket& recvData)
     stmt->SetData(2, renameInfo->Name);
 
     _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt)
-        .WithPreparedCallback(std::bind(&WorldSession::HandleCharRenameCallBack, this, renameInfo, std::placeholders::_1)));
+        .WithPreparedCallback([this, renameInfo](PreparedQueryResult result) {
+            HandleCharRenameCallBack(renameInfo, std::move(result)); }));
 }
 
 void WorldSession::HandleCharRenameCallBack(std::shared_ptr<CharacterRenameInfo> renameInfo, PreparedQueryResult result)
@@ -1653,7 +1655,8 @@ void WorldSession::HandleCharCustomize(WorldPacket& recvData)
     stmt->SetData(0, customizeInfo->Guid.GetCounter());
 
     _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt)
-        .WithPreparedCallback(std::bind(&WorldSession::HandleCharCustomizeCallback, this, customizeInfo, std::placeholders::_1)));
+        .WithPreparedCallback([this, customizeInfo](PreparedQueryResult result) {
+            HandleCharCustomizeCallback(customizeInfo, std::move(result)); }));
 }
 
 void WorldSession::HandleCharCustomizeCallback(std::shared_ptr<CharacterCustomizeInfo> customizeInfo, PreparedQueryResult result)
@@ -1958,7 +1961,8 @@ void WorldSession::HandleCharFactionOrRaceChange(WorldPacket& recvData)
     stmt->SetData(0, factionChangeInfo->Guid.GetCounter());
 
     _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt)
-        .WithPreparedCallback(std::bind(&WorldSession::HandleCharFactionOrRaceChangeCallback, this, factionChangeInfo, std::placeholders::_1)));
+        .WithPreparedCallback([this, factionChangeInfo](PreparedQueryResult result) {
+            HandleCharFactionOrRaceChangeCallback(factionChangeInfo, std::move(result)); }));
 }
 
 void WorldSession::HandleCharFactionOrRaceChangeCallback(std::shared_ptr<CharacterFactionChangeInfo> factionChangeInfo, PreparedQueryResult result)
