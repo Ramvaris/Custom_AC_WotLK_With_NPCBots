@@ -80,25 +80,27 @@ private:
     }
 
     // =====================================================================
-    // Phase 2: Quests — remove class restrictions on item-reward quests
-    // Preserves class locks on quests that ONLY grant spells (trainers).
-    // Hybrid quests (items + spells) are opened — harmless extra spell.
+    // Phase 2: Quests — remove class restrictions on ALL quests except
+    // pure skill-only quests (spell reward with no item rewards).
+    // This keeps class-training fantasy (e.g. bear form quests) locked,
+    // while opening everything else for all classes.
     // =====================================================================
     static void PatchQuestRequirements()
     {
-        // --- DB: clear AllowableClasses on quests that give item rewards ---
-        // Subquery finds quest IDs that have at least one item reward.
-        // Quests with ONLY spell rewards (no item rewards) are left alone.
+        // --- DB: clear AllowableClasses on all class-restricted quests
+        // except pure skill-only quests:
+        //   (RewardSpell/RewardDisplaySpell present) AND (no item rewards).
         WorldDatabase.DirectExecute(
             "UPDATE quest_template_addon qta "
             "JOIN quest_template qt ON qta.ID = qt.ID "
             "SET qta.AllowableClasses = 0 "
             "WHERE qta.AllowableClasses != 0 "
-            "  AND (qt.RewardItem1 != 0 OR qt.RewardItem2 != 0 "
-            "       OR qt.RewardItem3 != 0 OR qt.RewardItem4 != 0 "
-            "       OR qt.RewardChoiceItemID1 != 0 OR qt.RewardChoiceItemID2 != 0 "
-            "       OR qt.RewardChoiceItemID3 != 0 OR qt.RewardChoiceItemID4 != 0 "
-            "       OR qt.RewardChoiceItemID5 != 0 OR qt.RewardChoiceItemID6 != 0)");
+            "  AND NOT ((qt.RewardSpell != 0 OR qt.RewardDisplaySpell != 0) "
+            "       AND qt.RewardItem1 = 0 AND qt.RewardItem2 = 0 "
+            "       AND qt.RewardItem3 = 0 AND qt.RewardItem4 = 0 "
+            "       AND qt.RewardChoiceItemID1 = 0 AND qt.RewardChoiceItemID2 = 0 "
+            "       AND qt.RewardChoiceItemID3 = 0 AND qt.RewardChoiceItemID4 = 0 "
+            "       AND qt.RewardChoiceItemID5 = 0 AND qt.RewardChoiceItemID6 = 0)");
 
         // --- In-memory: patch loaded quest templates ---
         uint32 count = 0;
@@ -108,7 +110,7 @@ private:
             if (quest->GetRequiredClasses() == 0)
                 continue;
 
-            // Check if this quest gives any item rewards
+            // Identify pure skill-only quests and keep those class-locked.
             bool hasItemReward = false;
             for (uint8 i = 0; i < QUEST_REWARDS_COUNT; ++i)
             {
@@ -130,7 +132,10 @@ private:
                 }
             }
 
-            if (hasItemReward)
+            bool const hasSpellReward = (quest->GetRewSpellCast() != 0 || quest->GetRewSpell() != 0);
+            bool const pureSkillOnlyQuest = hasSpellReward && !hasItemReward;
+
+            if (!pureSkillOnlyQuest)
             {
                 static_cast<QuestPatcher*>(quest)->ClearRequiredClasses();
                 ++count;
@@ -138,9 +143,9 @@ private:
         }
 
         if (count > 0)
-            LOG_INFO("server.loading", "[AllClassEquip] Opened {} class-restricted quests (item rewards)", count);
+            LOG_INFO("server.loading", "[AllClassEquip] Opened {} class-restricted quests (excluding pure skill-only)", count);
         else
-            LOG_INFO("server.loading", "[AllClassEquip] All item-reward quests already unrestricted");
+            LOG_INFO("server.loading", "[AllClassEquip] All non-skill-only class quests already unrestricted");
     }
 };
 
