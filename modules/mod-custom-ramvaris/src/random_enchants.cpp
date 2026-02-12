@@ -17,9 +17,9 @@
  *   haste, crit, hit, expertise, armor pen, resilience, AND all elemental resistances.
  * - Pool EXCLUDES: Dodge, Parry, Defense (overcapping with multiple items)
  * CUSTOM ENCHANTS: Movespeed (1-77% per roll, cap +100% = 200% base, stacking,
- *   affects run + swim + flight, level-scaled like all other stats)
+ *   affects run + swim + flight, NO level scaling — always full value, like flying)
  *   and Mobility Boost (1% chance, 3 stages: 100%/200%/300% flight speed, combined
- *   with speed bonus up to 600%, NO level scaling).
+ *   with speed bonus up to 600%, also NOT level-scaled).
  * - `.enchants` paginated gossip menu; `.reroll` gossip-based Keep/Take flow (500g)
  * - `.flylock` toggles flight on/off
  * - NO quality-based tier filtering — the percentile system handles balance naturally.
@@ -46,13 +46,13 @@
  * Rolled values (1-77) represent the level-80 cap. At lower levels, ALL stats scale:
  *   scaledAmount = max(1, round(rolledValue * playerLevel / 80))
  * Level 1 → 1.25%, Level 40 → 50%, Level 80 → 100%. Stats update on every level-up.
- * ALL enchant types scale with level — including speed and resists.
+ * Stats and resists scale with level. Speed and flight do NOT — always full value.
  *
  * SPEED/FLY MECHANIC:
  * Speed modifies base character speed (run, swim, AND flight), multiplicative with
  * aura buffs. E.g. +50% from enchants × 15% paladin aura = 1.5 × 1.15 = 172.5%.
  * Capped at +100% from enchants (200% base speed). Individual rolls are 1-77%.
- * Level-scaled like all other stats — a 50% roll at level 40 = 25% effective.
+ * NOT level-scaled — a 50% roll is always +50%, regardless of level.
  * Swimming is treated the same as running.
  * MOUNTED PLAYERS GET NO SPEED BONUS — mounts use vanilla 100% base speed. This
  * intentionally makes mounts obsolete as enchant speed grows (epic mount = 200%,
@@ -630,7 +630,6 @@ static void RecalcLotterySpeedAndFly(Player* player)
 {
     float totalSpeedBonus = 0.0f;
     uint32 highestFlyStage = 0;
-    uint8 plvl = player->GetLevel();
 
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
@@ -650,10 +649,9 @@ static void RecalcLotterySpeedAndFly(Player* player)
         {
             if (IsCustomSpeedEnchant(enchantId))
             {
-                // Speed is level-scaled like all other stats
+                // Speed is NOT level-scaled — always full value (like flying)
                 uint32 rawPct = GetSpeedPct(enchantId);
-                uint32 scaledPct = ScaleEnchantAmount(rawPct, plvl);
-                totalSpeedBonus += float(scaledPct) / 100.0f;
+                totalSpeedBonus += float(rawPct) / 100.0f;
             }
             else if (IsCustomFlyEnchant(enchantId))
             {
@@ -754,7 +752,7 @@ static void FullRecalcLotteryStats(Player* player)
 
 // =============================================================================
 // Level-up recalculation: delta-based stat adjustment for equipped items.
-// Speed/Fly enchants are now also level-scaled, so they need recalculation too.
+// Speed/Fly are NOT level-scaled, but stat/resist enchants are — recalc those on level-up.
 // =============================================================================
 static void RefreshLotteryEnchantsOnLevelUp(Player* player, uint8 /*oldLevel*/)
 {
@@ -1125,20 +1123,14 @@ static std::string FormatEnchantLine(uint32 enchantId, uint8 playerLevel)
 {
     if (IsCustomSpeedEnchant(enchantId))
     {
+        // Speed is NOT level-scaled — always full value
         uint32 rawPct = GetSpeedPct(enchantId);
-        uint32 scaledPct = ScaleEnchantAmount(rawPct, playerLevel);
         EnchantTier tier = GetTierFromValue(rawPct);
         std::string line;
         line += GetValueColor(tier);
         line += "+";
-        line += std::to_string(scaledPct);
+        line += std::to_string(rawPct);
         line += "% Movespeed|r";
-        if (playerLevel < 80)
-        {
-            line += " |cff888888(max: ";
-            line += std::to_string(rawPct);
-            line += "%)|r";
-        }
         return line;
     }
     if (IsCustomFlyEnchant(enchantId))
@@ -1617,7 +1609,8 @@ static void ShowEnchantsSummary(Player* player)
         {
             if (IsCustomSpeedEnchant(enchantId))
             {
-                totalSpeedPct += ScaleEnchantAmount(GetSpeedPct(enchantId), plvl);
+                // Speed is NOT level-scaled — always full value
+                totalSpeedPct += GetSpeedPct(enchantId);
                 continue;
             }
             if (IsCustomFlyEnchant(enchantId))

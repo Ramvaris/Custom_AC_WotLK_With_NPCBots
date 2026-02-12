@@ -82,7 +82,7 @@ ACTIVE_WORK:
     - Fly:    900100 + stage                          (unchanged 900101..900103)
     Flat pool of 20 types (13 stats + 6 resists + 1 speed), equal weight.
     urand(1, 77) for every stat value. 77 = thematic (7 slots × lucky 7s).
-    Speed expanded from 1-25% to 1-77%, now level-scales like all stats.
+    Speed expanded from 1-25% to 1-77%, NOT level-scaled (always full value).
     7 color tiers: each 11 values (1-11=Grey, 12-22=White, ..., 67-77=Red).
   - CHANGES:
     1. DELETED: BuildEnchantPoolsFromDBC(), s_enchantPools, s_globalMaxEnchantValue,
@@ -91,10 +91,11 @@ ACTIVE_WORK:
        IsCustomStatEnchant(), IsCustomResistEnchant(), decoder functions
     3. REWROTE: GetRandomEnchant (flat pool + urand), ApplyLotteryEnchantStat (synthetic
        ID decoding + DBC fallback), FormatEnchantLine (synthetic display), GetTierFromValue
-    4. UPDATED: ShowEnchantsSummary, RecalcLotterySpeedAndFly (speed level-scaling),
+    4. UPDATED: ShowEnchantsSummary, RecalcLotterySpeedAndFly (speed NOT level-scaled),
        startup hook (removed pool build call), RollNewEnchants comment, header doc
   - BACKWARD_COMPAT: Existing items with old DBC enchant IDs still work via fallback
     paths in Apply, Format, and Summary functions. No DB migration needed.
+  - MIGRATION: tools/migrate_lottery_enchants.py re-rolls legacy DB rows into synthetic format.
   - BUILD: CLEAN 🍥
   - STATUS: SHIPPED 🍥
 
