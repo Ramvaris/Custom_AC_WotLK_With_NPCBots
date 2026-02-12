@@ -35,7 +35,4 @@ void AddSC_smart_wandering_bots();
 // All-Class Equipment (startup hook: re-apply AllowableClass=-1, open class quests)
 void AddSC_all_class_equip();
 
-// Plate/Mail STR→AGI conversion for AGI classes
-void AddSC_plate_mail_str_to_agi();
-
 #endif // LOADER_CUSTOM_RAMVARIS_H
