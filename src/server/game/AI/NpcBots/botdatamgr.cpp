@@ -877,9 +877,19 @@ uint32 BotDataMgr::SpawnWanderingBotsInZone(uint32 zoneId, uint32 count, std::ve
         return 0;
 
     uint32 spawned = 0;
-    // team=-1: all factions (natural distribution), 0=Alliance, 1=Horde
-    // bracketEntry=nullptr: use default wanderer level brackets for zone spawning
     sBotGen->GenerateWanderingBotsToSpawn(count, -1, team, false, nullptr, nullptr, spawned, static_cast<int32>(zoneId), outEntries);
+    return spawned;
+}
+
+/// Smart Wandering API: Spawn wandering bots on a specific map (continent).
+/// Fallback for zones that have no WanderNodes — bots spawn at any valid node on the map.
+uint32 BotDataMgr::SpawnWanderingBotsOnMap(uint32 mapId, uint32 count, std::vector<uint32>* outEntries, int32 team)
+{
+    if (sBotGen->GetSpareBotsCount() == 0 || count == 0)
+        return 0;
+
+    uint32 spawned = 0;
+    sBotGen->GenerateWanderingBotsToSpawn(count, static_cast<int32>(mapId), team, false, nullptr, nullptr, spawned, -1, outEntries);
     return spawned;
 }
 

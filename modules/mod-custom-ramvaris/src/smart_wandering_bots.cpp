@@ -38,6 +38,7 @@
 #include "GameTime.h"
 #include "Log.h"
 #include "botdatamgr.h"
+#include "Map.h"
 
 /// Per-player state for smart wandering bot tracking
 struct SmartBotsPlayerState
@@ -126,6 +127,7 @@ private:
         if (count == 0)
             return;
 
+        uint32 mapId = player->GetMapId();
         std::vector<uint32> allEntries;
         allEntries.reserve(count);
         uint32 totalSpawned = 0;
@@ -133,40 +135,30 @@ private:
         if (IsBalancedFactionEnabled())
         {
             // Coin-flip per bot: each bot individually gets a random faction.
-            // This avoids the integer-division problem where count=1 always
-            // goes to the player's faction and the other side never appears.
             uint32 aSpawned = 0;
             uint32 hSpawned = 0;
 
             for (uint32 i = 0; i < count; ++i)
             {
-                // 50/50 coin flip for each bot
                 int32 faction = urand(0, 1) ? ALLIANCE : HORDE;
 
                 std::vector<uint32> entries;
-                uint32 spawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, 1, &entries, faction);
+                uint32 spawned = TrySpawnBot(newZone, mapId, &entries, faction);
 
                 if (spawned == 0)
                 {
-                    // Faction failed (no nodes / no spare bots for that faction)
                     // Try the other faction
                     int32 otherFaction = (faction == ALLIANCE) ? HORDE : ALLIANCE;
-                    spawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, 1, &entries, otherFaction);
-
-                    if (spawned == 0)
-                    {
-                        // Both factions failed — try unfiltered as last resort
-                        spawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, 1, &entries);
-                    }
-
-                    if (spawned > 0)
-                    {
-                        // We don't know which faction the fallback gave us, count it neutral
-                        totalSpawned += spawned;
-                        allEntries.insert(allEntries.end(), entries.begin(), entries.end());
-                    }
+                    spawned = TrySpawnBot(newZone, mapId, &entries, otherFaction);
                 }
-                else
+
+                if (spawned == 0)
+                {
+                    // Both factions failed — try unfiltered
+                    spawned = TrySpawnBot(newZone, mapId, &entries, -1);
+                }
+
+                if (spawned > 0)
                 {
                     if (faction == ALLIANCE)
                         aSpawned += spawned;
@@ -180,19 +172,19 @@ private:
 
             if (totalSpawned > 0)
             {
-                BOT_LOG_INFO("module", "SmartWandering: Spawned {} bots in zone {} for {} (A:{} H:{})",
-                    totalSpawned, newZone, player->GetName(), aSpawned, hSpawned);
+                BOT_LOG_INFO("module", "SmartWandering: Spawned {} bots for {} in zone {} / map {} (A:{} H:{})",
+                    totalSpawned, player->GetName(), newZone, mapId, aSpawned, hSpawned);
             }
         }
         else
         {
             // Standard spawning: all factions, natural distribution from spare pool
-            totalSpawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, count, &allEntries);
+            totalSpawned = TrySpawnBots(newZone, mapId, count, &allEntries, -1);
 
             if (totalSpawned > 0)
             {
-                BOT_LOG_INFO("module", "SmartWandering: Spawned {} bots in zone {} for {}",
-                    totalSpawned, newZone, player->GetName());
+                BOT_LOG_INFO("module", "SmartWandering: Spawned {} bots for {} in zone {} / map {}",
+                    totalSpawned, player->GetName(), newZone, mapId);
             }
         }
 
@@ -201,6 +193,24 @@ private:
             state.spawnedEntries = std::move(allEntries);
             state.currentZoneId = newZone;
         }
+    }
+
+    /// Try to spawn 1 bot: zone first, then map fallback.
+    static uint32 TrySpawnBot(uint32 zoneId, uint32 mapId, std::vector<uint32>* outEntries, int32 team)
+    {
+        uint32 spawned = BotDataMgr::SpawnWanderingBotsInZone(zoneId, 1, outEntries, team);
+        if (spawned == 0)
+            spawned = BotDataMgr::SpawnWanderingBotsOnMap(mapId, 1, outEntries, team);
+        return spawned;
+    }
+
+    /// Try to spawn N bots: zone first, then map fallback for remainder.
+    static uint32 TrySpawnBots(uint32 zoneId, uint32 mapId, uint32 count, std::vector<uint32>* outEntries, int32 team)
+    {
+        uint32 spawned = BotDataMgr::SpawnWanderingBotsInZone(zoneId, count, outEntries, team);
+        if (spawned < count)
+            spawned += BotDataMgr::SpawnWanderingBotsOnMap(mapId, count - spawned, outEntries, team);
+        return spawned;
     }
 
     void DespawnPlayerBots(ObjectGuid guid)
