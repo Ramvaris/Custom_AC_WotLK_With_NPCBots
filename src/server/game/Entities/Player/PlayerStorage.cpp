@@ -2404,17 +2404,24 @@ InventoryResult Player::CanRollForItemInLFG(ItemTemplate const* proto, WorldObje
             return EQUIP_ERR_CANT_EQUIP_SKILL;
     }
 
-    if (proto->Class == ITEM_CLASS_WEAPON && GetSkillValue(item_weapon_skills[proto->SubClass]) == 0)
+    if (proto->Class == ITEM_CLASS_WEAPON)
     {
-        bool const allowAllClassWand = allClassEquip && proto->SubClass == ITEM_SUBCLASS_WEAPON_WAND;
-        if (!allowAllClassWand)
-            return EQUIP_ERR_NO_REQUIRED_PROFICIENCY;
+        // Safety: malformed DB rows with invalid weapon subclass must never index out-of-bounds.
+        if (proto->SubClass >= MAX_ITEM_SUBCLASS_WEAPON)
+            return EQUIP_ERR_YOU_CAN_NEVER_USE_THAT_ITEM;
+
+        if (GetSkillValue(item_weapon_skills[proto->SubClass]) == 0)
+        {
+            bool const allowAllClassWand = allClassEquip && proto->SubClass == ITEM_SUBCLASS_WEAPON_WAND;
+            if (!allowAllClassWand)
+                return EQUIP_ERR_NO_REQUIRED_PROFICIENCY;
+        }
     }
 
     if (proto->Class == ITEM_CLASS_ARMOR)
     {
         // Check for shields
-        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD && !(
+        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD && !allClassEquip && !(
             IsClass(CLASS_PALADIN, CLASS_CONTEXT_EQUIP_SHIELDS)
             || IsClass(CLASS_WARRIOR, CLASS_CONTEXT_EQUIP_SHIELDS)
             || IsClass(CLASS_SHAMAN, CLASS_CONTEXT_EQUIP_SHIELDS)))
@@ -2447,7 +2454,7 @@ InventoryResult Player::CanRollForItemInLFG(ItemTemplate const* proto, WorldObje
         }
     }
 
-    if (proto->Class == ITEM_CLASS_ARMOR && proto->SubClass > ITEM_SUBCLASS_ARMOR_MISC && proto->SubClass < ITEM_SUBCLASS_ARMOR_BUCKLER &&
+    if (!allClassEquip && proto->Class == ITEM_CLASS_ARMOR && proto->SubClass > ITEM_SUBCLASS_ARMOR_MISC && proto->SubClass < ITEM_SUBCLASS_ARMOR_BUCKLER &&
         proto->InventoryType != INVTYPE_CLOAK)
     {
         uint32 subclassToCompare = ITEM_SUBCLASS_ARMOR_CLOTH;
