@@ -6829,8 +6829,23 @@ void Player::_ApplyItemBonuses(ItemTemplate const* proto, uint8 slot, bool apply
                 UpdateStatBuffMod(STAT_AGILITY);
                 break;
             case ITEM_MOD_STRENGTH:                         //modify strength
-                HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, BASE_VALUE, float(val), apply);
-                UpdateStatBuffMod(STAT_STRENGTH);
+                // [AllClassEquip] AGI classes wearing plate: STR → AGI auto-swap.
+                // Rogue/Hunter/Shaman/Druid benefit from AGI, not STR on plate.
+                // The swap happens at application time so talent % multipliers
+                // (e.g. "Sinister Calling: +15% AGI") apply correctly.
+                if (proto->Class == ITEM_CLASS_ARMOR
+                    && proto->SubClass == ITEM_SUBCLASS_ARMOR_PLATE
+                    && (getClass() == CLASS_ROGUE  || getClass() == CLASS_HUNTER ||
+                        getClass() == CLASS_SHAMAN || getClass() == CLASS_DRUID))
+                {
+                    HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, BASE_VALUE, float(val), apply);
+                    UpdateStatBuffMod(STAT_AGILITY);
+                }
+                else
+                {
+                    HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, BASE_VALUE, float(val), apply);
+                    UpdateStatBuffMod(STAT_STRENGTH);
+                }
                 break;
             case ITEM_MOD_INTELLECT:                        //modify intellect
                 HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, BASE_VALUE, float(val), apply);
