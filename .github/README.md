@@ -54,7 +54,7 @@ All adopted modules have been stripped of upstream `.git` metadata, bug-fixed, a
 | **mod-transmog** | Transmogrification system for appearance changes | [azerothcore/mod-transmog](https://github.com/azerothcore/mod-transmog) |
 | **mod-solo-lfg** | Enables solo queuing for dungeons via LFG | [azerothcore/mod-solo-lfg](https://github.com/azerothcore/mod-solo-lfg) |
 | **mod-guildhouse** | Personal guild housing system | [azerothcore/mod-guildhouse](https://github.com/azerothcore/mod-guildhouse) |
-| **mod-reagent-bank** | Additional storage for crafting reagents | [azerothcore/mod-reagent-bank](https://github.com/azerothcore/mod-reagent-bank) |
+| **mod-reagent-bank** | Account-wide storage for crafting reagents | [azerothcore/mod-reagent-bank](https://github.com/azerothcore/mod-reagent-bank) |
 | **mod-skip-dk-starting-area** | Skip the Death Knight starting zone | [azerothcore/mod-skip-dk-starting-area](https://github.com/azerothcore/mod-skip-dk-starting-area) |
 | **mod-ale** | AzerothCore Lua Engine for scripting | [azerothcore/mod-eluna](https://github.com/azerothcore/mod-eluna) |
 | **mod-gain-honor-guard** | Honor gain adjustments | [azerothcore/mod-gain-honor-guard](https://github.com/azerothcore/mod-gain-honor-guard) |
@@ -68,6 +68,7 @@ Bug fixes and improvements applied to adopted community modules:
 | Module | Fix | Details |
 |--------|-----|---------|
 | **mod-reagent-bank** | Thread-safe withdraw | Switched async `Execute()` to synchronous `DirectExecute()` for item withdraw — prevents stale gossip display. Removed dead duplicate query string. |
+| **mod-reagent-bank** | Account-wide storage | Refactored from per-character to per-account storage. All characters on the same account now share one reagent bank. Table key changed from `character_id` to `account_id`. Migration SQL aggregates existing per-character data. |
 | **mod-warlock-pet-rename** | Reliable name updates | Added forced `SMSG_PET_NAME_QUERY_RESPONSE` packet after rename for immediate client-side name display. DB write stays async (prepared statement is `CONNECTION_ASYNC` only — `DirectExecute` crashes). Improved NPC dialogue (no more ugly red "WARLOCKS ONLY" text). |
 | **mod-solo-lfg** | Forever queue recovery | Added periodic stuck-state detection with force-reset via `LeaveLfg()` + `LeaveAllLfgQueues()`. Fixed critical timer bug: `OnPlayerUpdate` was adding 30s per tick (~100ms) instead of accumulating real elapsed time — reaching the 90s threshold in ~300ms, kicking players from valid queues. Now uses proper `p_time` throttle. |
 | **mod-guildhouse** | Dalaran Grand Master trainers | Replaced all profession trainer NPCs with neutral Dalaran Grand Masters (28693-28706). Eliminated Alliance/Horde faction splits. Fixed `UpdateAI` perf hog: gossip flag was `SetFlag()`'d every AI tick instead of once on spawn. |
