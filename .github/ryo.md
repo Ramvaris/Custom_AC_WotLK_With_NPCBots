@@ -26,6 +26,7 @@ COMPLETED_TASKS:
   [x] - Batch 5: Double jump apex fix, GUID tag removal, gossip cleanup 🍥
   [x] - Batch 6: Double jump complete rewrite — state machine + MovementHandlerScript 🍥
   [x] - Batch 7: Nuke double jump, simplify to mount-style flight + .flylock toggle 🍥
+  [x] - Lottery Enchants: Flat 1-77 value refactor — replaced DBC pool lookups with synthetic enchant IDs 🍥
 
 LATEST_FEATURE:
   FLIGHT_SIMPLIFICATION:
@@ -69,20 +70,32 @@ THOUGHTS&RANTS:
   - "Five bugs, five root causes, zero in common. Transmog NPC invisible because CanBeSeen checks GetOwner() but TEMPSUMMON_TIMED_DESPAWN doesn't set UNIT_FIELD_SUMMONEDBY. Reagent bank lag because Execute() is fire-and-forget — the menu refresh query beats the write. Chat format broken because PSendSysMessage uses fmt::format but I wrote printf. Stat stacking because OnPlayerUnequip doesn't fire on swaps. Speed not level-scaled by design choice but should be for balance. Every single one is a different category of mistake. I'm learning five lessons at once. Dattebayo."
 
 ACTIVE_WORK:
-  SMART_WANDERING_BOTS_FIX:
-  - TASK: Fix Smart Wandering Bots showing zero spawns
-  - PROBLEM: .npcbot list spawned shows NOTHING despite config enabled
-  - ROOT_CAUSE: CalculatePct(count, pct) returns 0 for ALL brackets when count is
-    small (1-2). With bracket percents like 5,10,10,...,15 — CalculatePct(1,15)=0.
-    All bots_per_bracket stay zero. The remainder loop finds no non-zero bracket.
-    brackets_shuffled is empty. Spawn loop never runs. 0 bots spawn.
-  - SECONDARY: ASSERT(!level_nodes.empty()) in GenerateWanderingBotToSpawn would crash
-    if bracket didn't match zone level range (e.g. bracket 7 in level 1-10 zone)
-  - SOLUTION:
-    1. Zone mode: scan zone WanderNode level ranges, assign bots to matching brackets
-    2. Global mode: pick random bracket weighted by bracketPcts
-    3. Replace fatal ASSERT with graceful return false for level_nodes mismatch
-    4. Removed redundant AIM_Initialize (AddToWorld already calls it)
+  LOTTERY_ENCHANT_FLAT_ROLL_REFACTOR:
+  - TASK: Replace DBC pool-based value selection with flat 1-77 rolls
+  - PROBLEM: When stat TYPE was selected, VALUE was determined by which DBC entry
+    was randomly picked from the pool. Most DBC entries have low values, making
+    high rolls astronomically rare ON TOP of already-rare slot counts.
+  - SOLUTION: Scrap DBC pools entirely. Synthetic enchant ID encoding:
+    - Stat:   800000 + (ITEM_MOD_* × 100) + value  (range 800001..804777)
+    - Resist: 850000 + (school × 100) + value      (range 850101..850677)
+    - Speed:  900001 + value                         (range 900002..900078)
+    - Fly:    900100 + stage                          (unchanged 900101..900103)
+    Flat pool of 20 types (13 stats + 6 resists + 1 speed), equal weight.
+    urand(1, 77) for every stat value. 77 = thematic (7 slots × lucky 7s).
+    Speed expanded from 1-25% to 1-77%, now level-scales like all stats.
+    7 color tiers: each 11 values (1-11=Grey, 12-22=White, ..., 67-77=Red).
+  - CHANGES:
+    1. DELETED: BuildEnchantPoolsFromDBC(), s_enchantPools, s_globalMaxEnchantValue,
+       s_poolsBuilt, AllowedStat enum, IsAllowedStatType(), IsAllowedResistSchool()
+    2. ADDED: LOTTERY_MAX_VALUE=77, LOTTERY_STAT_POOL[] array, synthetic ID constants,
+       IsCustomStatEnchant(), IsCustomResistEnchant(), decoder functions
+    3. REWROTE: GetRandomEnchant (flat pool + urand), ApplyLotteryEnchantStat (synthetic
+       ID decoding + DBC fallback), FormatEnchantLine (synthetic display), GetTierFromValue
+    4. UPDATED: ShowEnchantsSummary, RecalcLotterySpeedAndFly (speed level-scaling),
+       startup hook (removed pool build call), RollNewEnchants comment, header doc
+  - BACKWARD_COMPAT: Existing items with old DBC enchant IDs still work via fallback
+    paths in Apply, Format, and Summary functions. No DB migration needed.
+  - BUILD: CLEAN 🍥
   - STATUS: SHIPPED 🍥
 
 LATEST_CUSTOM_SPELL:

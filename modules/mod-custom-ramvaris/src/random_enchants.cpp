@@ -8,14 +8,16 @@
  * - Enchants stored in custom DB table `character_item_lottery_enchants`, NOT in item slots
  * - Server applies stats on equip/login, unapplies on unequip/logout
  * - Up to 7 enchants per item, cascading 70/60/50/50/50/40/40% chances (~1.47% for 7)
- * - Stats are LEVEL-SCALED: max(1, round(base * level / 80)) — grows with the player
+ * - Each stat gets a flat urand(1, 77) value — all values equally likely. 77 is thematic:
+ *   7 slots × max value 77 = the ultimate lucky item. No DBC-based value pools.
+ * - Stats are LEVEL-SCALED: max(1, round(rolled * level / 80)) — grows with the player
  * - NO class filtering — any stat/resist can roll on any class. Self-balancing: a warrior
  *   rolling INT+SPI+FIRE_RES is a "crap roll". The dilution IS the balance mechanism.
  * - Pool includes: primary stats (STR/AGI/INT/SPI/STA), combat ratings, spell power,
  *   haste, crit, hit, expertise, armor pen, resilience, AND all elemental resistances.
  * - Pool EXCLUDES: Dodge, Parry, Defense (overcapping with multiple items)
- * CUSTOM ENCHANTS: Movespeed (1-25% per roll, cap +100% = 200% base, stacking,
- *   affects run + swim + flight, NOT level-scaled — 10% rolled = 10% at any level)
+ * CUSTOM ENCHANTS: Movespeed (1-77% per roll, cap +100% = 200% base, stacking,
+ *   affects run + swim + flight, level-scaled like all other stats)
  *   and Mobility Boost (1% chance, 3 stages: 100%/200%/300% flight speed, combined
  *   with speed bonus up to 600%, NO level scaling).
  * - `.enchants` paginated gossip menu; `.reroll` gossip-based Keep/Take flow (500g)
@@ -41,16 +43,16 @@
  * tracking set (s_appliedItems) ensures we always know what to unapply.
  *
  * LEVEL SCALING:
- * DBC enchant values are the level-80 maximum. At lower levels, stats scale linearly:
- *   scaledAmount = max(1, round(baseAmount * playerLevel / 80))
+ * Rolled values (1-77) represent the level-80 cap. At lower levels, ALL stats scale:
+ *   scaledAmount = max(1, round(rolledValue * playerLevel / 80))
  * Level 1 → 1.25%, Level 40 → 50%, Level 80 → 100%. Stats update on every level-up.
- * Speed and Fly enchants do NOT level-scale — their values are always the raw roll.
+ * ALL enchant types scale with level — including speed and resists.
  *
  * SPEED/FLY MECHANIC:
  * Speed modifies base character speed (run, swim, AND flight), multiplicative with
  * aura buffs. E.g. +50% from enchants × 15% paladin aura = 1.5 × 1.15 = 172.5%.
- * Capped at +100% from enchants (200% base speed). Individual rolls are 1-25%.
- * NOT level-scaled — 10% rolled = 10% at any level, always the raw rolled value.
+ * Capped at +100% from enchants (200% base speed). Individual rolls are 1-77%.
+ * Level-scaled like all other stats — a 50% roll at level 40 = 25% effective.
  * Swimming is treated the same as running.
  * MOUNTED PLAYERS GET NO SPEED BONUS — mounts use vanilla 100% base speed. This
  * intentionally makes mounts obsolete as enchant speed grows (epic mount = 200%,
@@ -114,38 +116,45 @@ enum EnchantTier : uint8
     MAX_TIER    = 7
 };
 
-// Stats accepted for the lottery pool — everything else filtered out.
-// Dodge/Parry/Defense REMOVED — overcaps with multiple items.
-enum AllowedStat : uint32
-{
-    STAT_STR   = ITEM_MOD_STRENGTH,
-    STAT_AGI   = ITEM_MOD_AGILITY,
-    STAT_INT   = ITEM_MOD_INTELLECT,
-    STAT_SPI   = ITEM_MOD_SPIRIT,
-    STAT_STA   = ITEM_MOD_STAMINA,
-    STAT_SP    = ITEM_MOD_SPELL_POWER,
-    STAT_HIT   = ITEM_MOD_HIT_RATING,
-    STAT_CRIT  = ITEM_MOD_CRIT_RATING,
-    STAT_HASTE = ITEM_MOD_HASTE_RATING,
-    STAT_EXP   = ITEM_MOD_EXPERTISE_RATING,
-    STAT_ARP   = ITEM_MOD_ARMOR_PENETRATION_RATING,
-    STAT_SPEN  = ITEM_MOD_SPELL_PENETRATION,
-    STAT_RES   = ITEM_MOD_RESILIENCE_RATING,
+// Maximum rolled value for any stat/resist/speed enchant. 77 is thematic:
+// 7 slots × max 77 = the ultimate item. All values 1-77 are equally likely.
+static constexpr uint32 LOTTERY_MAX_VALUE = 77;
+
+// Stat types accepted for the lottery pool — flat array for direct random index.
+// Dodge/Parry/Defense EXCLUDED — overcaps with multiple items.
+static constexpr uint32 LOTTERY_STAT_POOL[] = {
+    ITEM_MOD_STRENGTH,              // 0
+    ITEM_MOD_AGILITY,               // 1
+    ITEM_MOD_INTELLECT,             // 2
+    ITEM_MOD_SPIRIT,                // 3
+    ITEM_MOD_STAMINA,               // 4
+    ITEM_MOD_SPELL_POWER,           // 5
+    ITEM_MOD_HIT_RATING,            // 6
+    ITEM_MOD_CRIT_RATING,           // 7
+    ITEM_MOD_HASTE_RATING,          // 8
+    ITEM_MOD_EXPERTISE_RATING,      // 9
+    ITEM_MOD_ARMOR_PENETRATION_RATING, // 10
+    ITEM_MOD_SPELL_PENETRATION,     // 11
+    ITEM_MOD_RESILIENCE_RATING,     // 12
 };
+static constexpr uint32 LOTTERY_STAT_POOL_SIZE = 13;
+static constexpr uint32 LOTTERY_RESIST_SCHOOLS = 6;  // Holy(1)..Arcane(6)
+// Total pool: 13 stats + 6 resists + 1 speed = 20 types, equal weight each
+static constexpr uint32 LOTTERY_TOTAL_POOL_SIZE = LOTTERY_STAT_POOL_SIZE + LOTTERY_RESIST_SCHOOLS + 1;
 
-// Synthetic pool keys for resistance enchants (ITEM_ENCHANTMENT_TYPE_RESISTANCE).
-// Uses 1000 + SpellSchool to avoid collision with ITEM_MOD_* stat values.
-static constexpr uint32 RESIST_POOL_KEY_BASE = 1000;
-
-// Synthetic pool key for Movespeed in the pool-type selection.
-// Not a real DBC stat — handled specially when selected.
-static constexpr uint32 SPEED_POOL_KEY = 2000;
-
-// Custom enchant IDs — stored in DB alongside real DBC enchant IDs.
-// Range 900001+ chosen to never collide with real SpellItemEnchantment.dbc IDs.
-// Speed: 900001–900025 = 1–25% movespeed. Fly: 900101/02/03 = stage 1/2/3.
-static constexpr uint32 CUSTOM_ENCHANT_SPEED_BASE = 900001; // + (1..25) = pct
-static constexpr uint32 CUSTOM_ENCHANT_FLY_BASE   = 900100; // + (1..3) = stage
+// Custom synthetic enchant ID encoding — stored in DB as enchant_id.
+// Each ID encodes BOTH the stat type AND the rolled value. No DBC lookup needed.
+//
+//   Stat enchants:   800000 + (ITEM_MOD_* × 100) + value   → range 800001..804777
+//   Resist enchants: 850000 + (school × 100)      + value   → range 850101..850677
+//   Speed enchants:  900001 + value                         → range 900002..900078
+//   Fly enchants:    900100 + stage                         → range 900101..900103
+//
+// No range collisions. Legacy DBC enchant IDs (< 800000) remain valid via fallback.
+static constexpr uint32 CUSTOM_STAT_ENCHANT_BASE   = 800000;
+static constexpr uint32 CUSTOM_RESIST_ENCHANT_BASE = 850000;
+static constexpr uint32 CUSTOM_ENCHANT_SPEED_BASE  = 900001; // + (1..77) = pct
+static constexpr uint32 CUSTOM_ENCHANT_FLY_BASE    = 900100; // + (1..3) = stage
 
 // Gossip menu constants — must NOT collide with Soul Keeper (89999/8999)
 // or custom_commands.cpp SPECIAL_GOSSIP_SENDER (99999).
@@ -195,11 +204,6 @@ static constexpr uint32 REROLL_COST_GOLD  = 500;
 // Static Globals
 // =============================================================================
 
-// Pool storage: stat/resist pool key → enchant IDs (built once from DBC)
-static std::unordered_map<uint32, std::vector<uint32>> s_enchantPools;
-static uint32 s_globalMaxEnchantValue = 1;
-static bool s_poolsBuilt = false;
-
 // In-memory cache: item GUID → list of enchant IDs (ordered by slot_index)
 static std::unordered_map<uint32, std::vector<uint32>> s_lotteryCache;
 static std::mutex s_lotteryCacheMutex;
@@ -248,68 +252,59 @@ static std::unordered_map<uint32, std::unordered_set<uint32>> s_appliedItems;
 // Helper functions — Custom enchant ID detection
 // =============================================================================
 
+// --- Stat enchant: encodes ITEM_MOD_* type + rolled value (1-77) ---
+static bool IsCustomStatEnchant(uint32 id)
+{
+    return id >= CUSTOM_STAT_ENCHANT_BASE && id < CUSTOM_RESIST_ENCHANT_BASE;
+}
+static uint32 GetStatEnchantType(uint32 id)  { return (id - CUSTOM_STAT_ENCHANT_BASE) / 100; }
+static uint32 GetStatEnchantValue(uint32 id) { return (id - CUSTOM_STAT_ENCHANT_BASE) % 100; }
+
+// --- Resist enchant: encodes spell school (1-6) + rolled value (1-77) ---
+static bool IsCustomResistEnchant(uint32 id)
+{
+    return id >= CUSTOM_RESIST_ENCHANT_BASE && id < 900000;
+}
+static uint32 GetResistEnchantSchool(uint32 id) { return (id - CUSTOM_RESIST_ENCHANT_BASE) / 100; }
+static uint32 GetResistEnchantValue(uint32 id)  { return (id - CUSTOM_RESIST_ENCHANT_BASE) % 100; }
+
+// --- Speed enchant: encodes rolled percentage (1-77) ---
 static bool IsCustomSpeedEnchant(uint32 id)
 {
-    return id >= CUSTOM_ENCHANT_SPEED_BASE && id <= CUSTOM_ENCHANT_SPEED_BASE + 25;
+    return id >= CUSTOM_ENCHANT_SPEED_BASE && id <= CUSTOM_ENCHANT_SPEED_BASE + LOTTERY_MAX_VALUE;
 }
+static uint32 GetSpeedPct(uint32 id) { return id - CUSTOM_ENCHANT_SPEED_BASE; }
 
+// --- Fly enchant: encodes stage (1/2/3) ---
 static bool IsCustomFlyEnchant(uint32 id)
 {
     return id >= CUSTOM_ENCHANT_FLY_BASE + 1 && id <= CUSTOM_ENCHANT_FLY_BASE + 3;
 }
+static uint32 GetFlyStage(uint32 id) { return id - CUSTOM_ENCHANT_FLY_BASE; }
 
+// --- Any custom enchant (stat, resist, speed, or fly) ---
 static bool IsCustomEnchant(uint32 id)
 {
-    return IsCustomSpeedEnchant(id) || IsCustomFlyEnchant(id);
-}
-
-// Speed enchant: returns 1-25 (percentage)
-static uint32 GetSpeedPct(uint32 id)
-{
-    return id - CUSTOM_ENCHANT_SPEED_BASE;
-}
-
-// Fly enchant: returns 1/2/3 (stage)
-static uint32 GetFlyStage(uint32 id)
-{
-    return id - CUSTOM_ENCHANT_FLY_BASE;
+    return IsCustomStatEnchant(id) || IsCustomResistEnchant(id) ||
+           IsCustomSpeedEnchant(id) || IsCustomFlyEnchant(id);
 }
 
 // =============================================================================
 // Helper functions — Tier, color, display names
 // =============================================================================
 
+// Tier from rolled value (1-77). Each tier = 11 values = ~14.3%.
+// 1-11=Grey, 12-22=White, 23-33=Green, 34-44=Blue, 45-55=Purple, 56-66=Orange, 67-77=Red
 static EnchantTier GetTierFromValue(uint32 value)
 {
-    if (s_globalMaxEnchantValue <= 1)
-        return TIER_GREY;
-
-    float pct = float(value) / float(s_globalMaxEnchantValue);
-    if (pct <= 0.1429f) return TIER_GREY;
-    if (pct <= 0.2857f) return TIER_WHITE;
-    if (pct <= 0.4286f) return TIER_GREEN;
-    if (pct <= 0.5714f) return TIER_BLUE;
-    if (pct <= 0.7143f) return TIER_PURPLE;
-    if (pct <= 0.8571f) return TIER_ORANGE;
+    if (value == 0)  return TIER_GREY;
+    if (value <= 11) return TIER_GREY;
+    if (value <= 22) return TIER_WHITE;
+    if (value <= 33) return TIER_GREEN;
+    if (value <= 44) return TIER_BLUE;
+    if (value <= 55) return TIER_PURPLE;
+    if (value <= 66) return TIER_ORANGE;
     return TIER_RED;
-}
-
-static bool IsAllowedStatType(uint32 statType)
-{
-    switch (statType)
-    {
-        case STAT_STR: case STAT_AGI: case STAT_INT: case STAT_SPI: case STAT_STA:
-        case STAT_SP: case STAT_HIT: case STAT_CRIT: case STAT_HASTE: case STAT_EXP:
-        case STAT_ARP: case STAT_SPEN: case STAT_RES:
-            return true;
-        default:
-            return false;
-    }
-}
-
-static bool IsAllowedResistSchool(uint32 school)
-{
-    return school >= 1 && school <= 6;
 }
 
 static const char* GetValueColor(EnchantTier tier)
@@ -466,124 +461,148 @@ static uint32 ScaleEnchantAmount(uint32 baseAmount, uint8 playerLevel)
 }
 
 // =============================================================================
-// Stat Application — Mirrors Player::ApplyEnchantment for STAT and RESISTANCE types.
-// Speed/Fly enchants are handled separately via Player setter fields + UpdateSpeed.
+// Stat Application — Decodes synthetic enchant IDs to extract stat type + value,
+// then applies directly via HandleStatFlatModifier / ApplyRatingMod.
+// Speed/Fly enchants are handled separately via RecalcLotterySpeedAndFly.
+// Legacy DBC enchant IDs (pre-refactor items) still work via DBC fallback.
 // =============================================================================
 static void ApplyLotteryEnchantStat(Player* player, uint32 enchantId, bool apply)
 {
-    // Custom speed/fly enchants are NOT applied here — they use the Player fields
-    // and get recalculated in RecalcLotterySpeedAndFly after all items are processed.
-    if (IsCustomEnchant(enchantId))
+    // Speed/fly handled by RecalcLotterySpeedAndFly, not here
+    if (IsCustomSpeedEnchant(enchantId) || IsCustomFlyEnchant(enchantId))
         return;
 
-    SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchantId);
-    if (!pEnchant)
-        return;
+    uint32 statType = 0;
+    uint32 baseAmount = 0;
+    bool isResist = false;
+
+    if (IsCustomStatEnchant(enchantId))
+    {
+        statType = GetStatEnchantType(enchantId);
+        baseAmount = GetStatEnchantValue(enchantId);
+    }
+    else if (IsCustomResistEnchant(enchantId))
+    {
+        statType = GetResistEnchantSchool(enchantId);
+        baseAmount = GetResistEnchantValue(enchantId);
+        isResist = true;
+    }
+    else
+    {
+        // Legacy DBC fallback for pre-refactor enchant IDs in existing DB rows.
+        // Extracts the first valid stat/resist effect from the DBC entry.
+        SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchantId);
+        if (!pEnchant)
+            return;
+
+        for (int s = 0; s < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++s)
+        {
+            if (pEnchant->amount[s] == 0) continue;
+            if (pEnchant->type[s] == ITEM_ENCHANTMENT_TYPE_RESISTANCE)
+            {
+                statType = pEnchant->spellid[s];
+                baseAmount = pEnchant->amount[s];
+                isResist = true;
+                break;
+            }
+            if (pEnchant->type[s] == ITEM_ENCHANTMENT_TYPE_STAT)
+            {
+                statType = pEnchant->spellid[s];
+                baseAmount = pEnchant->amount[s];
+                break;
+            }
+        }
+        if (baseAmount == 0) return;
+    }
 
     uint8 playerLevel = player->GetLevel();
+    uint32 enchantAmount = ScaleEnchantAmount(baseAmount, playerLevel);
 
-    for (int s = 0; s < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++s)
+    if (isResist)
     {
-        uint32 enchantType   = pEnchant->type[s];
-        uint32 baseAmount    = pEnchant->amount[s];
-        uint32 enchantStatId = pEnchant->spellid[s];
+        player->HandleStatFlatModifier(
+            UnitMods(UNIT_MOD_RESISTANCE_START + statType),
+            TOTAL_VALUE, float(enchantAmount), apply);
+        return;
+    }
 
-        if (baseAmount == 0)
-            continue;
-
-        // Resistance enchants: school in spellid
-        if (enchantType == ITEM_ENCHANTMENT_TYPE_RESISTANCE)
-        {
-            uint32 enchantAmount = ScaleEnchantAmount(baseAmount, playerLevel);
-            player->HandleStatFlatModifier(
-                UnitMods(UNIT_MOD_RESISTANCE_START + enchantStatId),
-                TOTAL_VALUE, float(enchantAmount), apply);
-            continue;
-        }
-
-        if (enchantType != ITEM_ENCHANTMENT_TYPE_STAT)
-            continue;
-
-        uint32 enchantAmount = ScaleEnchantAmount(baseAmount, playerLevel);
-
-        switch (enchantStatId)
-        {
-            case ITEM_MOD_MANA:
-                player->HandleStatFlatModifier(UNIT_MOD_MANA, BASE_VALUE, float(enchantAmount), apply);
-                break;
-            case ITEM_MOD_HEALTH:
-                player->HandleStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE, float(enchantAmount), apply);
-                break;
-            case ITEM_MOD_AGILITY:
-                player->HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, TOTAL_VALUE, float(enchantAmount), apply);
-                player->UpdateStatBuffMod(STAT_AGILITY);
-                break;
-            case ITEM_MOD_STRENGTH:
-                player->HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_VALUE, float(enchantAmount), apply);
-                player->UpdateStatBuffMod(STAT_STRENGTH);
-                break;
-            case ITEM_MOD_INTELLECT:
-                player->HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, TOTAL_VALUE, float(enchantAmount), apply);
-                player->UpdateStatBuffMod(STAT_INTELLECT);
-                break;
-            case ITEM_MOD_SPIRIT:
-                player->HandleStatFlatModifier(UNIT_MOD_STAT_SPIRIT, TOTAL_VALUE, float(enchantAmount), apply);
-                player->UpdateStatBuffMod(STAT_SPIRIT);
-                break;
-            case ITEM_MOD_STAMINA:
-                player->HandleStatFlatModifier(UNIT_MOD_STAT_STAMINA, TOTAL_VALUE, float(enchantAmount), apply);
-                player->UpdateStatBuffMod(STAT_STAMINA);
-                break;
-            case ITEM_MOD_DEFENSE_SKILL_RATING: player->ApplyRatingMod(CR_DEFENSE_SKILL, enchantAmount, apply); break;
-            case ITEM_MOD_DODGE_RATING:         player->ApplyRatingMod(CR_DODGE, enchantAmount, apply); break;
-            case ITEM_MOD_PARRY_RATING:         player->ApplyRatingMod(CR_PARRY, enchantAmount, apply); break;
-            case ITEM_MOD_BLOCK_RATING:         player->ApplyRatingMod(CR_BLOCK, enchantAmount, apply); break;
-            case ITEM_MOD_HIT_MELEE_RATING:     player->ApplyRatingMod(CR_HIT_MELEE, enchantAmount, apply); break;
-            case ITEM_MOD_HIT_RANGED_RATING:    player->ApplyRatingMod(CR_HIT_RANGED, enchantAmount, apply); break;
-            case ITEM_MOD_HIT_SPELL_RATING:     player->ApplyRatingMod(CR_HIT_SPELL, enchantAmount, apply); break;
-            case ITEM_MOD_CRIT_MELEE_RATING:    player->ApplyRatingMod(CR_CRIT_MELEE, enchantAmount, apply); break;
-            case ITEM_MOD_CRIT_RANGED_RATING:   player->ApplyRatingMod(CR_CRIT_RANGED, enchantAmount, apply); break;
-            case ITEM_MOD_CRIT_SPELL_RATING:    player->ApplyRatingMod(CR_CRIT_SPELL, enchantAmount, apply); break;
-            case ITEM_MOD_HASTE_RANGED_RATING:  player->ApplyRatingMod(CR_HASTE_RANGED, enchantAmount, apply); break;
-            case ITEM_MOD_HASTE_SPELL_RATING:   player->ApplyRatingMod(CR_HASTE_SPELL, enchantAmount, apply); break;
-            case ITEM_MOD_HIT_RATING:
-                player->ApplyRatingMod(CR_HIT_MELEE, enchantAmount, apply);
-                player->ApplyRatingMod(CR_HIT_RANGED, enchantAmount, apply);
-                player->ApplyRatingMod(CR_HIT_SPELL, enchantAmount, apply);
-                break;
-            case ITEM_MOD_CRIT_RATING:
-                player->ApplyRatingMod(CR_CRIT_MELEE, enchantAmount, apply);
-                player->ApplyRatingMod(CR_CRIT_RANGED, enchantAmount, apply);
-                player->ApplyRatingMod(CR_CRIT_SPELL, enchantAmount, apply);
-                break;
-            case ITEM_MOD_RESILIENCE_RATING:
-                player->ApplyRatingMod(CR_CRIT_TAKEN_MELEE, enchantAmount, apply);
-                player->ApplyRatingMod(CR_CRIT_TAKEN_RANGED, enchantAmount, apply);
-                player->ApplyRatingMod(CR_CRIT_TAKEN_SPELL, enchantAmount, apply);
-                break;
-            case ITEM_MOD_HASTE_RATING:
-                player->ApplyRatingMod(CR_HASTE_MELEE, enchantAmount, apply);
-                player->ApplyRatingMod(CR_HASTE_RANGED, enchantAmount, apply);
-                player->ApplyRatingMod(CR_HASTE_SPELL, enchantAmount, apply);
-                break;
-            case ITEM_MOD_EXPERTISE_RATING:     player->ApplyRatingMod(CR_EXPERTISE, enchantAmount, apply); break;
-            case ITEM_MOD_ATTACK_POWER:
-                player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER, TOTAL_VALUE, float(enchantAmount), apply);
-                player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, float(enchantAmount), apply);
-                break;
-            case ITEM_MOD_RANGED_ATTACK_POWER:
-                player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, float(enchantAmount), apply);
-                break;
-            case ITEM_MOD_MANA_REGENERATION:     player->ApplyManaRegenBonus(enchantAmount, apply); break;
-            case ITEM_MOD_ARMOR_PENETRATION_RATING: player->ApplyRatingMod(CR_ARMOR_PENETRATION, enchantAmount, apply); break;
-            case ITEM_MOD_SPELL_POWER:           player->ApplySpellPowerBonus(enchantAmount, apply); break;
-            case ITEM_MOD_HEALTH_REGEN:          player->ApplyHealthRegenBonus(enchantAmount, apply); break;
-            case ITEM_MOD_SPELL_PENETRATION:     player->ApplySpellPenetrationBonus(enchantAmount, apply); break;
-            case ITEM_MOD_BLOCK_VALUE:
-                player->HandleBaseModFlatValue(SHIELD_BLOCK_VALUE, float(enchantAmount), apply);
-                break;
-            default: break;
-        }
+    switch (statType)
+    {
+        case ITEM_MOD_MANA:
+            player->HandleStatFlatModifier(UNIT_MOD_MANA, BASE_VALUE, float(enchantAmount), apply);
+            break;
+        case ITEM_MOD_HEALTH:
+            player->HandleStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE, float(enchantAmount), apply);
+            break;
+        case ITEM_MOD_AGILITY:
+            player->HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, TOTAL_VALUE, float(enchantAmount), apply);
+            player->UpdateStatBuffMod(STAT_AGILITY);
+            break;
+        case ITEM_MOD_STRENGTH:
+            player->HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_VALUE, float(enchantAmount), apply);
+            player->UpdateStatBuffMod(STAT_STRENGTH);
+            break;
+        case ITEM_MOD_INTELLECT:
+            player->HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, TOTAL_VALUE, float(enchantAmount), apply);
+            player->UpdateStatBuffMod(STAT_INTELLECT);
+            break;
+        case ITEM_MOD_SPIRIT:
+            player->HandleStatFlatModifier(UNIT_MOD_STAT_SPIRIT, TOTAL_VALUE, float(enchantAmount), apply);
+            player->UpdateStatBuffMod(STAT_SPIRIT);
+            break;
+        case ITEM_MOD_STAMINA:
+            player->HandleStatFlatModifier(UNIT_MOD_STAT_STAMINA, TOTAL_VALUE, float(enchantAmount), apply);
+            player->UpdateStatBuffMod(STAT_STAMINA);
+            break;
+        case ITEM_MOD_DEFENSE_SKILL_RATING: player->ApplyRatingMod(CR_DEFENSE_SKILL, enchantAmount, apply); break;
+        case ITEM_MOD_DODGE_RATING:         player->ApplyRatingMod(CR_DODGE, enchantAmount, apply); break;
+        case ITEM_MOD_PARRY_RATING:         player->ApplyRatingMod(CR_PARRY, enchantAmount, apply); break;
+        case ITEM_MOD_BLOCK_RATING:         player->ApplyRatingMod(CR_BLOCK, enchantAmount, apply); break;
+        case ITEM_MOD_HIT_MELEE_RATING:     player->ApplyRatingMod(CR_HIT_MELEE, enchantAmount, apply); break;
+        case ITEM_MOD_HIT_RANGED_RATING:    player->ApplyRatingMod(CR_HIT_RANGED, enchantAmount, apply); break;
+        case ITEM_MOD_HIT_SPELL_RATING:     player->ApplyRatingMod(CR_HIT_SPELL, enchantAmount, apply); break;
+        case ITEM_MOD_CRIT_MELEE_RATING:    player->ApplyRatingMod(CR_CRIT_MELEE, enchantAmount, apply); break;
+        case ITEM_MOD_CRIT_RANGED_RATING:   player->ApplyRatingMod(CR_CRIT_RANGED, enchantAmount, apply); break;
+        case ITEM_MOD_CRIT_SPELL_RATING:    player->ApplyRatingMod(CR_CRIT_SPELL, enchantAmount, apply); break;
+        case ITEM_MOD_HASTE_RANGED_RATING:  player->ApplyRatingMod(CR_HASTE_RANGED, enchantAmount, apply); break;
+        case ITEM_MOD_HASTE_SPELL_RATING:   player->ApplyRatingMod(CR_HASTE_SPELL, enchantAmount, apply); break;
+        case ITEM_MOD_HIT_RATING:
+            player->ApplyRatingMod(CR_HIT_MELEE, enchantAmount, apply);
+            player->ApplyRatingMod(CR_HIT_RANGED, enchantAmount, apply);
+            player->ApplyRatingMod(CR_HIT_SPELL, enchantAmount, apply);
+            break;
+        case ITEM_MOD_CRIT_RATING:
+            player->ApplyRatingMod(CR_CRIT_MELEE, enchantAmount, apply);
+            player->ApplyRatingMod(CR_CRIT_RANGED, enchantAmount, apply);
+            player->ApplyRatingMod(CR_CRIT_SPELL, enchantAmount, apply);
+            break;
+        case ITEM_MOD_RESILIENCE_RATING:
+            player->ApplyRatingMod(CR_CRIT_TAKEN_MELEE, enchantAmount, apply);
+            player->ApplyRatingMod(CR_CRIT_TAKEN_RANGED, enchantAmount, apply);
+            player->ApplyRatingMod(CR_CRIT_TAKEN_SPELL, enchantAmount, apply);
+            break;
+        case ITEM_MOD_HASTE_RATING:
+            player->ApplyRatingMod(CR_HASTE_MELEE, enchantAmount, apply);
+            player->ApplyRatingMod(CR_HASTE_RANGED, enchantAmount, apply);
+            player->ApplyRatingMod(CR_HASTE_SPELL, enchantAmount, apply);
+            break;
+        case ITEM_MOD_EXPERTISE_RATING:     player->ApplyRatingMod(CR_EXPERTISE, enchantAmount, apply); break;
+        case ITEM_MOD_ATTACK_POWER:
+            player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER, TOTAL_VALUE, float(enchantAmount), apply);
+            player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, float(enchantAmount), apply);
+            break;
+        case ITEM_MOD_RANGED_ATTACK_POWER:
+            player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, float(enchantAmount), apply);
+            break;
+        case ITEM_MOD_MANA_REGENERATION:     player->ApplyManaRegenBonus(enchantAmount, apply); break;
+        case ITEM_MOD_ARMOR_PENETRATION_RATING: player->ApplyRatingMod(CR_ARMOR_PENETRATION, enchantAmount, apply); break;
+        case ITEM_MOD_SPELL_POWER:           player->ApplySpellPowerBonus(enchantAmount, apply); break;
+        case ITEM_MOD_HEALTH_REGEN:          player->ApplyHealthRegenBonus(enchantAmount, apply); break;
+        case ITEM_MOD_SPELL_PENETRATION:     player->ApplySpellPenetrationBonus(enchantAmount, apply); break;
+        case ITEM_MOD_BLOCK_VALUE:
+            player->HandleBaseModFlatValue(SHIELD_BLOCK_VALUE, float(enchantAmount), apply);
+            break;
+        default: break;
     }
 }
 
@@ -611,6 +630,7 @@ static void RecalcLotterySpeedAndFly(Player* player)
 {
     float totalSpeedBonus = 0.0f;
     uint32 highestFlyStage = 0;
+    uint8 plvl = player->GetLevel();
 
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
@@ -630,8 +650,10 @@ static void RecalcLotterySpeedAndFly(Player* player)
         {
             if (IsCustomSpeedEnchant(enchantId))
             {
+                // Speed is level-scaled like all other stats
                 uint32 rawPct = GetSpeedPct(enchantId);
-                totalSpeedBonus += float(rawPct) / 100.0f;
+                uint32 scaledPct = ScaleEnchantAmount(rawPct, plvl);
+                totalSpeedBonus += float(scaledPct) / 100.0f;
             }
             else if (IsCustomFlyEnchant(enchantId))
             {
@@ -743,74 +765,13 @@ static void RefreshLotteryEnchantsOnLevelUp(Player* player, uint8 /*oldLevel*/)
 }
 
 // =============================================================================
-// Build enchant pools from SpellItemEnchantment.dbc at startup.
-// Accepts PURE single-effect enchantments of type STAT or RESISTANCE.
-// Dodge/Parry/Defense excluded. Physical resist excluded.
-// =============================================================================
-static void BuildEnchantPoolsFromDBC()
-{
-    if (s_poolsBuilt) return;
-
-    uint32 totalStats = 0, totalResist = 0, totalSkipped = 0;
-
-    for (uint32 id = 1; id < sSpellItemEnchantmentStore.GetNumRows(); ++id)
-    {
-        SpellItemEnchantmentEntry const* entry = sSpellItemEnchantmentStore.LookupEntry(id);
-        if (!entry) continue;
-        if (entry->GemID || entry->EnchantmentCondition || entry->requiredSkill) continue;
-
-        int effectIndex = -1;
-        bool valid = true;
-
-        for (uint32 e = 0; e < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++e)
-        {
-            if (entry->type[e] == ITEM_ENCHANTMENT_TYPE_NONE) continue;
-            if (entry->type[e] == ITEM_ENCHANTMENT_TYPE_STAT || entry->type[e] == ITEM_ENCHANTMENT_TYPE_RESISTANCE)
-            {
-                if (effectIndex >= 0) { valid = false; break; }
-                effectIndex = e;
-            }
-            else { valid = false; break; }
-        }
-
-        if (!valid || effectIndex < 0) { ++totalSkipped; continue; }
-        uint32 effectValue = entry->amount[effectIndex];
-        if (effectValue == 0) { ++totalSkipped; continue; }
-
-        if (entry->type[effectIndex] == ITEM_ENCHANTMENT_TYPE_STAT)
-        {
-            uint32 statType = entry->spellid[effectIndex];
-            if (!IsAllowedStatType(statType)) { ++totalSkipped; continue; }
-            if (effectValue > s_globalMaxEnchantValue) s_globalMaxEnchantValue = effectValue;
-            s_enchantPools[statType].push_back(id);
-            ++totalStats;
-        }
-        else
-        {
-            uint32 school = entry->spellid[effectIndex];
-            if (!IsAllowedResistSchool(school)) { ++totalSkipped; continue; }
-            if (effectValue > s_globalMaxEnchantValue) s_globalMaxEnchantValue = effectValue;
-            s_enchantPools[RESIST_POOL_KEY_BASE + school].push_back(id);
-            ++totalResist;
-        }
-    }
-
-    s_poolsBuilt = true;
-    LOG_INFO("module", "LotteryEnchants: Built pools — {} stat + {} resist enchants across {} types + Movespeed + Flying, max value {}, {} skipped",
-             totalStats, totalResist, s_enchantPools.size(), s_globalMaxEnchantValue, totalSkipped);
-}
-
-// =============================================================================
-// Get a random enchant — POOL-TYPE-FIRST approach for equal type weighting.
+// Get a random enchant — flat dice roll for every stat.
 // 1% chance → Flying enchant (sub-roll 75/20/5% for stage 1/2/3).
-// 99% chance → pick a random pool type (including Movespeed), then a random
-// enchant from that type. ALL enchant values available for ALL item qualities —
-// the percentile system handles balance (low rolls are common, god-rolls rare).
+// 99% chance → pick a random type (13 stats + 6 resists + speed = 20),
+// then roll urand(1, 77) for the value. Equal weight for every type and value.
 // =============================================================================
-static uint32 GetRandomEnchant(Item* item, const std::vector<uint32>& excludeSet)
+static uint32 GetRandomEnchant(Item* /*item*/, const std::vector<uint32>& excludeSet)
 {
-    if (!item) return 0;
-
     // --- 1% chance: Flying enchant ---
     if (urand(1, 100) == 1)
     {
@@ -820,66 +781,38 @@ static uint32 GetRandomEnchant(Item* item, const std::vector<uint32>& excludeSet
         else if (flyRoll <= 95) flyId = CUSTOM_ENCHANT_FLY_BASE + 2; // Stage 2 (200%)
         else                    flyId = CUSTOM_ENCHANT_FLY_BASE + 3; // Stage 3 (300%)
 
-        // Allow even if same stage exists in exclude (different items can have same stage)
-        // Only skip if the EXACT same ID is excluded on THIS item (prevents duplicate stage)
         if (std::find(excludeSet.begin(), excludeSet.end(), flyId) == excludeSet.end())
             return flyId;
-        // Fall through to normal pool if excluded
+        // Fall through to normal pool if same stage already on this item
     }
 
-    // --- Build available pool type keys (stat types + resist schools + Speed) ---
-    std::vector<uint32> poolKeys;
-    poolKeys.reserve(s_enchantPools.size() + 1);
-
-    for (auto& [key, ids] : s_enchantPools)
-    {
-        // Check if this pool type has at least one valid non-excluded enchant
-        for (uint32 id : ids)
-        {
-            if (std::find(excludeSet.begin(), excludeSet.end(), id) != excludeSet.end())
-                continue;
-            poolKeys.push_back(key);
-            goto nextPool;
-        }
-        nextPool:;
-    }
-
-    // Always add Speed as a pool type (no quality restriction)
-    poolKeys.push_back(SPEED_POOL_KEY);
-
-    if (poolKeys.empty())
-        return 0;
-
-    // --- Pick a random pool type (equal chance for each type) ---
-    // Retry up to 10 times if the selected enchant happens to be excluded
+    // --- 99% chance: Pick random type, roll 1-77 ---
     for (uint32 attempt = 0; attempt < 10; ++attempt)
     {
-        uint32 chosenKey = poolKeys[urand(0, poolKeys.size() - 1)];
+        uint32 typeIndex = urand(0, LOTTERY_TOTAL_POOL_SIZE - 1);
+        uint32 value = urand(1, LOTTERY_MAX_VALUE);
+        uint32 enchantId;
 
-        if (chosenKey == SPEED_POOL_KEY)
+        if (typeIndex < LOTTERY_STAT_POOL_SIZE)
         {
-            // Movespeed: random 1-25%
-            uint32 speedPct = urand(1, 25);
-            uint32 speedId = CUSTOM_ENCHANT_SPEED_BASE + speedPct;
-            if (std::find(excludeSet.begin(), excludeSet.end(), speedId) == excludeSet.end())
-                return speedId;
-            continue; // Exact same percentage excluded, retry
+            // Stat enchant: encode type + value into synthetic ID
+            uint32 statType = LOTTERY_STAT_POOL[typeIndex];
+            enchantId = CUSTOM_STAT_ENCHANT_BASE + statType * 100 + value;
+        }
+        else if (typeIndex < LOTTERY_STAT_POOL_SIZE + LOTTERY_RESIST_SCHOOLS)
+        {
+            // Resist enchant: school 1-6 + value
+            uint32 school = (typeIndex - LOTTERY_STAT_POOL_SIZE) + 1;
+            enchantId = CUSTOM_RESIST_ENCHANT_BASE + school * 100 + value;
+        }
+        else
+        {
+            // Speed enchant: value = percentage (1-77)
+            enchantId = CUSTOM_ENCHANT_SPEED_BASE + value;
         }
 
-        // Regular DBC enchant from the chosen pool type
-        auto& enchantIds = s_enchantPools[chosenKey];
-        std::vector<uint32> valid;
-        valid.reserve(enchantIds.size());
-
-        for (uint32 id : enchantIds)
-        {
-            if (std::find(excludeSet.begin(), excludeSet.end(), id) != excludeSet.end())
-                continue;
-            valid.push_back(id);
-        }
-
-        if (!valid.empty())
-            return valid[urand(0, valid.size() - 1)];
+        if (std::find(excludeSet.begin(), excludeSet.end(), enchantId) == excludeSet.end())
+            return enchantId;
     }
 
     return 0;
@@ -896,8 +829,8 @@ static std::vector<uint32> RollNewEnchants(Item* item, bool isReroll)
     ItemTemplate const* proto = item->GetTemplate();
     if (!proto) return {};
     if (proto->Class != ITEM_CLASS_WEAPON && proto->Class != ITEM_CLASS_ARMOR) return {};
-    // All qualities (grey through legendary) are eligible — quality gates the TIER of
-    // enchant that can roll (grey item = only grey-tier stats). Vendor purchase exclusion
+    // All qualities (grey through legendary) are eligible — the flat 1-77 roll
+    // handles balance. Vendor purchase exclusion
     // is handled at the hook level, not here.
     if (proto->Quality > ITEM_QUALITY_LEGENDARY) return {};
 
@@ -1185,14 +1118,28 @@ static void DeleteLotteryEnchantsForItem(uint32 itemGuid)
 }
 
 // =============================================================================
-// Enchant display helper — builds a text description of an enchant for gossip/chat
+// Enchant display helper — builds a text description of an enchant for gossip/chat.
+// Decodes synthetic enchant IDs first, falls back to DBC for legacy items.
 // =============================================================================
 static std::string FormatEnchantLine(uint32 enchantId, uint8 playerLevel)
 {
     if (IsCustomSpeedEnchant(enchantId))
     {
         uint32 rawPct = GetSpeedPct(enchantId);
-        return std::string("|cff00FFFF+") + std::to_string(rawPct) + "% Movespeed|r";
+        uint32 scaledPct = ScaleEnchantAmount(rawPct, playerLevel);
+        EnchantTier tier = GetTierFromValue(rawPct);
+        std::string line;
+        line += GetValueColor(tier);
+        line += "+";
+        line += std::to_string(scaledPct);
+        line += "% Movespeed|r";
+        if (playerLevel < 80)
+        {
+            line += " |cff888888(max: ";
+            line += std::to_string(rawPct);
+            line += "%)|r";
+        }
+        return line;
     }
     if (IsCustomFlyEnchant(enchantId))
     {
@@ -1200,7 +1147,52 @@ static std::string FormatEnchantLine(uint32 enchantId, uint8 playerLevel)
         uint32 flyPct = stage * 100;
         return std::string("|cffFF00FF+Mobility Boost Stage ") + std::to_string(stage) + " (" + std::to_string(flyPct) + "% flight speed)|r";
     }
+    if (IsCustomStatEnchant(enchantId))
+    {
+        uint32 statType = GetStatEnchantType(enchantId);
+        uint32 baseValue = GetStatEnchantValue(enchantId);
+        uint32 scaledValue = ScaleEnchantAmount(baseValue, playerLevel);
+        EnchantTier tier = GetTierFromValue(baseValue);
 
+        std::string line;
+        line += GetValueColor(tier);
+        line += "+";
+        line += std::to_string(scaledValue);
+        line += " ";
+        line += GetStatName(statType);
+        line += "|r";
+        if (playerLevel < 80)
+        {
+            line += " |cff888888(max: ";
+            line += std::to_string(baseValue);
+            line += ")|r";
+        }
+        return line;
+    }
+    if (IsCustomResistEnchant(enchantId))
+    {
+        uint32 school = GetResistEnchantSchool(enchantId);
+        uint32 baseValue = GetResistEnchantValue(enchantId);
+        uint32 scaledValue = ScaleEnchantAmount(baseValue, playerLevel);
+        EnchantTier tier = GetTierFromValue(baseValue);
+
+        std::string line;
+        line += GetValueColor(tier);
+        line += "+";
+        line += std::to_string(scaledValue);
+        line += " ";
+        line += GetResistName(school);
+        line += "|r";
+        if (playerLevel < 80)
+        {
+            line += " |cff888888(max: ";
+            line += std::to_string(baseValue);
+            line += ")|r";
+        }
+        return line;
+    }
+
+    // Legacy DBC fallback for pre-refactor enchant IDs
     SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchantId);
     if (!pEnchant) return "|cff888888Unknown Enchant|r";
 
@@ -1625,7 +1617,7 @@ static void ShowEnchantsSummary(Player* player)
         {
             if (IsCustomSpeedEnchant(enchantId))
             {
-                totalSpeedPct += GetSpeedPct(enchantId);
+                totalSpeedPct += ScaleEnchantAmount(GetSpeedPct(enchantId), plvl);
                 continue;
             }
             if (IsCustomFlyEnchant(enchantId))
@@ -1635,7 +1627,20 @@ static void ShowEnchantsSummary(Player* player)
                     highestFlyStage = stage;
                 continue;
             }
+            if (IsCustomStatEnchant(enchantId))
+            {
+                uint32 scaledAmount = ScaleEnchantAmount(GetStatEnchantValue(enchantId), plvl);
+                statTotals[GetStatName(GetStatEnchantType(enchantId))] += int32(scaledAmount);
+                continue;
+            }
+            if (IsCustomResistEnchant(enchantId))
+            {
+                uint32 scaledAmount = ScaleEnchantAmount(GetResistEnchantValue(enchantId), plvl);
+                statTotals[GetResistName(GetResistEnchantSchool(enchantId))] += int32(scaledAmount);
+                continue;
+            }
 
+            // Legacy DBC fallback
             SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchantId);
             if (!pEnchant) continue;
 
@@ -2238,10 +2243,9 @@ public:
             "DELETE FROM `character_item_lottery_enchants` WHERE `slot_index` >= 7"
         );
 
-        BuildEnchantPoolsFromDBC();
-
-        LOG_INFO("module", "LotteryEnchants: System initialized — DB-based, up to {} enchants per item, "
-                 "level-scaled stats + Movespeed + Mobility Boost enchants.",
+        LOG_INFO("module", "LotteryEnchants: System initialized — flat 1-{} rolls, up to {} slots per item, "
+                 "20 stat types (13 stats + 6 resists + speed) + Mobility Boost (1%).",
+                 LOTTERY_MAX_VALUE,
                  sConfigMgr->GetOption<uint32>("CustomRamvaris.LotteryEnchants.MaxSlots", MAX_LOTTERY_SLOTS));
     }
 };
