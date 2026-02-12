@@ -37,6 +37,7 @@ TARGET_SKILLS = {
     136,  # Staves
     160,  # 2H Maces
     162,  # Unarmed
+    163,  # Marksmanship (internal — hosts Auto Shot)
     172,  # 2H Axes
     173,  # Daggers
     176,  # Thrown
@@ -107,6 +108,14 @@ def patch_skill_line_ability(dbc_dir):
             changed = False
             if fields[4] != 0:
                 fields[4] = ALL_CLASSES
+                changed = True
+            if fields[6] != 0:
+                fields[6] = 0
+                changed = True
+            # Force combat passives to AcquireMethod=2 (SKILL_LEARN) so they
+            # auto-learn when the skill line is set, not only from trainers.
+            if spell_id in TARGET_SPELLS and fields[9] == 0:  # 0 = TRAINER
+                fields[9] = 2  # SKILL_LEARN
                 changed = True
             if fields[6] != 0:
                 fields[6] = 0

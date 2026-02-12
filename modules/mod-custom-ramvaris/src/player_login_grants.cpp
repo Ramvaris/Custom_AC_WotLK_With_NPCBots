@@ -260,8 +260,9 @@ private:
         // ---------- Ranged attack ability spells ----------
         // "Fair is fair": if everyone can equip ranged types, everyone should
         // also be able to fire them.
+        // NOTE: Auto Shot (75) is NOT here — it's auto-learned via
+        // SkillLineAbility DBC (skill 163, patched to classMask 0x7FF).
         static const uint32 rangedAttackSpells[] = {
-            75,    // Auto Shot
             2480,  // Shoot Bow
             7918,  // Shoot Gun
             7919,  // Shoot Crossbow
@@ -280,10 +281,14 @@ private:
         };
 
         // ---------- Combat / utility spells ----------
+        // Block (107), Parry (3127), and Dual Wield (674) are NOT granted
+        // explicitly here.  They are auto-learned by learnSkillRewardedSpells
+        // from the Defense (95) and Dual Wield (118) skill lines in the
+        // patched SkillLineAbility.dbc (AcquireMethod SKILL_LEARN / SKILL_VALUE,
+        // classMask = 0x7FF).  We call learnSkillRewardedSpells after SetSkill
+        // below so those passives fire their effects (SetCanParry, SetCanBlock,
+        // SetCanDualWield) every login.
         static const uint32 utilitySpells[] = {
-            107,   // Block (passive)
-            3127,  // Parry (passive)
-            674,   // Dual Wield (passive)
         };
 
         // ---------- Explicit skill lines ----------
@@ -330,9 +335,31 @@ private:
         for (uint32 spellId : utilitySpells)
             LearnIfMissing(player, spellId);
 
+        // ------------------------------------------------------------------
+        // Set skill lines: preserve existing values, init new ones at 1/max.
+        // After setting, call learnSkillRewardedSpells so that passive combat
+        // spells tied to Defense and Dual Wield (Block/Parry/DualWield) are
+        // learned and their effects (SetCanParry etc.) fire every login.
+        // ------------------------------------------------------------------
         uint16 const maxSkill = player->GetMaxSkillValueForLevel();
         for (uint16 skillId : skillLines)
-            player->SetSkill(skillId, 0, maxSkill, maxSkill);
+        {
+            uint16 curValue = player->GetSkillValue(skillId);
+            if (curValue > 0)
+            {
+                // Already has the skill — only bump the cap, never reset value.
+                uint16 curMax = player->GetMaxSkillValue(skillId);
+                if (curMax < maxSkill)
+                    player->SetSkill(skillId, 0, curValue, maxSkill);
+            }
+            else
+            {
+                // New skill — start at 1 so it levels up naturally.
+                player->SetSkill(skillId, 0, 1, maxSkill);
+            }
+            // Fire rewarded-spell learning for this skill line.
+            player->learnSkillRewardedSpells(skillId, player->GetSkillValue(skillId));
+        }
     }
 
     // ========================================================================
