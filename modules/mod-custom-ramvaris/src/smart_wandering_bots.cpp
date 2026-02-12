@@ -14,19 +14,15 @@
  *   5. Per-player tracking: each player has their own set of smart-spawned bots
  *
  * FACTION BALANCING:
- *   When BalancedFaction.Enable = 1, the total spawn count is split evenly between
- *   Alliance and Horde. Each half is spawned separately using faction-specific spare
- *   pools. If one faction has no available bots or no valid spawn nodes in the zone,
- *   the remaining count goes to the other faction. This ensures zones aren't dominated
- *   by one side and the world feels alive with both factions present.
+ *   When BalancedFaction.Enable = 1, each bot individually has a 50/50 chance of
+ *   being Alliance or Horde (coin-flip per bot). This gives natural faction mixing
+ *   even at very low counts (1-2 bots) without the integer-division problems of
+ *   splitting a count evenly.
  *
- * PERFORMANCE:
- *   - Only MinAmount–MaxAmount bots exist at any time (vs. hundreds globally)
- *   - Only the player's current zone has loaded grids with bots in them
- *   - DespawnWandererBot handles both live bots AND pending spawn queue entries
- *   - Spawn stagger (500ms per bot) is handled by the existing BotDataMgr::Update() loop
- *   - Config reads use sConfigMgr which caches values — no disk I/O per call
- *   - Zone change handler is O(n) in current bot count — fast for 5–15 bots
+ * MULTI-PLAYER:
+ *   Each player independently spawns their own set of bots in their current zone.
+ *   Bots are tracked per-player via ObjectGuid. Logging out despawns only that
+ *   player's bots. Zone changes only affect that player's bots.
  *
  * CONFIG (in custom_ramvaris.conf.dist):
  *   CustomRamvaris.SmartWanderingBots.Enable                   = 0
@@ -61,13 +57,8 @@ public:
         if (!IsEnabled())
             return;
 
-        // Trigger initial zone spawn on login — OnPlayerUpdateZone may not fire
-        // for the first zone assignment
         uint32 zoneId, areaId;
         player->GetZoneAndAreaId(zoneId, areaId);
-        LOG_INFO("server.loading", "SmartWandering: OnPlayerLogin for {} (GUID {}), zone={}, spare pool={}",
-            player->GetName(), player->GetGUID().GetCounter(), zoneId,
-            BotDataMgr::GetAvailableWanderingBotCount());
         HandleZoneChange(player, zoneId);
     }
 
@@ -94,8 +85,6 @@ private:
 
     static bool IsEnabled()
     {
-        // Keep default consistent with the rest of the module: master switch defaults ON,
-        // but each feature defaults OFF unless explicitly enabled in config.
         return sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true)
             && sConfigMgr->GetOption<bool>("CustomRamvaris.SmartWanderingBots.Enable", false);
     }
@@ -112,21 +101,13 @@ private:
 
         // Already have bots in this zone — nothing to do
         if (state.currentZoneId == newZone && !state.spawnedEntries.empty())
-        {
-            LOG_INFO("server.loading", "SmartWandering: Player {} already has {} bots in zone {}, skipping",
-                player->GetName(), state.spawnedEntries.size(), newZone);
             return;
-        }
 
         // Cooldown check — prevent zone-border flapping
         uint32 cooldownSec = sConfigMgr->GetOption<uint32>("CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown", 30);
         uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
         if (state.lastZoneChange > 0 && (now - state.lastZoneChange) < cooldownSec)
-        {
-            LOG_INFO("server.loading", "SmartWandering: Player {} zone change on cooldown ({}/{}s)",
-                player->GetName(), now - state.lastZoneChange, cooldownSec);
             return;
-        }
         state.lastZoneChange = now;
 
         // Despawn old bots from previous zone
@@ -137,155 +118,88 @@ private:
         uint32 maxCount = sConfigMgr->GetOption<uint32>("CustomRamvaris.SmartWanderingBots.MaxAmount", 15);
         uint32 count = urand(minCount, maxCount);
 
-        // Cap by spare pool — don't try to spawn more than available
+        // Cap by spare pool
         uint32 available = BotDataMgr::GetAvailableWanderingBotCount();
         if (count > available)
             count = available;
 
         if (count == 0)
-        {
-            BOT_LOG_DEBUG("module", "SmartWandering: No spare bots available for zone {} (player {})",
-                newZone, player->GetName());
             return;
-        }
 
-        uint32 totalSpawned = 0;
         std::vector<uint32> allEntries;
         allEntries.reserve(count);
+        uint32 totalSpawned = 0;
 
         if (IsBalancedFactionEnabled())
         {
-            // Faction-balanced spawning.
-            // Important: with low counts (e.g. Min=1/Max=2) strict splitting can otherwise
-            // result in *zero* spawns when one faction has no spare bots OR the zone has
-            // no valid nodes for that faction. We always fall back to "spawn something".
-
-            TeamId playerTeam = player->GetTeamId();
-
-            uint32 allianceCount = count / 2;
-            uint32 hordeCount    = count / 2;
-
-            // Give odd remainder to the player's faction (more intuitive than always Horde)
-            if (count % 2)
-            {
-                if (playerTeam == TEAM_ALLIANCE)
-                    ++allianceCount;
-                else
-                    ++hordeCount;
-            }
-
-            auto trySpawn = [newZone](uint32 spawnCount, std::vector<uint32>* out, int32 team) -> uint32
-            {
-                if (!spawnCount)
-                    return 0;
-                return BotDataMgr::SpawnWanderingBotsInZone(newZone, spawnCount, out, team);
-            };
-
-            std::vector<uint32> allianceEntries;
-            std::vector<uint32> hordeEntries;
-
+            // Coin-flip per bot: each bot individually gets a random faction.
+            // This avoids the integer-division problem where count=1 always
+            // goes to the player's faction and the other side never appears.
             uint32 aSpawned = 0;
             uint32 hSpawned = 0;
 
-            // Spawn in an order biased towards the player's faction.
-            if (playerTeam == TEAM_ALLIANCE)
+            for (uint32 i = 0; i < count; ++i)
             {
-                aSpawned = trySpawn(allianceCount, &allianceEntries, ALLIANCE);
-                hSpawned = trySpawn(hordeCount, &hordeEntries, HORDE);
-            }
-            else
-            {
-                hSpawned = trySpawn(hordeCount, &hordeEntries, HORDE);
-                aSpawned = trySpawn(allianceCount, &allianceEntries, ALLIANCE);
-            }
+                // 50/50 coin flip for each bot
+                int32 faction = urand(0, 1) ? ALLIANCE : HORDE;
 
-            totalSpawned = aSpawned + hSpawned;
+                std::vector<uint32> entries;
+                uint32 spawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, 1, &entries, faction);
 
-            // If we couldn't fulfill the requested total, try to allocate the remainder.
-            if (totalSpawned < count)
-            {
-                uint32 missing = count - totalSpawned;
-
-                // First try the player's faction again (in case the first pass failed due to
-                // RNG/level-bracket mismatch on some candidates).
-                if (playerTeam == TEAM_ALLIANCE)
+                if (spawned == 0)
                 {
-                    std::vector<uint32> extra;
-                    uint32 extraSpawned = trySpawn(missing, &extra, ALLIANCE);
-                    aSpawned += extraSpawned;
-                    totalSpawned += extraSpawned;
-                    missing -= extraSpawned;
-                    allianceEntries.insert(allianceEntries.end(), extra.begin(), extra.end());
+                    // Faction failed (no nodes / no spare bots for that faction)
+                    // Try the other faction
+                    int32 otherFaction = (faction == ALLIANCE) ? HORDE : ALLIANCE;
+                    spawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, 1, &entries, otherFaction);
+
+                    if (spawned == 0)
+                    {
+                        // Both factions failed — try unfiltered as last resort
+                        spawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, 1, &entries);
+                    }
+
+                    if (spawned > 0)
+                    {
+                        // We don't know which faction the fallback gave us, count it neutral
+                        totalSpawned += spawned;
+                        allEntries.insert(allEntries.end(), entries.begin(), entries.end());
+                    }
                 }
                 else
                 {
-                    std::vector<uint32> extra;
-                    uint32 extraSpawned = trySpawn(missing, &extra, HORDE);
-                    hSpawned += extraSpawned;
-                    totalSpawned += extraSpawned;
-                    missing -= extraSpawned;
-                    hordeEntries.insert(hordeEntries.end(), extra.begin(), extra.end());
-                }
-
-                // Then try the opposite faction.
-                if (missing)
-                {
-                    std::vector<uint32> extra;
-                    uint32 extraSpawned = (playerTeam == TEAM_ALLIANCE)
-                        ? trySpawn(missing, &extra, HORDE)
-                        : trySpawn(missing, &extra, ALLIANCE);
-
-                    if (playerTeam == TEAM_ALLIANCE)
-                    {
-                        hSpawned += extraSpawned;
-                        hordeEntries.insert(hordeEntries.end(), extra.begin(), extra.end());
-                    }
+                    if (faction == ALLIANCE)
+                        aSpawned += spawned;
                     else
-                    {
-                        aSpawned += extraSpawned;
-                        allianceEntries.insert(allianceEntries.end(), extra.begin(), extra.end());
-                    }
+                        hSpawned += spawned;
 
-                    totalSpawned += extraSpawned;
-                    missing -= extraSpawned;
-                }
-
-                // Final fallback: ignore faction split and spawn whatever the spare pool allows.
-                if (missing)
-                {
-                    std::vector<uint32> extra;
-                    uint32 extraSpawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, missing, &extra);
-                    totalSpawned += extraSpawned;
-                    allEntries.insert(allEntries.end(), extra.begin(), extra.end());
+                    totalSpawned += spawned;
+                    allEntries.insert(allEntries.end(), entries.begin(), entries.end());
                 }
             }
 
-            allEntries.insert(allEntries.end(), allianceEntries.begin(), allianceEntries.end());
-            allEntries.insert(allEntries.end(), hordeEntries.begin(), hordeEntries.end());
-
-            BOT_LOG_INFO("module", "SmartWandering: Balanced spawn in zone {} — {} Alliance, {} Horde (player {})",
-                newZone, aSpawned, hSpawned, player->GetName());
+            if (totalSpawned > 0)
+            {
+                BOT_LOG_INFO("module", "SmartWandering: Spawned {} bots in zone {} for {} (A:{} H:{})",
+                    totalSpawned, newZone, player->GetName(), aSpawned, hSpawned);
+            }
         }
         else
         {
             // Standard spawning: all factions, natural distribution from spare pool
             totalSpawned = BotDataMgr::SpawnWanderingBotsInZone(newZone, count, &allEntries);
+
+            if (totalSpawned > 0)
+            {
+                BOT_LOG_INFO("module", "SmartWandering: Spawned {} bots in zone {} for {}",
+                    totalSpawned, newZone, player->GetName());
+            }
         }
 
         if (totalSpawned > 0)
         {
             state.spawnedEntries = std::move(allEntries);
             state.currentZoneId = newZone;
-            if (!IsBalancedFactionEnabled())
-            {
-                BOT_LOG_INFO("module", "SmartWandering: Spawned {} bots in zone {} for player {}",
-                    totalSpawned, newZone, player->GetName());
-            }
-        }
-        else
-        {
-            // Zone might have no WanderNodes — that's fine (cities, instances)
-            BOT_LOG_DEBUG("module", "SmartWandering: Zone {} has no valid WanderNodes for spawning", newZone);
         }
     }
 
