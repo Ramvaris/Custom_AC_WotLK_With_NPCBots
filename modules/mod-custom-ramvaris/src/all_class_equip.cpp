@@ -22,13 +22,15 @@
 #include "Log.h"
 #include "QuestDef.h"
 #include "ItemTemplate.h"
+#include "SpellMgr.h"
+#include "SpellInfo.h"
 
 // Quest::RequiredClasses is protected with no setter.
 // This derived class provides write access for the startup patcher.
 class QuestPatcher : public Quest
 {
 public:
-    void ClearRequiredClasses() { RequiredClasses = 0; }
+    void SetRequiredClasses(uint32 mask) { RequiredClasses = mask; }
 };
 
 class AllClassEquip_WorldScript : public WorldScript
@@ -80,72 +82,107 @@ private:
     }
 
     // =====================================================================
-    // Phase 2: Quests — remove class restrictions on ALL quests except
-    // pure skill-only quests (spell reward with no item rewards).
-    // This keeps class-training fantasy (e.g. bear form quests) locked,
-    // while opening everything else for all classes.
+    // Phase 2: Quests — open all class-restricted quests EXCEPT those that
+    // teach class-specific spells.  A spell is class-specific when its
+    // SpellFamilyName maps to a single class (e.g. 11 = Shaman).
+    // This keeps shaman totem quests, druid form quests, warlock demon
+    // quests etc. locked to the correct class regardless of whether they
+    // originally had AllowableClasses set or not.
     // =====================================================================
     static void PatchQuestRequirements()
     {
-        // --- DB: clear AllowableClasses on all class-restricted quests
-        // except pure skill-only quests:
-        //   (RewardSpell/RewardDisplaySpell present) AND (no item rewards).
-        WorldDatabase.DirectExecute(
-            "UPDATE quest_template_addon qta "
-            "JOIN quest_template qt ON qta.ID = qt.ID "
-            "SET qta.AllowableClasses = 0 "
-            "WHERE qta.AllowableClasses != 0 "
-            "  AND NOT ((qt.RewardSpell != 0 OR qt.RewardDisplaySpell != 0) "
-            "       AND qt.RewardItem1 = 0 AND qt.RewardItem2 = 0 "
-            "       AND qt.RewardItem3 = 0 AND qt.RewardItem4 = 0 "
-            "       AND qt.RewardChoiceItemID1 = 0 AND qt.RewardChoiceItemID2 = 0 "
-            "       AND qt.RewardChoiceItemID3 = 0 AND qt.RewardChoiceItemID4 = 0 "
-            "       AND qt.RewardChoiceItemID5 = 0 AND qt.RewardChoiceItemID6 = 0)");
-
-        // --- In-memory: patch loaded quest templates ---
-        uint32 count = 0;
+        uint32 opened = 0;
+        uint32 locked = 0;
         auto const& questStore = sObjectMgr->GetQuestTemplates();
+
         for (auto const& [id, quest] : questStore)
         {
-            if (quest->GetRequiredClasses() == 0)
-                continue;
+            // Check if this quest rewards a class-specific spell
+            uint32 classMask = GetRewardSpellClassMask(quest);
 
-            // Identify pure skill-only quests and keep those class-locked.
-            bool hasItemReward = false;
-            for (uint8 i = 0; i < QUEST_REWARDS_COUNT; ++i)
+            if (classMask != 0)
             {
-                if (quest->RewardItemId[i] != 0)
+                // This quest teaches a class skill — ensure it's locked.
+                uint32 current = quest->GetRequiredClasses();
+                if (current != classMask)
                 {
-                    hasItemReward = true;
-                    break;
+                    static_cast<QuestPatcher*>(quest)->SetRequiredClasses(classMask);
+                    // Persist to DB
+                    WorldDatabase.DirectExecute(
+                        "INSERT INTO quest_template_addon (ID, AllowableClasses) VALUES ({}, {}) "
+                        "ON DUPLICATE KEY UPDATE AllowableClasses = {}",
+                        id, classMask, classMask);
+                    ++locked;
                 }
             }
-            if (!hasItemReward)
+            else
             {
-                for (uint8 i = 0; i < QUEST_REWARD_CHOICES_COUNT; ++i)
+                // No class-specific spell reward — open it.
+                if (quest->GetRequiredClasses() != 0)
                 {
-                    if (quest->RewardChoiceItemId[i] != 0)
-                    {
-                        hasItemReward = true;
-                        break;
-                    }
+                    static_cast<QuestPatcher*>(quest)->SetRequiredClasses(0);
+                    WorldDatabase.DirectExecute(
+                        "UPDATE quest_template_addon SET AllowableClasses = 0 WHERE ID = {}", id);
+                    ++opened;
                 }
-            }
-
-            bool const hasSpellReward = (quest->GetRewSpellCast() != 0 || quest->GetRewSpell() != 0);
-            bool const pureSkillOnlyQuest = hasSpellReward && !hasItemReward;
-
-            if (!pureSkillOnlyQuest)
-            {
-                static_cast<QuestPatcher*>(quest)->ClearRequiredClasses();
-                ++count;
             }
         }
 
-        if (count > 0)
-            LOG_INFO("server.loading", "[AllClassEquip] Opened {} class-restricted quests (excluding pure skill-only)", count);
-        else
-            LOG_INFO("server.loading", "[AllClassEquip] All non-skill-only class quests already unrestricted");
+        if (opened > 0)
+            LOG_INFO("server.loading", "[AllClassEquip] Opened {} class-restricted quests", opened);
+        if (locked > 0)
+            LOG_INFO("server.loading", "[AllClassEquip] Locked {} quests to their spell's class", locked);
+    }
+
+    // Map SpellFamilyName → class bitmask (1 << (classId - 1))
+    static uint32 SpellFamilyToClassMask(uint32 family)
+    {
+        switch (family)
+        {
+            case  3: return 1 << (CLASS_MAGE         - 1);  // SPELLFAMILY_MAGE
+            case  4: return 1 << (CLASS_WARRIOR      - 1);  // SPELLFAMILY_WARRIOR
+            case  5: return 1 << (CLASS_WARLOCK      - 1);  // SPELLFAMILY_WARLOCK
+            case  6: return 1 << (CLASS_PRIEST       - 1);  // SPELLFAMILY_PRIEST
+            case  7: return 1 << (CLASS_DRUID        - 1);  // SPELLFAMILY_DRUID
+            case  8: return 1 << (CLASS_ROGUE        - 1);  // SPELLFAMILY_ROGUE
+            case  9: return 1 << (CLASS_HUNTER       - 1);  // SPELLFAMILY_HUNTER
+            case 10: return 1 << (CLASS_PALADIN      - 1);  // SPELLFAMILY_PALADIN
+            case 11: return 1 << (CLASS_SHAMAN       - 1);  // SPELLFAMILY_SHAMAN
+            case 15: return 1 << (CLASS_DEATH_KNIGHT - 1);  // SPELLFAMILY_DEATHKNIGHT
+            default: return 0; // Generic / environment / pet
+        }
+    }
+
+    // Returns class mask if the quest's reward spell is class-specific, 0 otherwise.
+    static uint32 GetRewardSpellClassMask(Quest const* quest)
+    {
+        uint32 spells[] = { uint32(quest->GetRewSpellCast()), quest->GetRewSpell() };
+        for (uint32 spellId : spells)
+        {
+            if (spellId == 0)
+                continue;
+            SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+            if (!info)
+                continue;
+            uint32 mask = SpellFamilyToClassMask(info->SpellFamilyName);
+            if (mask != 0)
+                return mask;
+            // Also check if the spell teaches another spell (SPELL_EFFECT_LEARN_SPELL)
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                if (info->Effects[i].Effect == SPELL_EFFECT_LEARN_SPELL && info->Effects[i].TriggerSpell)
+                {
+                    SpellInfo const* taught = sSpellMgr->GetSpellInfo(info->Effects[i].TriggerSpell);
+                    if (taught)
+                    {
+                        mask = SpellFamilyToClassMask(taught->SpellFamilyName);
+                        if (mask != 0)
+                            return mask;
+                    }
+                }
+            }
+        }
+        return 0;
     }
 };
 
