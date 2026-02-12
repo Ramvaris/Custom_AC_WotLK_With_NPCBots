@@ -32,6 +32,9 @@ void AddSC_smart_wandering_bots();
 // All-Class Equipment (startup hook: AllowableClass + quest patches)
 void AddSC_all_class_equip();
 
+// Plate/Mail STR→AGI conversion for AGI classes
+void AddSC_plate_mail_str_to_agi();
+
 void Addmod_custom_ramvarisScripts()
 {
     AddSC_spell_human_stoneform();
@@ -42,4 +45,5 @@ void Addmod_custom_ramvarisScripts()
     AddSC_random_enchants();
     AddSC_smart_wandering_bots();
     AddSC_all_class_equip();
+    AddSC_plate_mail_str_to_agi();
 }

@@ -188,6 +188,19 @@ CustomRamvaris.PetStayOnMount.Enable = 0
 
 CustomRamvaris.AllClassEquip.Enable = 0
 
+#
+# CustomRamvaris.AllClassEquip.StrToAgi.Enable
+#     When an agility-primary class (Hunter, Shaman, Rogue, Druid) equips
+#     plate or mail armor that has Strength, the Strength is converted to
+#     Agility of equal value.  This makes STR-heavy plate/mail sets usable
+#     for AGI classes in the AllClassEquip world.
+#     Only affects armor slots (not weapons, rings, trinkets, cloaks).
+#     Requires AllClassEquip.Enable = 1
+#     Default: 1 (ON when AllClassEquip is enabled)
+#
+
+CustomRamvaris.AllClassEquip.StrToAgi.Enable = 1
+
 ###################################################################################################
 #                                                                                                 #
 #  SECTION 2: FEATURES REQUIRING CUSTOM DBC / MPQ / CREATURE DATA                                #
