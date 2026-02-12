@@ -242,44 +242,44 @@ public:
 
     void ShowReagentItems(Player* player, Creature* creature, uint32 item_subclass, uint16 gossipPageNumber)
     {
+        // Synchronous query — the result set is small and we need creature/player
+        // pointers to remain valid while building the gossip menu. An async callback
+        // here caused crashes because the creature pointer could go stale between
+        // the query dispatch and callback execution.
         WorldSession* session = player->GetSession();
-        uint32 accountId = player->GetSession()->GetAccountId();
-        std::string query = "SELECT item_entry, amount FROM custom_reagent_bank WHERE account_id = " + std::to_string(accountId) + " AND item_subclass = " +
-                std::to_string(item_subclass) + " ORDER BY item_entry";
-        session->GetQueryProcessor().AddCallback(CharacterDatabase.AsyncQuery(query).WithCallback([=, this](QueryResult result)
+        uint32 accountId = session->GetAccountId();
+        QueryResult result = CharacterDatabase.Query("SELECT item_entry, amount FROM custom_reagent_bank WHERE account_id = {} AND item_subclass = {} ORDER BY item_entry", accountId, item_subclass);
+
+        uint32 startValue = (gossipPageNumber * (MAX_OPTIONS));
+        uint32 endValue = (gossipPageNumber + 1) * (MAX_OPTIONS) - 1;
+        std::vector<std::pair<uint32, uint32>> items; // entry, amount
+        if (result)
         {
-            uint32 startValue = (gossipPageNumber * (MAX_OPTIONS));
-            uint32 endValue = (gossipPageNumber + 1) * (MAX_OPTIONS) - 1;
-            std::map<uint32, uint32> entryToAmountMap;
-            std::vector<uint32> itemEntries;
-            if (result) {
-                do {
-                    uint32 itemEntry = (*result)[0].Get<uint32>();
-                    uint32 itemAmount = (*result)[1].Get<uint32>();
-                    entryToAmountMap[itemEntry] = itemAmount;
-                    itemEntries.push_back(itemEntry);
-                } while (result->NextRow());
-            }
-            for (uint32 i = startValue; i <= endValue; i++)
-            {
-                if (itemEntries.empty() || i > itemEntries.size() - 1)
-                {
-                    break;
-                }
-                uint32 itemEntry = itemEntries.at(i);
-                AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, GetItemIcon(itemEntry, 30, 30, -18, 0) + GetItemLink(itemEntry, session) + " (" + std::to_string(entryToAmountMap.find(itemEntry)->second) + ")", itemEntry, gossipPageNumber);
-            }
-            if (gossipPageNumber > 0)
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Previous Page", item_subclass, gossipPageNumber - 1);
-            }
-            if (endValue < entryToAmountMap.size())
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Next Page", item_subclass, gossipPageNumber + 1);
-            }
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "|TInterface/ICONS/Ability_Spy:30:30:-18:0|tBack...", MAIN_MENU, 0);
-            SendGossipMenuFor(player, NPC_TEXT_ID, creature->GetGUID());
-        }));
+            do {
+                uint32 itemEntry = (*result)[0].Get<uint32>();
+                uint32 itemAmount = (*result)[1].Get<uint32>();
+                items.emplace_back(itemEntry, itemAmount);
+            } while (result->NextRow());
+        }
+
+        for (uint32 i = startValue; i <= endValue; i++)
+        {
+            if (i >= items.size())
+                break;
+            uint32 itemEntry = items[i].first;
+            uint32 itemAmount = items[i].second;
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, GetItemIcon(itemEntry, 30, 30, -18, 0) + GetItemLink(itemEntry, session) + " (" + std::to_string(itemAmount) + ")", itemEntry, gossipPageNumber);
+        }
+        if (gossipPageNumber > 0)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Previous Page", item_subclass, gossipPageNumber - 1);
+        }
+        if (endValue < items.size())
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Next Page", item_subclass, gossipPageNumber + 1);
+        }
+        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "|TInterface/ICONS/Ability_Spy:30:30:-18:0|tBack...", MAIN_MENU, 0);
+        SendGossipMenuFor(player, NPC_TEXT_ID, creature->GetGUID());
     }
 };
 
