@@ -294,8 +294,9 @@ private:
         // ---------- Explicit skill lines ----------
         // LearnSpell usually grants these, but explicitly setting them avoids
         // edge cases where a class shows missing weapon skills (e.g. Wands).
-        static const uint16 skillLines[] = {
-            // Weapons
+        //
+        // Weapon skills level up with use (1/max → max/max).
+        static const uint16 weaponSkillLines[] = {
             SKILL_AXES,
             SKILL_2H_AXES,
             SKILL_MACES,
@@ -312,14 +313,16 @@ private:
             SKILL_WANDS,
             SKILL_THROWN,
             SKILL_UNARMED,
-            // Armor
+            SKILL_DEFENSE,
+        };
+
+        // Armor, Shield, and Dual Wield are mono-skills (always 1/1).
+        static const uint16 monoSkillLines[] = {
             SKILL_CLOTH,
             SKILL_LEATHER,
             SKILL_MAIL,
             SKILL_PLATE_MAIL,
             SKILL_SHIELD,
-            // Combat
-            SKILL_DEFENSE,
             SKILL_DUAL_WIELD,
         };
 
@@ -336,13 +339,13 @@ private:
             LearnIfMissing(player, spellId);
 
         // ------------------------------------------------------------------
-        // Set skill lines: preserve existing values, init new ones at 1/max.
+        // Weapon skills: preserve existing values, init new ones at 1/max.
         // After setting, call learnSkillRewardedSpells so that passive combat
         // spells tied to Defense and Dual Wield (Block/Parry/DualWield) are
         // learned and their effects (SetCanParry etc.) fire every login.
         // ------------------------------------------------------------------
         uint16 const maxSkill = player->GetMaxSkillValueForLevel();
-        for (uint16 skillId : skillLines)
+        for (uint16 skillId : weaponSkillLines)
         {
             uint16 curValue = player->GetSkillValue(skillId);
             if (curValue > 0)
@@ -358,6 +361,17 @@ private:
                 player->SetSkill(skillId, 0, 1, maxSkill);
             }
             // Fire rewarded-spell learning for this skill line.
+            player->learnSkillRewardedSpells(skillId, player->GetSkillValue(skillId));
+        }
+
+        // ------------------------------------------------------------------
+        // Mono-skills (Armor / Shield / Dual Wield): always 1/1.
+        // ------------------------------------------------------------------
+        for (uint16 skillId : monoSkillLines)
+        {
+            if (!player->HasSkill(skillId))
+                player->SetSkill(skillId, 0, 1, 1);
+            // Fire rewarded-spell learning (e.g. Dual Wield passive).
             player->learnSkillRewardedSpells(skillId, player->GetSkillValue(skillId));
         }
     }
