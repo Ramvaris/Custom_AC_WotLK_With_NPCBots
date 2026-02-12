@@ -45,6 +45,7 @@ public:
 
         PatchItemTemplates();
         PatchQuestRequirements();
+        EnsureAgiPlateItems();
     }
 
 private:
@@ -141,6 +142,30 @@ private:
             LOG_INFO("server.loading", "[AllClassEquip] Opened {} class-restricted quests (item rewards)", count);
         else
             LOG_INFO("server.loading", "[AllClassEquip] All item-reward quests already unrestricted");
+    }
+
+    // =====================================================================
+    // Phase 3: Ensure custom AGI plate items exist
+    // These are created by 9999_99_99_agi_plate_sets.sql on first run.
+    // This check logs whether they loaded successfully — if item_dbc entries
+    // are missing (pre-DBC-load, can't fix at runtime), it logs a warning.
+    // The item_template and npc_vendor rows are re-ensured via the SQL file.
+    // =====================================================================
+    static void EnsureAgiPlateItems()
+    {
+        uint32 found = 0;
+        for (uint32 entry = 80001; entry <= 80010; ++entry)
+        {
+            if (sObjectMgr->GetItemTemplate(entry))
+                ++found;
+        }
+
+        if (found == 10)
+            LOG_INFO("server.loading", "[AllClassEquip] AGI plate sets loaded (10/10 items: Nightstalker + Phantom Dreadnaught)");
+        else if (found > 0)
+            LOG_WARN("server.loading", "[AllClassEquip] AGI plate sets partially loaded ({}/10) — check item_dbc entries", found);
+        else
+            LOG_WARN("server.loading", "[AllClassEquip] AGI plate sets NOT loaded — item_dbc entries may be missing. Re-run 9999_99_99_agi_plate_sets.sql");
     }
 };
 
