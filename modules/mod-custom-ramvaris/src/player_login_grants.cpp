@@ -1,10 +1,17 @@
 /*
- * Player Login Grants — Profession unlocks, utility spell grants, racial adjustments
+ * Player Login Grants — Profession unlocks, utility spell grants, racial adjustments,
+ *                        universal equipment proficiencies
  * Config: CustomRamvaris.LoginSpellGrants.Enable
+ *         CustomRamvaris.AllClassEquip.Enable
  *
  * On login, grants custom utility spells and unlocks profession specializations
  * to all matching characters. Also fixes Draenei racials and grants cross-class
  * abilities like Pick Pocket and Diplomacy to everyone.
+ *
+ * AllClassEquip: Grants ALL weapon + armor proficiencies to every class so that
+ * any character can equip any weapon type, any armor type (including plate + shield),
+ * and any class set item. Combined with the AllowableClass DB removal, this lets
+ * a Warlock wear Death Knight tier, a Mage dual-wield axes, etc.
  */
 
 #include "ScriptMgr.h"
@@ -32,6 +39,10 @@ public:
         GrantCustomSpells(player, playerClass);
         GrantRacialAdjustments(player, playerClass, playerRace);
         CleanupRestrictedSpells(player, playerClass);
+
+        // Universal equipment proficiencies (separate config)
+        if (sConfigMgr->GetOption<bool>("CustomRamvaris.AllClassEquip.Enable", false))
+            GrantAllProficiencies(player);
     }
 
 private:
@@ -206,6 +217,50 @@ private:
 
         // 81001 — remove from everyone (deprecated/replaced)
         RemoveIfKnown(player, 81001);
+    }
+
+    // ========================================================================
+    // Universal weapon + armor proficiencies
+    // Config: CustomRamvaris.AllClassEquip.Enable
+    // Grants every weapon and armor proficiency spell so any class can
+    // equip any item type. Combined with AllowableClass=-1 in item_template,
+    // this allows full cross-class equipment (Warlock in plate, etc.).
+    // ========================================================================
+    static void GrantAllProficiencies(Player* player)
+    {
+        // ---------- Weapon proficiency spells ----------
+        static const uint32 weaponSpells[] = {
+            196,   // One-Handed Axes
+            197,   // Two-Handed Axes
+            198,   // One-Handed Maces
+            199,   // Two-Handed Maces
+            201,   // One-Handed Swords
+            202,   // Two-Handed Swords
+            227,   // Staves
+            200,   // Polearms
+            1180,  // Daggers
+            15590, // Fist Weapons
+            264,   // Bows
+            5011,  // Crossbows
+            266,   // Guns
+            5009,  // Wands
+            2567,  // Thrown
+        };
+
+        // ---------- Armor proficiency spells ----------
+        static const uint32 armorSpells[] = {
+            9078,  // Cloth
+            9077,  // Leather
+            8737,  // Mail
+            750,   // Plate Mail
+            9116,  // Shield
+        };
+
+        for (uint32 spellId : weaponSpells)
+            LearnIfMissing(player, spellId);
+
+        for (uint32 spellId : armorSpells)
+            LearnIfMissing(player, spellId);
     }
 
     // ========================================================================

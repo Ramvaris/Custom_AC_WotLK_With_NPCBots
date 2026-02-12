@@ -174,6 +174,20 @@ CustomRamvaris.PetScale.Enable = 0
 
 CustomRamvaris.PetStayOnMount.Enable = 0
 
+#
+# CustomRamvaris.AllClassEquip.Enable
+#     Universal equipment proficiencies — ANY class can wear ANY armor type
+#     (cloth/leather/mail/plate/shield) and wield ANY weapon type.
+#     Combined with the AllowableClass SQL removal, this also lets any class
+#     wear any class set (e.g. Warlock in Death Knight tier, Mage with shield).
+#     Grants all proficiency spells on login. No DBC edits needed.
+#     Pair with: data/sql/db-world/9999_99_99_all_class_equip.sql
+#     [NO DB] — proficiency spells exist in DBC already
+#     Default: 0 (OFF)
+#
+
+CustomRamvaris.AllClassEquip.Enable = 0
+
 ###################################################################################################
 #                                                                                                 #
 #  SECTION 2: FEATURES REQUIRING CUSTOM DBC / MPQ / CREATURE DATA                                #

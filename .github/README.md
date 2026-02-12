@@ -39,6 +39,7 @@ This fork is maintained by **[Ramvaris](https://github.com/Ramvaris)**.
 - **Working Language Comprehension** - NPCs speaking Orcish/Thalassian/etc. are actually readable if your character knows the language (via skill or aura). Non-speakers get the original scrambled text with proper language tags. No Client-Mod neccesary.
 - **Pet Stay on Mount** - Pets stay summoned when mounting up instead of being dismissed. They run alongside the player. Config-gated (`CustomRamvaris.PetStayOnMount.Enable`).
 - **Soul Keeper Guardian Travel Safety** - Soul Keeper guardians are automatically despawned on cross-map teleport and taxi flights, preventing orphaned guardians on old maps. Explicit `IsSoulKeeperGuardian()` marker check ensures warlock/hunter/DK pets are never affected — only creatures with the Soul Keeper marker (81100) are touched. Cooldowns are preserved for re-summoning.
+- **All-Class Equipment** — Any class can wear any armor type (cloth/leather/mail/plate/shield) and wield any weapon type. Class restrictions on set items removed — Warlock in Death Knight tier, Mage with plate and shield, Druid bear in full plate, anything goes. All proficiency spells granted on login + `AllowableClass` removed from all equipment in the DB. Vendors show and sell all class sets to everyone. Config-gated (`CustomRamvaris.AllClassEquip.Enable`).
 - Some AC modules from other people integrated and kept up-to-date
 
 Notice: I also have some MPQ QoL Stuff that I couldn't include here. Like a custom faction with 'endless talent points' if you can pay massive amounts of gold, QoL Spells (Detect Invisibility to see easter eggs with endless duration, Stealth without Movement Speed Reduction), Human Reputation Bonus for everyone on Login, an ARAC (All Races all Classes) LUA Fix to give dreaenei and blood elves the right class racials, and stuff I have yet forgotten - so if you are interested just ask.
@@ -168,6 +169,7 @@ All of Ramvaris' private server Lua customizations ported to C++ for performance
 - **NPC Summon Flavor Text** — 8 custom NPCs with 12 random witty sayings each when summoned
 - **Lilly Helper NPC** — Full gossip: city/dungeon/POI teleports, instance reset, talent point purchase
 - **Login Spell Grants** — Auto-learn utility spells, profession dual/triple spec unlock, racial fixes. Unlearns 81002/81003/81008 (replaced by enchant speed/fly system)
+- **All-Class Equipment** — Grants all weapon + armor proficiency spells on login. Combined with DB-level `AllowableClass` removal, any class can equip any weapon type, any armor type, any class set. Vendors sell all class sets to everyone. For FUN.
 - **Dark Azeroth Weather** — Biome-aware bad weather: storms in deserts, snow in tundra, rain elsewhere
 - **`.special`** — Gossip menu to summon custom NPCs, open bank, open mailbox
 - **`.guardianscale`** — Double Soul Keeper guardian visual scale each use (caps at 5x)
@@ -192,6 +194,7 @@ CustomRamvaris.SmartWanderingBots.MinAmount = 5
 CustomRamvaris.SmartWanderingBots.MaxAmount = 15
 CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown = 30
 CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable = 0  # Even out Alliance/Horde ratio
+CustomRamvaris.AllClassEquip.Enable = 0   # Any class can wear any armor/weapon/set
 ```
 
 ### 🌿 Database Tweaks
@@ -199,6 +202,7 @@ CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable = 0  # Even out Allianc
 | Tweak | Description |
 |-------|-------------|
 | **Fast Resource Respawns** | Mining nodes and herbs respawn in 2 minutes instead of 45min-7days. Applied automatically on DB setup. |
+| **All-Class Equipment** | `AllowableClass` set to `-1` on all 30,229 weapons and armor items. Removes class restrictions from equipping, vendor display, and vendor purchases. Runs LAST after all DB updates (`9999_99_99_` prefix). |
 
 > **Note:** The fast respawn SQL is prefixed with `9999_99_99_` to ensure it runs LAST after all other database updates, preventing overwrites.
 
