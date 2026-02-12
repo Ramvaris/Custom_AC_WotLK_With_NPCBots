@@ -30,12 +30,10 @@ UPDATE quest_template_addon SET AllowableClasses = 4
   WHERE ID IN (6082, 6085, 6088, 6102, 9485, 9593);
 
 -- ------------- WARLOCK (256) — Summon quests --------------------------------
--- Summon Felsteed (RewardSpell 5785)
-UPDATE quest_template_addon SET AllowableClasses = 256
-  WHERE ID IN (4490);
--- Dreadsteed of Xoroth (RewardSpell 23160)
-UPDATE quest_template_addon SET AllowableClasses = 256
-  WHERE ID IN (7631);
+-- NOTE: Mount quests (Felsteed 4490, Dreadsteed 7631) are intentionally left
+-- OPEN for collectors. The quest reward is a summon mount — not a class skill.
+-- Similarly, Paladin mount quests (1661, 7647, 9712, 9737) are opened by the
+-- C++ patcher and excluded from the lock list.
 
 -- ------------- PRIEST (16) — Racial priest spells ---------------------------
 -- These are priest-only racial abilities. In an AllClassEquip server we lock

@@ -110,9 +110,9 @@ private:
         WorldDatabase.DirectExecute(
             "UPDATE quest_template_addon SET AllowableClasses = 4 "
             "WHERE ID IN (6082, 6085, 6088, 6102, 9485, 9593)");        // Hunter: Taming the Beast
-        WorldDatabase.DirectExecute(
-            "UPDATE quest_template_addon SET AllowableClasses = 256 "
-            "WHERE ID IN (4490, 7631)");                                // Warlock: Felsteed, Dreadsteed
+        // NOTE: Warlock mount quests (4490 Felsteed, 7631 Dreadsteed) and
+        // Paladin mount quests (1661, 7647, 9712, 9737) are intentionally left
+        // OPEN for collectors — they reward summon mounts, not class skills.
         WorldDatabase.DirectExecute(
             "UPDATE quest_template_addon SET AllowableClasses = 16 "
             "WHERE ID IN ("
@@ -139,9 +139,7 @@ private:
             6082, 6085, 6088, 6102, 9485, 9593,
             // Already locked: 6081, 6086, 6089, 6103, 9673, 9675
             6081, 6086, 6089, 6103, 9673, 9675,
-            // Warlock summons
-            4490, 7631,
-            // Already locked: 1470,1471,1474,1485,1504,1513,1598,1599,1689,1739,1795,7583,8344,9619
+            // Warlock demon summons (NOT mounts — Felsteed 4490 / Dreadsteed 7631 are open for collectors)
             1470, 1471, 1474, 1485, 1504, 1513, 1598, 1599, 1689, 1739, 1795, 7583, 8344, 9619,
             // Also locked: 1, 12687  (Kanrethad — warlock green fire)
             1, 12687,
@@ -161,8 +159,8 @@ private:
             5641, 5644, 5645, 5646, 5647, 5679, 10377,
             // Warrior stances — already locked in base game
             1498, 1665, 1678, 1683, 1719, 1819, 9582, 10350,
-            // Paladin — already locked in base game
-            1652, 1661, 1785, 1788, 7647, 9600, 9685, 9691, 9712, 9737,
+            // Paladin class skills (NOT mounts — 1661/7647/9712/9737 are mount quests, open for collectors)
+            1652, 1785, 1788, 9600, 9685, 9691,
             // Mage — already locked in base game
             99, 421, 422, 423, 424, 1014, 7463, 9364, 12172, 12173, 12228, 13079,
             // Druid — already locked in base game

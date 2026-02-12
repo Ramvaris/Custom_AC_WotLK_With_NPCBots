@@ -65,6 +65,9 @@ public:
         // for the first zone assignment
         uint32 zoneId, areaId;
         player->GetZoneAndAreaId(zoneId, areaId);
+        LOG_INFO("server.loading", "SmartWandering: OnPlayerLogin for {} (GUID {}), zone={}, spare pool={}",
+            player->GetName(), player->GetGUID().GetCounter(), zoneId,
+            BotDataMgr::GetAvailableWanderingBotCount());
         HandleZoneChange(player, zoneId);
     }
 
@@ -109,13 +112,21 @@ private:
 
         // Already have bots in this zone — nothing to do
         if (state.currentZoneId == newZone && !state.spawnedEntries.empty())
+        {
+            LOG_INFO("server.loading", "SmartWandering: Player {} already has {} bots in zone {}, skipping",
+                player->GetName(), state.spawnedEntries.size(), newZone);
             return;
+        }
 
         // Cooldown check — prevent zone-border flapping
         uint32 cooldownSec = sConfigMgr->GetOption<uint32>("CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown", 30);
         uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
         if (state.lastZoneChange > 0 && (now - state.lastZoneChange) < cooldownSec)
+        {
+            LOG_INFO("server.loading", "SmartWandering: Player {} zone change on cooldown ({}/{}s)",
+                player->GetName(), now - state.lastZoneChange, cooldownSec);
             return;
+        }
         state.lastZoneChange = now;
 
         // Despawn old bots from previous zone
