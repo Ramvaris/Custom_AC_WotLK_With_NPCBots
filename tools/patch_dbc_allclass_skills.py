@@ -37,7 +37,6 @@ TARGET_SKILLS = {
     136,  # Staves
     160,  # 2H Maces
     162,  # Unarmed
-    163,  # Marksmanship (internal — hosts Auto Shot)
     172,  # 2H Axes
     173,  # Daggers
     176,  # Thrown
