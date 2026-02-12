@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Patch DBC files to allow ALL classes to use ALL weapon/armor/shield skills
-and give all classes the ranged weapon + ammo slot.
+and core combat passives (Parry/Block/Dual Wield), and give all classes the
+ranged weapon + ammo slot.
 
 Modifies:
   - SkillRaceClassInfo.dbc  (ClassMask -> 0x7FF for all weapon/armor/combat skills)
-  - SkillLineAbility.dbc    (ClassMask -> 0x7FF, ExcludeClass -> 0 for same)
+    - SkillLineAbility.dbc    (ClassMask -> 0x7FF, ExcludeClass -> 0 for same)
   - ChrClasses.dbc          (clear UsesRelicSlot flag 0x08 so all classes get ammo slot)
 
 Usage:
@@ -50,6 +51,15 @@ TARGET_SKILLS = {
     473,  # Fist Weapons
 }
 
+# Specific combat passive spells to force-open by class mask in SkillLineAbility
+# (in addition to skill-line based matching above).
+TARGET_SPELLS = {
+    81,    # Dodge
+    107,   # Block
+    674,   # Dual Wield
+    3127,  # Parry
+}
+
 ALL_CLASSES = 0x7FF
 ALL_RACES = 0x7FFFFFFF
 
@@ -91,7 +101,9 @@ def patch_skill_line_ability(dbc_dir):
     for i in range(nrecs):
         offset = i * recsz
         fields = list(struct.unpack_from('<' + 'i' * nfields, records, offset))
-        if fields[1] in TARGET_SKILLS:
+        skill_line_id = fields[1]
+        spell_id = fields[2]
+        if skill_line_id in TARGET_SKILLS or spell_id in TARGET_SPELLS:
             changed = False
             if fields[4] != 0:
                 fields[4] = ALL_CLASSES

@@ -281,6 +281,8 @@ private:
 
         // ---------- Combat / utility spells ----------
         static const uint32 utilitySpells[] = {
+            107,   // Block (passive)
+            3127,  // Parry (passive)
             674,   // Dual Wield (passive)
         };
 
