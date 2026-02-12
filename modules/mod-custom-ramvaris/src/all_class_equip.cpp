@@ -22,8 +22,7 @@
 #include "Log.h"
 #include "QuestDef.h"
 #include "ItemTemplate.h"
-#include "SpellMgr.h"
-#include "SpellInfo.h"
+#include <unordered_set>
 
 // Quest::RequiredClasses is protected with no setter.
 // This derived class provides write access for the startup patcher.
@@ -82,107 +81,110 @@ private:
     }
 
     // =====================================================================
-    // Phase 2: Quests — open all class-restricted quests EXCEPT those that
-    // teach class-specific spells.  A spell is class-specific when its
-    // SpellFamilyName maps to a single class (e.g. 11 = Shaman).
-    // This keeps shaman totem quests, druid form quests, warlock demon
-    // quests etc. locked to the correct class regardless of whether they
-    // originally had AllowableClasses set or not.
+    // =====================================================================
+    // Phase 2: Quests — open all class-restricted quests for cross-class
+    // content.  Skill-learn quests (totems, stances, taming, forms, etc.)
+    // are protected by a separate SQL patch that explicitly sets their
+    // AllowableClasses — see:
+    //   data/sql/db-world/9999_99_99_all_class_equip_lock_skill_quests.sql
+    //
+    // This C++ patcher opens everything ELSE each startup, so new quests
+    // from upstream DB patches also get opened automatically.
     // =====================================================================
     static void PatchQuestRequirements()
     {
-        uint32 opened = 0;
-        uint32 locked = 0;
-        auto const& questStore = sObjectMgr->GetQuestTemplates();
+        // Step 1: DB — open all class-restricted quests that are NOT in our
+        // explicit skill-quest lock list (i.e. quests whose AllowableClasses
+        // was set by the base game, not by our SQL patch).
+        // Our SQL patch uses specific IDs, so we just bulk-clear everything
+        // then re-apply the locks.
+        WorldDatabase.DirectExecute(
+            "UPDATE quest_template_addon SET AllowableClasses = 0 "
+            "WHERE AllowableClasses != 0");
 
+        // Re-apply skill-quest locks (same IDs as the SQL patch file).
+        // This ensures they survive even if someone drops and reimports.
+        WorldDatabase.DirectExecute(
+            "UPDATE quest_template_addon SET AllowableClasses = 64 "
+            "WHERE ID IN (1531, 1532, 9554)");                          // Shaman: Call of Air
+        WorldDatabase.DirectExecute(
+            "UPDATE quest_template_addon SET AllowableClasses = 4 "
+            "WHERE ID IN (6082, 6085, 6088, 6102, 9485, 9593)");        // Hunter: Taming the Beast
+        WorldDatabase.DirectExecute(
+            "UPDATE quest_template_addon SET AllowableClasses = 256 "
+            "WHERE ID IN (4490, 7631)");                                // Warlock: Felsteed, Dreadsteed
+        WorldDatabase.DirectExecute(
+            "UPDATE quest_template_addon SET AllowableClasses = 16 "
+            "WHERE ID IN ("
+            "5634,5635,5636,5637,5638,5639,5640,"                       // Priest: Desperate Prayer
+            "5642,5643,5680,"                                           // Priest: Shadowguard
+            "5652,5654,5655,5656,5657,"                                 // Priest: Hex of Weakness
+            "5658,5660,5661,5662,5663,10379,"                           // Priest: Touch of Weakness
+            "5627,5628,5629,5630,5631,5632,5633,"                       // Priest: Stars of Elune
+            "5672,5673,5674,5675,"                                      // Priest: Elune's Grace
+            "5676,5677,5678,"                                           // Priest: Arcane Feedback
+            "10376,10378,"                                              // Priest: Symbol of Hope, Consume Magic
+            "6032)");                                                   // Priest: Sacred Cloth
+
+        // Step 2: In-memory — patch the already-loaded quest templates to match.
+        uint32 opened = 0;
+
+        // Build a set of skill-quest IDs that must stay locked.
+        static const std::unordered_set<uint32> skillQuestIds = {
+            // Shaman totems
+            1531, 1532, 9554,
+            // Already locked by base game (kept here so we never open them):
+            96, 1518, 1521, 1527, 9451, 9509, 9555,
+            // Hunter taming
+            6082, 6085, 6088, 6102, 9485, 9593,
+            // Already locked: 6081, 6086, 6089, 6103, 9673, 9675
+            6081, 6086, 6089, 6103, 9673, 9675,
+            // Warlock summons
+            4490, 7631,
+            // Already locked: 1470,1471,1474,1485,1504,1513,1598,1599,1689,1739,1795,7583,8344,9619
+            1470, 1471, 1474, 1485, 1504, 1513, 1598, 1599, 1689, 1739, 1795, 7583, 8344, 9619,
+            // Also locked: 1, 12687  (Kanrethad — warlock green fire)
+            1, 12687,
+            // Priest racial spells
+            5634, 5635, 5636, 5637, 5638, 5639, 5640,                  // Desperate Prayer
+            5642, 5643, 5680,                                           // Shadowguard
+            5652, 5654, 5655, 5656, 5657,                               // Hex of Weakness
+            5658, 5660, 5661, 5662, 5663, 10379,                        // Touch of Weakness
+            5627, 5628, 5629, 5630, 5631, 5632, 5633,                   // Stars of Elune
+            5672, 5673, 5674, 5675,                                     // Elune's Grace
+            5676, 5677, 5678,                                           // Arcane Feedback
+            10376, 10378,                                               // Symbol of Hope, Consume Magic
+            6032,                                                       // Sacred Cloth
+            // Already locked priest: 5217,5220,5223,5226,5230,5232,5234,5236,
+            // 5641,5644,5645,5646,5647,5679,10377
+            5217, 5220, 5223, 5226, 5230, 5232, 5234, 5236,
+            5641, 5644, 5645, 5646, 5647, 5679, 10377,
+            // Warrior stances — already locked in base game
+            1498, 1665, 1678, 1683, 1719, 1819, 9582, 10350,
+            // Paladin — already locked in base game
+            1652, 1661, 1785, 1788, 7647, 9600, 9685, 9691, 9712, 9737,
+            // Mage — already locked in base game
+            99, 421, 422, 423, 424, 1014, 7463, 9364, 12172, 12173, 12228, 13079,
+            // Druid — already locked in base game
+            31, 755, 772, 5061, 6001, 6002, 6125, 6130, 6741, 6781,
+            7223, 7224, 7962, 8257, 11001,
+        };
+
+        auto const& questStore = sObjectMgr->GetQuestTemplates();
         for (auto const& [id, quest] : questStore)
         {
-            // Check if this quest rewards a class-specific spell
-            uint32 classMask = GetRewardSpellClassMask(quest);
+            if (quest->GetRequiredClasses() == 0)
+                continue;  // already open
 
-            if (classMask != 0)
-            {
-                // This quest teaches a class skill — ensure it's locked.
-                uint32 current = quest->GetRequiredClasses();
-                if (current != classMask)
-                {
-                    static_cast<QuestPatcher*>(quest)->SetRequiredClasses(classMask);
-                    // Persist to DB
-                    WorldDatabase.DirectExecute(
-                        "INSERT INTO quest_template_addon (ID, AllowableClasses) VALUES ({}, {}) "
-                        "ON DUPLICATE KEY UPDATE AllowableClasses = {}",
-                        id, classMask, classMask);
-                    ++locked;
-                }
-            }
-            else
-            {
-                // No class-specific spell reward — open it.
-                if (quest->GetRequiredClasses() != 0)
-                {
-                    static_cast<QuestPatcher*>(quest)->SetRequiredClasses(0);
-                    WorldDatabase.DirectExecute(
-                        "UPDATE quest_template_addon SET AllowableClasses = 0 WHERE ID = {}", id);
-                    ++opened;
-                }
-            }
+            if (skillQuestIds.count(id))
+                continue;  // skill quest — keep locked
+
+            static_cast<QuestPatcher*>(quest)->SetRequiredClasses(0);
+            ++opened;
         }
 
         if (opened > 0)
-            LOG_INFO("server.loading", "[AllClassEquip] Opened {} class-restricted quests", opened);
-        if (locked > 0)
-            LOG_INFO("server.loading", "[AllClassEquip] Locked {} quests to their spell's class", locked);
-    }
-
-    // Map SpellFamilyName → class bitmask (1 << (classId - 1))
-    static uint32 SpellFamilyToClassMask(uint32 family)
-    {
-        switch (family)
-        {
-            case  3: return 1 << (CLASS_MAGE         - 1);  // SPELLFAMILY_MAGE
-            case  4: return 1 << (CLASS_WARRIOR      - 1);  // SPELLFAMILY_WARRIOR
-            case  5: return 1 << (CLASS_WARLOCK      - 1);  // SPELLFAMILY_WARLOCK
-            case  6: return 1 << (CLASS_PRIEST       - 1);  // SPELLFAMILY_PRIEST
-            case  7: return 1 << (CLASS_DRUID        - 1);  // SPELLFAMILY_DRUID
-            case  8: return 1 << (CLASS_ROGUE        - 1);  // SPELLFAMILY_ROGUE
-            case  9: return 1 << (CLASS_HUNTER       - 1);  // SPELLFAMILY_HUNTER
-            case 10: return 1 << (CLASS_PALADIN      - 1);  // SPELLFAMILY_PALADIN
-            case 11: return 1 << (CLASS_SHAMAN       - 1);  // SPELLFAMILY_SHAMAN
-            case 15: return 1 << (CLASS_DEATH_KNIGHT - 1);  // SPELLFAMILY_DEATHKNIGHT
-            default: return 0; // Generic / environment / pet
-        }
-    }
-
-    // Returns class mask if the quest's reward spell is class-specific, 0 otherwise.
-    static uint32 GetRewardSpellClassMask(Quest const* quest)
-    {
-        uint32 spells[] = { uint32(quest->GetRewSpellCast()), quest->GetRewSpell() };
-        for (uint32 spellId : spells)
-        {
-            if (spellId == 0)
-                continue;
-            SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
-            if (!info)
-                continue;
-            uint32 mask = SpellFamilyToClassMask(info->SpellFamilyName);
-            if (mask != 0)
-                return mask;
-            // Also check if the spell teaches another spell (SPELL_EFFECT_LEARN_SPELL)
-            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
-            {
-                if (info->Effects[i].Effect == SPELL_EFFECT_LEARN_SPELL && info->Effects[i].TriggerSpell)
-                {
-                    SpellInfo const* taught = sSpellMgr->GetSpellInfo(info->Effects[i].TriggerSpell);
-                    if (taught)
-                    {
-                        mask = SpellFamilyToClassMask(taught->SpellFamilyName);
-                        if (mask != 0)
-                            return mask;
-                    }
-                }
-            }
-        }
-        return 0;
+            LOG_INFO("server.loading", "[AllClassEquip] Opened {} class-restricted quests (skill quests stay locked)", opened);
     }
 };
 
