@@ -279,10 +279,16 @@ private:
             9116,  // Shield
         };
 
+        // ---------- Combat / utility spells ----------
+        static const uint32 utilitySpells[] = {
+            674,   // Dual Wield (passive)
+        };
+
         // ---------- Explicit skill lines ----------
         // LearnSpell usually grants these, but explicitly setting them avoids
         // edge cases where a class shows missing weapon skills (e.g. Wands).
         static const uint16 skillLines[] = {
+            // Weapons
             SKILL_AXES,
             SKILL_2H_AXES,
             SKILL_MACES,
@@ -298,6 +304,16 @@ private:
             SKILL_CROSSBOWS,
             SKILL_WANDS,
             SKILL_THROWN,
+            SKILL_UNARMED,
+            // Armor
+            SKILL_CLOTH,
+            SKILL_LEATHER,
+            SKILL_MAIL,
+            SKILL_PLATE_MAIL,
+            SKILL_SHIELD,
+            // Combat
+            SKILL_DEFENSE,
+            SKILL_DUAL_WIELD,
         };
 
         for (uint32 spellId : weaponSpells)
@@ -307,6 +323,9 @@ private:
             LearnIfMissing(player, spellId);
 
         for (uint32 spellId : armorSpells)
+            LearnIfMissing(player, spellId);
+
+        for (uint32 spellId : utilitySpells)
             LearnIfMissing(player, spellId);
 
         uint16 const maxSkill = player->GetMaxSkillValueForLevel();
