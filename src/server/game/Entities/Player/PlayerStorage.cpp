@@ -222,6 +222,15 @@ uint8 Player::FindEquipSlot(ItemTemplate const* proto, uint32 slot, bool swap) c
             break;
         case INVTYPE_RELIC:
         {
+            bool const allClassEquip = sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
+                                       sConfigMgr->GetOption<bool>("CustomRamvaris.AllClassEquip.Enable", false);
+
+            if (allClassEquip)
+            {
+                slots[0] = EQUIPMENT_SLOT_RANGED;
+                break;
+            }
+
             switch (proto->SubClass)
             {
                 case ITEM_SUBCLASS_ARMOR_LIBRAM:
@@ -2253,6 +2262,8 @@ InventoryResult Player::CanUseItem(Item* pItem, bool not_loading) const
             if (pItem->GetSkill() != 0)
             {
                 bool allowEquip = false;
+                bool const allClassEquip = sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
+                                           sConfigMgr->GetOption<bool>("CustomRamvaris.AllClassEquip.Enable", false);
                 uint32 itemSkill = pItem->GetSkill();
                 // Armor that is binded to account can "morph" from plate to mail, etc. if skill is not learned yet.
                 if (pProto->Quality == ITEM_QUALITY_HEIRLOOM && pProto->Class == ITEM_CLASS_ARMOR && !HasSkill(itemSkill))
@@ -2271,6 +2282,13 @@ InventoryResult Player::CanUseItem(Item* pItem, bool not_loading) const
                         allowEquip = (itemSkill == SKILL_MAIL);
                     }
                 }
+                if (!allowEquip && GetSkillValue(itemSkill) == 0)
+                {
+                    // AllClassEquip: allow all classes to use wands even without explicit weapon skill.
+                    if (allClassEquip && pProto->Class == ITEM_CLASS_WEAPON && pProto->SubClass == ITEM_SUBCLASS_WEAPON_WAND)
+                        allowEquip = true;
+                }
+
                 if (!allowEquip && GetSkillValue(itemSkill) == 0)
                     return EQUIP_ERR_NO_REQUIRED_PROFICIENCY;
             }
@@ -2372,6 +2390,9 @@ InventoryResult Player::CanRollForItemInLFG(ItemTemplate const* proto, WorldObje
     if ((proto->AllowableClass & getClassMask()) == 0 || (proto->AllowableRace & getRaceMask()) == 0)
         return EQUIP_ERR_YOU_CAN_NEVER_USE_THAT_ITEM;
 
+    bool const allClassEquip = sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true) &&
+                               sConfigMgr->GetOption<bool>("CustomRamvaris.AllClassEquip.Enable", false);
+
     if (proto->RequiredSpell != 0 && !HasSpell(proto->RequiredSpell))
         return EQUIP_ERR_NO_REQUIRED_PROFICIENCY;
 
@@ -2384,7 +2405,11 @@ InventoryResult Player::CanRollForItemInLFG(ItemTemplate const* proto, WorldObje
     }
 
     if (proto->Class == ITEM_CLASS_WEAPON && GetSkillValue(item_weapon_skills[proto->SubClass]) == 0)
-        return EQUIP_ERR_NO_REQUIRED_PROFICIENCY;
+    {
+        bool const allowAllClassWand = allClassEquip && proto->SubClass == ITEM_SUBCLASS_WEAPON_WAND;
+        if (!allowAllClassWand)
+            return EQUIP_ERR_NO_REQUIRED_PROFICIENCY;
+    }
 
     if (proto->Class == ITEM_CLASS_ARMOR)
     {
@@ -2398,25 +2423,25 @@ InventoryResult Player::CanRollForItemInLFG(ItemTemplate const* proto, WorldObje
         }
 
         // Check for librams.
-        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_LIBRAM && !IsClass(CLASS_PALADIN, CLASS_CONTEXT_EQUIP_RELIC))
+        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_LIBRAM && !allClassEquip && !IsClass(CLASS_PALADIN, CLASS_CONTEXT_EQUIP_RELIC))
         {
             return EQUIP_ERR_YOU_CAN_NEVER_USE_THAT_ITEM;
         }
 
         // CHeck for idols.
-        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_IDOL && !IsClass(CLASS_DRUID, CLASS_CONTEXT_EQUIP_RELIC))
+        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_IDOL && !allClassEquip && !IsClass(CLASS_DRUID, CLASS_CONTEXT_EQUIP_RELIC))
         {
             return EQUIP_ERR_YOU_CAN_NEVER_USE_THAT_ITEM;
         }
 
         // Check for totems.
-        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_TOTEM && !IsClass(CLASS_SHAMAN, CLASS_CONTEXT_EQUIP_RELIC))
+        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_TOTEM && !allClassEquip && !IsClass(CLASS_SHAMAN, CLASS_CONTEXT_EQUIP_RELIC))
         {
             return EQUIP_ERR_YOU_CAN_NEVER_USE_THAT_ITEM;
         }
 
         // Check for sigils.
-        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_SIGIL && !IsClass(CLASS_DEATH_KNIGHT, CLASS_CONTEXT_EQUIP_RELIC))
+        if (proto->SubClass == ITEM_SUBCLASS_ARMOR_SIGIL && !allClassEquip && !IsClass(CLASS_DEATH_KNIGHT, CLASS_CONTEXT_EQUIP_RELIC))
         {
             return EQUIP_ERR_YOU_CAN_NEVER_USE_THAT_ITEM;
         }

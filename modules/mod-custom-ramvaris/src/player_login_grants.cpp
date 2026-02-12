@@ -27,21 +27,29 @@ public:
     {
         if (!sConfigMgr->GetOption<bool>("CustomRamvaris.Enable", true))
             return;
-        if (!sConfigMgr->GetOption<bool>("CustomRamvaris.LoginSpellGrants.Enable", false))
-            return;
         if (!player)
+            return;
+
+        bool const loginSpellGrantsEnabled = sConfigMgr->GetOption<bool>("CustomRamvaris.LoginSpellGrants.Enable", false);
+        bool const allClassEquipEnabled = sConfigMgr->GetOption<bool>("CustomRamvaris.AllClassEquip.Enable", false);
+
+        // If both are disabled, nothing to do on login.
+        if (!loginSpellGrantsEnabled && !allClassEquipEnabled)
             return;
 
         uint8 playerClass = player->getClass();
         uint8 playerRace  = player->getRace();
 
-        GrantProfessionSpecializations(player);
-        GrantCustomSpells(player, playerClass);
-        GrantRacialAdjustments(player, playerClass, playerRace);
-        CleanupRestrictedSpells(player, playerClass);
+        if (loginSpellGrantsEnabled)
+        {
+            GrantProfessionSpecializations(player);
+            GrantCustomSpells(player, playerClass);
+            GrantRacialAdjustments(player, playerClass, playerRace);
+            CleanupRestrictedSpells(player, playerClass);
+        }
 
         // Universal equipment proficiencies (separate config)
-        if (sConfigMgr->GetOption<bool>("CustomRamvaris.AllClassEquip.Enable", false))
+        if (allClassEquipEnabled)
             GrantAllProficiencies(player);
     }
 
