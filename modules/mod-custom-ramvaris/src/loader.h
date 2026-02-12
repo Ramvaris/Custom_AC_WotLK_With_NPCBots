@@ -32,4 +32,7 @@ void AddSC_random_enchants();
 // Smart Wandering Bots (zone-aware dynamic bot spawning, core-patched BotDataMgr)
 void AddSC_smart_wandering_bots();
 
+// All-Class Equipment (startup hook: re-apply AllowableClass=-1, open class quests)
+void AddSC_all_class_equip();
+
 #endif // LOADER_CUSTOM_RAMVARIS_H

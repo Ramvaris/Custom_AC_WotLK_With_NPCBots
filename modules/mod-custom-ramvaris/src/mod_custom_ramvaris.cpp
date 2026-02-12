@@ -29,6 +29,9 @@ void AddSC_random_enchants();
 // Smart Wandering Bots (zone-aware, core-patched BotDataMgr)
 void AddSC_smart_wandering_bots();
 
+// All-Class Equipment (startup hook: AllowableClass + quest patches)
+void AddSC_all_class_equip();
+
 void Addmod_custom_ramvarisScripts()
 {
     AddSC_spell_human_stoneform();
@@ -38,4 +41,5 @@ void Addmod_custom_ramvarisScripts()
     AddSC_custom_commands();
     AddSC_random_enchants();
     AddSC_smart_wandering_bots();
+    AddSC_all_class_equip();
 }
