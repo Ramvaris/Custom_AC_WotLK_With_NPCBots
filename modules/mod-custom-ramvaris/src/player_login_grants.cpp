@@ -233,6 +233,8 @@ private:
     // Grants every weapon and armor proficiency spell so any class can
     // equip any item type. Combined with AllowableClass=-1 in item_template,
     // this allows full cross-class equipment (Warlock in plate, etc.).
+    // Also grants core ranged fire abilities (Shoot/Throw) and force-sets the
+    // corresponding weapon skills so they show up and work immediately.
     // ========================================================================
     static void GrantAllProficiencies(Player* player)
     {
@@ -255,6 +257,19 @@ private:
             2567,  // Thrown
         };
 
+        // ---------- Ranged attack ability spells ----------
+        // "Fair is fair": if everyone can equip ranged types, everyone should
+        // also be able to fire them.
+        static const uint32 rangedAttackSpells[] = {
+            75,    // Auto Shot
+            2480,  // Shoot Bow
+            7918,  // Shoot Gun
+            7919,  // Shoot Crossbow
+            5019,  // Shoot (Wand)
+            3018,  // Shoot
+            2764,  // Throw
+        };
+
         // ---------- Armor proficiency spells ----------
         static const uint32 armorSpells[] = {
             9078,  // Cloth
@@ -264,11 +279,39 @@ private:
             9116,  // Shield
         };
 
+        // ---------- Explicit skill lines ----------
+        // LearnSpell usually grants these, but explicitly setting them avoids
+        // edge cases where a class shows missing weapon skills (e.g. Wands).
+        static const uint16 skillLines[] = {
+            SKILL_AXES,
+            SKILL_2H_AXES,
+            SKILL_MACES,
+            SKILL_2H_MACES,
+            SKILL_SWORDS,
+            SKILL_2H_SWORDS,
+            SKILL_STAVES,
+            SKILL_POLEARMS,
+            SKILL_DAGGERS,
+            SKILL_FIST_WEAPONS,
+            SKILL_BOWS,
+            SKILL_GUNS,
+            SKILL_CROSSBOWS,
+            SKILL_WANDS,
+            SKILL_THROWN,
+        };
+
         for (uint32 spellId : weaponSpells)
+            LearnIfMissing(player, spellId);
+
+        for (uint32 spellId : rangedAttackSpells)
             LearnIfMissing(player, spellId);
 
         for (uint32 spellId : armorSpells)
             LearnIfMissing(player, spellId);
+
+        uint16 const maxSkill = player->GetMaxSkillValueForLevel();
+        for (uint16 skillId : skillLines)
+            player->SetSkill(skillId, 0, maxSkill, maxSkill);
     }
 
     // ========================================================================
