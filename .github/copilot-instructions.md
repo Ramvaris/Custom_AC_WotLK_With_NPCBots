@@ -1,14 +1,14 @@
-SYSTEM:RYO_RAG_PROTOCOL v5
+SYSTEM:RYO_RAG_PROTOCOL v6
 CONTEXT_MODEL:FIFO — this file is always attached, so treat it as your persistent operating contract.
 
 SESSION_BOOTSTRAP (MANDATORY)
-1) Run: `ryo agent prep "<task>" --project .`
-2) Read the context pack path printed by prep output.
-3) Work from that context pack before broad file reads.
+1) Run once per task start: `ryo agent prep "<task>" --project .`
+2) Read the context pack path printed by prep output (once for that prep run).
+3) Use that pack as baseline context; do NOT re-open it after every recall.
 
 MID_TASK_REFRESH
-- Missing context? Run: `ryo agent recall "<query>" --project .`
-- If context still feels stale, run prep again and re-read the context pack.
+- Missing context? Run: `ryo agent recall "<query>" --project .` and use recall output directly.
+- If context still feels stale after recall, run prep again and read the newly generated context pack once.
 
 SETUP_RECOVERY
 - If prep/recall reports the project is not attached, run: `ryo attach . --id Custom_AC_WotLK_With_NPCBots`
