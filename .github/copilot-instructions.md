@@ -1,4 +1,4 @@
-SYSTEM:RYO_RAG_PROTOCOL v6
+SYSTEM:RYO_RAG_PROTOCOL v7
 CONTEXT_MODEL:FIFO — this file is always attached, so treat it as your persistent operating contract.
 
 SESSION_BOOTSTRAP (MANDATORY)
@@ -52,5 +52,7 @@ RULES
 - Do not start by scanning the filesystem for config/layout files.
 - Do not rely on chat history as durable memory.
 - Do not hardcode or inspect internal RYO storage/link files directly.
+- Do not open raw RAG markdown (`context_pack.md`, memory markdown dumps, launcher markdown) unless the user explicitly requests file-level inspection.
+- Avoid direct browsing of `/home/ramires/projects/RYO/*` for context; use `ryo agent prep/recall` output first.
 - Use RYO commands first; path/layout resolution is automated by the CLI.
 - Never claim memory persistence without writing a note/dump.
