@@ -138,14 +138,8 @@ void WorldSession::HandleMoveWorldportAck()
     if (!_player->getHostileRefMgr().IsEmpty())
         _player->getHostileRefMgr().deleteReferences(true); // pussywizard: multithreading crashfix
 
-    CellCoord pair(Acore::ComputeCellCoord(GetPlayer()->GetPositionX(), GetPlayer()->GetPositionY()));
-    Cell cell(pair);
-    if (!GridCoord(cell.GridX(), cell.GridY()).IsCoordValid())
-    {
-        KickPlayer("!GridCoord(cell.GridX(), cell.GridY()).IsCoordValid()");
-        return;
-    }
-    newMap->LoadGrid(GetPlayer()->GetPositionX(), GetPlayer()->GetPositionY());
+    // Grid was already loaded by AddPlayerToMap() → LoadGridsInRange().
+    // No need to load again here — skip to avoid redundant terrain I/O and BIH rebuild.
 
     // pussywizard: player supposed to enter bg map
     if (_player->InBattleground())

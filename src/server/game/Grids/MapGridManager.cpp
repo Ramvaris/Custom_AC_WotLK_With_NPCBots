@@ -4,6 +4,12 @@
 
 void MapGridManager::CreateGrid(uint16 const x, uint16 const y)
 {
+    // Fast-path: skip lock acquisition if grid already exists.
+    // Safe because grid pointers only transition nullptr → valid (never back
+    // to nullptr while players are present), and pointer-sized reads are atomic.
+    if (IsGridCreated(x, y))
+        return;
+
     std::lock_guard<std::mutex> guard(_gridLock);
     if (IsGridCreated(x, y))
         return;

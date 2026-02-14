@@ -20,7 +20,7 @@
  *   affects run + swim + flight, NO level scaling — always full value, like flying)
  *   and Mobility Boost (1% chance, 3 stages: 100%/200%/300% flight speed, combined
  *   with speed bonus up to 600%, also NOT level-scaled).
- * - `.enchants` paginated gossip menu; `.reroll` gossip-based Keep/Take flow (500g)
+ * - `.enchants` paginated gossip menu; `.reroll` opens tiered reroll menu:\n *   Option 1 (500g): Full Reroll — reroll everything (slots + enchants)\n *   Option 2 (750g): Reroll Enchants — keep slot count, reroll all enchant types/values\n *   Option 3 (1000g): Targeted Reroll — pick one specific enchant to reroll
  * - `.flylock` toggles flight on/off
  * - NO quality-based tier filtering — the percentile system handles balance naturally.
  *   A grey item can roll god-tier stats if RNG blesses you. Any quality, any tier.
@@ -78,7 +78,7 @@
  * PLAYERHOOK_ON_BEFORE_BUY_ITEM_FROM_VENDOR — only Green+ vendor items get enchants,
  * grey/white vendor trash is skipped to prevent mass-buying cheap items for farming.
  * Vendor buyback uses Player::StoreItem (not StoreNewItem), so repurchased items are safe.
- * Additionally, `.reroll` allows re-rolling bag items for 500g via gossip menu.
+ * Additionally, `.reroll` allows re-rolling bag items via gossip menu with three pricing tiers.
  *
  * Original: https://github.com/azerothcore/mod-random-enchants (MIT License)
  */
@@ -175,10 +175,20 @@ enum LotteryGossipAction : uint32
     LOTTO_ACTION_REROLL_BASE     = 100,
     LOTTO_ACTION_REROLL_MAX      = 9999,
 
-    // Reroll confirm/preview
-    LOTTO_ACTION_REROLL_CONFIRM  = 10001,
-    LOTTO_ACTION_REROLL_TAKE     = 10002,
-    LOTTO_ACTION_REROLL_KEEP     = 10003,
+    // Reroll mode selection (after item is chosen)
+    LOTTO_ACTION_REROLL_MODE_FULL     = 10001, // Option 1: Full reroll (500g)
+    LOTTO_ACTION_REROLL_MODE_ENCHANTS = 10002, // Option 2: Reroll enchants only (750g)
+    LOTTO_ACTION_REROLL_MODE_TARGETED = 10003, // Option 3: Pick enchant to reroll (1000g)
+
+    // Reroll confirm/preview after mode is chosen
+    LOTTO_ACTION_REROLL_CONFIRM  = 10010,
+    LOTTO_ACTION_REROLL_TAKE     = 10011,
+    LOTTO_ACTION_REROLL_KEEP     = 10012,
+    LOTTO_ACTION_REROLL_BACK_TO_OPTIONS = 10013, // Back from slot picker to options
+
+    // Targeted reroll: select enchant slot (10100 + slot_index 0-6)
+    LOTTO_ACTION_REROLL_SLOT_BASE = 10100,
+    LOTTO_ACTION_REROLL_SLOT_MAX  = 10106,
 
     // Enchants viewer (20000 + local index on page → show details)
     LOTTO_ACTION_ENCHANTS_BASE   = 20000,
@@ -191,6 +201,14 @@ enum LotteryGossipAction : uint32
     LOTTO_ACTION_ENCHANTS_SUM    = 30006,
 };
 
+// Reroll modes
+enum RerollMode : uint8
+{
+    REROLL_FULL      = 0, // Reroll slots + enchants (current behavior)
+    REROLL_ENCHANTS  = 1, // Keep slot count, reroll all enchant types/values
+    REROLL_TARGETED  = 2, // Reroll a single enchant slot
+};
+
 static constexpr uint32 ITEMS_PER_PAGE = 15;
 
 // Cascading roll chances per enchant slot
@@ -198,7 +216,11 @@ static constexpr float ROLL_CHANCES[] = {
     70.0f, 60.0f, 50.0f, 50.0f, 50.0f, 40.0f, 40.0f
 };
 static constexpr uint32 MAX_LOTTERY_SLOTS = 7;
-static constexpr uint32 REROLL_COST_GOLD  = 500;
+
+// Reroll costs per mode — gets pricier the more targeted
+static constexpr uint32 REROLL_COST_FULL_GOLD      = 500;   // Option 1: full reroll
+static constexpr uint32 REROLL_COST_ENCHANTS_GOLD   = 750;   // Option 2: enchants only
+static constexpr uint32 REROLL_COST_TARGETED_GOLD   = 1000;  // Option 3: single enchant
 
 // =============================================================================
 // Static Globals
@@ -208,11 +230,14 @@ static constexpr uint32 REROLL_COST_GOLD  = 500;
 static std::unordered_map<uint32, std::vector<uint32>> s_lotteryCache;
 static std::mutex s_lotteryCacheMutex;
 
-// Pending reroll state: player GUID → { itemGuid, rolledEnchants }
+// Pending reroll state: player GUID → { itemGuid, mode, rolledEnchants, slot }
 struct PendingReroll
 {
     uint32 itemGuid;
     std::vector<uint32> rolledEnchants;
+    RerollMode mode = REROLL_FULL;
+    uint8 targetedSlot = 0;        // For REROLL_TARGETED: which enchant slot to reroll
+    uint32 costGold = 0;           // Cost for this specific reroll
 };
 static std::unordered_map<uint32, PendingReroll> s_pendingRerolls;
 
@@ -851,6 +876,89 @@ static std::vector<uint32> RollNewEnchants(Item* item, bool isReroll)
 }
 
 // =============================================================================
+// Roll new enchants keeping the same number of slots — rerolls every enchant
+// but preserves the count. All enchants are fully random from the pool.
+// =============================================================================
+static std::vector<uint32> RollNewEnchantsKeepSlots(Item* item, uint32 keepCount)
+{
+    if (!item || keepCount == 0) return {};
+    if (keepCount > MAX_LOTTERY_SLOTS) keepCount = MAX_LOTTERY_SLOTS;
+
+    std::vector<uint32> result;
+    for (uint32 i = 0; i < keepCount; ++i)
+    {
+        uint32 enc = GetRandomEnchant(item, result);
+        if (enc == 0) break;
+        result.push_back(enc);
+    }
+    return result;
+}
+
+// =============================================================================
+// Roll a single enchant at a specific slot, keeping all other slots unchanged.
+// Returns the full new enchant vector (copy of old with one slot replaced).
+// =============================================================================
+static std::vector<uint32> RollSingleEnchant(Item* item, const std::vector<uint32>& currentEnchants, uint8 slotIndex)
+{
+    if (!item || slotIndex >= currentEnchants.size()) return {};
+
+    std::vector<uint32> result = currentEnchants;
+    // Build exclude set — all enchants EXCEPT the one being rerolled
+    std::vector<uint32> excludeSet;
+    for (uint32 i = 0; i < result.size(); ++i)
+    {
+        if (i != slotIndex)
+            excludeSet.push_back(result[i]);
+    }
+
+    uint32 enc = GetRandomEnchant(item, excludeSet);
+    if (enc == 0) return {}; // Extremely unlikely but handle it
+
+    result[slotIndex] = enc;
+    return result;
+}
+
+// =============================================================================
+// Helper: Find an item by GUID in player's bags (main backpack + extra bags).
+// Centralized to eliminate copy-paste across gossip handlers.
+// =============================================================================
+static Item* FindItemInBags(Player* player, uint32 itemGuid)
+{
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+    {
+        Item* it = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (it && it->GetGUID().GetCounter() == itemGuid)
+            return it;
+    }
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+    {
+        Bag* pBag = player->GetBagByPos(bag);
+        if (!pBag) continue;
+        for (uint32 slot = 0; slot < pBag->GetBagSize(); ++slot)
+        {
+            Item* it = pBag->GetItemByPos(slot);
+            if (it && it->GetGUID().GetCounter() == itemGuid)
+                return it;
+        }
+    }
+    return nullptr;
+}
+
+// =============================================================================
+// Get the cost in gold for a given reroll mode
+// =============================================================================
+static uint32 GetRerollCostGold(RerollMode mode)
+{
+    switch (mode)
+    {
+        case REROLL_FULL:     return REROLL_COST_FULL_GOLD;
+        case REROLL_ENCHANTS: return REROLL_COST_ENCHANTS_GOLD;
+        case REROLL_TARGETED: return REROLL_COST_TARGETED_GOLD;
+    }
+    return REROLL_COST_FULL_GOLD;
+}
+
+// =============================================================================
 // Apply rolled enchants to an item — writes DB + cache, sets 777 durability,
 // notifies player. Handles wiping old enchants on reroll.
 // =============================================================================
@@ -1308,7 +1416,8 @@ static void ShowRerollMenu(Player* player, uint32 page)
         {
             std::string pageInfo = "|cff666666[ Page " + std::to_string(page + 1) + " / " +
                                    std::to_string(totalPages) + " — " + std::to_string(totalItems) +
-                                   " items — " + std::to_string(REROLL_COST_GOLD) + "g per roll ]|r";
+                                   " items — " + std::to_string(REROLL_COST_FULL_GOLD) + "-" +
+                                   std::to_string(REROLL_COST_TARGETED_GOLD) + "g per roll ]|r";
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, pageInfo, LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_CLOSE);
         }
 
@@ -1339,39 +1448,20 @@ static void ShowRerollMenu(Player* player, uint32 page)
         "|TInterface\\Icons\\Misc_ArrowLeft:20:20:-2:0|t Close",
         LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_CLOSE);
 
-    SendDynamicGossipText(player, "Select an item to reroll for " + std::to_string(REROLL_COST_GOLD) +
-                          " gold.\nFirst enchant is guaranteed. Gold is spent on roll.", LOTTERY_NPC_TEXT_ID);
+    SendDynamicGossipText(player, "Select an item to reroll.\n"
+                          "Full: " + std::to_string(REROLL_COST_FULL_GOLD) + "g | Enchants: " +
+                          std::to_string(REROLL_COST_ENCHANTS_GOLD) + "g | Targeted: " +
+                          std::to_string(REROLL_COST_TARGETED_GOLD) + "g\n"
+                          "Gold is spent on roll. You preview before deciding.", LOTTERY_NPC_TEXT_ID);
     SendGossipMenuFor(player, LOTTERY_NPC_TEXT_ID, player->GetGUID());
 }
 
-// --- Show reroll confirmation for a specific item ---
-static void ShowRerollConfirm(Player* player, uint32 itemGuid)
+// --- Show reroll options menu for a specific item (3 tiers) ---
+static void ShowRerollOptions(Player* player, uint32 itemGuid)
 {
     uint32 pg = player->GetGUID().GetCounter();
 
-    // Find the item in bags — must still exist
-    Item* item = nullptr;
-    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
-    {
-        Item* it = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-        if (it && it->GetGUID().GetCounter() == itemGuid)
-        { item = it; break; }
-    }
-    if (!item)
-    {
-        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && !item; ++bag)
-        {
-            Bag* pBag = player->GetBagByPos(bag);
-            if (!pBag) continue;
-            for (uint32 slot = 0; slot < pBag->GetBagSize(); ++slot)
-            {
-                Item* it = pBag->GetItemByPos(slot);
-                if (it && it->GetGUID().GetCounter() == itemGuid)
-                { item = it; break; }
-            }
-        }
-    }
-
+    Item* item = FindItemInBags(player, itemGuid);
     if (!item)
     {
         ChatHandler(player->GetSession()).PSendSysMessage("|cffFF0000Item no longer in bags.|r");
@@ -1382,22 +1472,146 @@ static void ShowRerollConfirm(Player* player, uint32 itemGuid)
     ItemTemplate const* proto = item->GetTemplate();
     std::string name = GetItemDisplayName(player, proto);
 
-    // Store the item GUID for the confirm action
-    s_pendingRerolls[pg] = {itemGuid, {}};
+    // Get current enchant count for display
+    uint32 currentCount = 0;
+    {
+        std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
+        auto cIt = s_lotteryCache.find(itemGuid);
+        if (cIt != s_lotteryCache.end())
+            currentCount = cIt->second.size();
+    }
+
+    // Store the item GUID — mode will be set when player picks an option
+    s_pendingRerolls[pg] = {};
+    s_pendingRerolls[pg].itemGuid = itemGuid;
 
     ClearGossipMenuFor(player);
     player->PlayerTalkClass->GetGossipMenu().SetMenuId(LOTTERY_GOSSIP_MENU_ID);
 
-    std::string confirmLabel = "|cffFF0000Roll " + name + " for " + std::to_string(REROLL_COST_GOLD) +
-                               "g|r |cff888888(gold deducted now)|r";
-    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, confirmLabel, LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_REROLL_CONFIRM);
+    // Header: show item name
+    std::string header = std::string(GetCountColor(currentCount)) + name + "|r";
+    if (currentCount > 0)
+        header += " |cff888888(" + std::to_string(currentCount) + " enchants)|r";
+    else
+        header += " |cff888888(no enchants)|r";
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT, header, LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_CLOSE);
+
+    // Option 1: Full Reroll (500g) — reroll everything (slots + enchants)
+    std::string opt1 = "|TInterface\\Icons\\INV_Misc_Dice_01:20:20:-2:0|t |cff00FF00Full Reroll|r — |cffFFD700" +
+                        std::to_string(REROLL_COST_FULL_GOLD) + "g|r";
+    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, opt1, LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_REROLL_MODE_FULL);
+
+    // Option 2: Reroll Enchants Only (750g) — keep slot count, reroll values
+    std::string opt2;
+    if (currentCount > 0)
+    {
+        opt2 = "|TInterface\\Icons\\INV_Enchant_EssenceEternalLarge:20:20:-2:0|t |cff3399FFReroll Enchants|r (keep " +
+               std::to_string(currentCount) + " slots) — |cffFFD700" +
+               std::to_string(REROLL_COST_ENCHANTS_GOLD) + "g|r";
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, opt2, LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_REROLL_MODE_ENCHANTS);
+    }
+    else
+    {
+        opt2 = "|cff666666Reroll Enchants — requires existing enchants|r";
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, opt2, LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_CLOSE);
+    }
+
+    // Option 3: Targeted Reroll (1000g) — pick a specific enchant to reroll
+    if (currentCount > 0)
+    {
+        std::string opt3 = "|TInterface\\Icons\\Spell_Fire_FelFlameBreath:20:20:-2:0|t |cffFF6600Targeted Reroll|r (pick 1 enchant) — |cffFFD700" +
+                           std::to_string(REROLL_COST_TARGETED_GOLD) + "g|r";
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, opt3, LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_REROLL_MODE_TARGETED);
+    }
+    else
+    {
+        std::string opt3 = "|cff666666Targeted Reroll — requires existing enchants|r";
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, opt3, LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_CLOSE);
+    }
+
+    // Back button
     AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-        "|TInterface\\Icons\\Misc_ArrowLeft:20:20:-2:0|t Back",
+        "|TInterface\\Icons\\Misc_ArrowLeft:20:20:-2:0|t Back to item list",
+        LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_FIRST_PAGE);
+
+    SendDynamicGossipText(player,
+        "Choose a reroll type for " + name + ":\n\n"
+        "|cff00FF00Full Reroll (" + std::to_string(REROLL_COST_FULL_GOLD) + "g)|r — Reroll everything: number of slots AND all enchants.\n\n"
+        "|cff3399FFReroll Enchants (" + std::to_string(REROLL_COST_ENCHANTS_GOLD) + "g)|r — Keep the same number of enchant slots, reroll what's in them.\n\n"
+        "|cffFF6600Targeted Reroll (" + std::to_string(REROLL_COST_TARGETED_GOLD) + "g)|r — Pick one specific enchant to reroll, everything else stays.\n\n"
+        "Gold is deducted when you roll. You preview results before deciding.",
+        LOTTERY_NPC_TEXT_ID);
+    SendGossipMenuFor(player, LOTTERY_NPC_TEXT_ID, player->GetGUID());
+}
+
+// --- Show targeted reroll slot picker (lists current enchants to pick one) ---
+static void ShowRerollSlotPicker(Player* player)
+{
+    uint32 pg = player->GetGUID().GetCounter();
+    auto pendIt = s_pendingRerolls.find(pg);
+    if (pendIt == s_pendingRerolls.end())
+    {
+        CloseGossipMenuFor(player);
+        return;
+    }
+
+    uint32 itemGuid = pendIt->second.itemGuid;
+    Item* item = FindItemInBags(player, itemGuid);
+    if (!item)
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage("|cffFF0000Item no longer in bags.|r");
+        s_pendingRerolls.erase(pg);
+        CloseGossipMenuFor(player);
+        return;
+    }
+
+    // Get current enchants
+    std::vector<uint32> enchants;
+    {
+        std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
+        auto it = s_lotteryCache.find(itemGuid);
+        if (it != s_lotteryCache.end())
+            enchants = it->second;
+    }
+
+    if (enchants.empty())
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage("|cffFF0000Item has no enchants to target.|r");
+        s_pendingRerolls.erase(pg);
+        CloseGossipMenuFor(player);
+        return;
+    }
+
+    ItemTemplate const* proto = item->GetTemplate();
+    std::string name = GetItemDisplayName(player, proto);
+
+    ClearGossipMenuFor(player);
+    player->PlayerTalkClass->GetGossipMenu().SetMenuId(LOTTERY_GOSSIP_MENU_ID);
+
+    // Header
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+        "|cffFF6600Pick an enchant to reroll (" + std::to_string(REROLL_COST_TARGETED_GOLD) + "g)|r",
         LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_CLOSE);
 
-    SendDynamicGossipText(player, "Are you sure you want to reroll " + name + "?\n\n"
-        "Cost: " + std::to_string(REROLL_COST_GOLD) + " gold (deducted NOW on roll).\n"
-        "You will preview the new enchants before deciding to TAKE or KEEP old ones.",
+    // List each current enchant as a selectable option
+    uint8 plvl = player->GetLevel();
+    for (uint32 i = 0; i < enchants.size(); ++i)
+    {
+        std::string line = "|cffFFFFFF[" + std::to_string(i + 1) + "]|r " + FormatEnchantLine(enchants[i], plvl);
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, line,
+            LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_REROLL_SLOT_BASE + i);
+    }
+
+    // Back to options
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+        "|TInterface\\Icons\\Misc_ArrowLeft:20:20:-2:0|t Back to options",
+        LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_REROLL_BACK_TO_OPTIONS);
+
+    SendDynamicGossipText(player,
+        "Select which enchant on " + name + " to reroll.\n\n"
+        "Cost: " + std::to_string(REROLL_COST_TARGETED_GOLD) + "g (deducted on roll).\n"
+        "The selected enchant will be replaced with a completely random one.\n"
+        "All other enchants remain unchanged.",
         LOTTERY_NPC_TEXT_ID);
     SendGossipMenuFor(player, LOTTERY_NPC_TEXT_ID, player->GetGUID());
 }
@@ -1425,11 +1639,24 @@ static void ShowRerollPreview(Player* player)
     ClearGossipMenuFor(player);
     player->PlayerTalkClass->GetGossipMenu().SetMenuId(LOTTERY_GOSSIP_MENU_ID);
 
+    // Mode label for context
+    const char* modeLabel = "Full Reroll";
+    if (pending.mode == REROLL_ENCHANTS) modeLabel = "Enchant Reroll";
+    else if (pending.mode == REROLL_TARGETED) modeLabel = "Targeted Reroll";
+
+    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+        std::string("|cff888888") + modeLabel + " — " + std::to_string(pending.costGold) + "g deducted|r",
+        LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_CLOSE);
+
     // Show rolled enchants as gossip items (informational)
+    // For targeted reroll, highlight the changed slot
     uint8 plvl = player->GetLevel();
     for (uint32 i = 0; i < pending.rolledEnchants.size(); ++i)
     {
-        std::string line = "  " + FormatEnchantLine(pending.rolledEnchants[i], plvl);
+        std::string prefix = "  ";
+        if (pending.mode == REROLL_TARGETED && i == pending.targetedSlot)
+            prefix = "  |cffFF6600>>|r ";
+        std::string line = prefix + FormatEnchantLine(pending.rolledEnchants[i], plvl);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_CLOSE);
     }
 
@@ -1442,9 +1669,15 @@ static void ShowRerollPreview(Player* player)
         LOTTERY_GOSSIP_SENDER, LOTTO_ACTION_REROLL_KEEP);
 
     std::string countStr = std::to_string(pending.rolledEnchants.size());
+    std::string modeDesc;
+    if (pending.mode == REROLL_TARGETED)
+        modeDesc = "Slot [" + std::to_string(pending.targetedSlot + 1) + "] has been rerolled (marked with >>).";
+    else
+        modeDesc = "Rolled " + countStr + " enchant" + (pending.rolledEnchants.size() > 1 ? "s" : "") + ".";
+
     SendDynamicGossipText(player,
-        "Rolled " + countStr + " new enchant" + (pending.rolledEnchants.size() > 1 ? "s" : "") +
-        "!\n\nTAKE = Apply new enchants (old ones are DESTROYED).\n"
+        modeDesc + "\n\n"
+        "TAKE = Apply new enchants (old ones are DESTROYED).\n"
         "KEEP = Discard this roll, keep old enchants.\n"
         "Gold has already been deducted.", LOTTERY_NPC_TEXT_ID);
     SendGossipMenuFor(player, LOTTERY_NPC_TEXT_ID, player->GetGUID());
@@ -1807,37 +2040,28 @@ static void HandleLotteryGossipSelect(Player* player, uint32 action)
             return;
         }
 
-        // === Reroll confirm ===
+        // === Reroll mode selection ===
+        case LOTTO_ACTION_REROLL_MODE_FULL:
+        {
+            auto pendIt = s_pendingRerolls.find(pg);
+            if (pendIt == s_pendingRerolls.end()) return;
+            pendIt->second.mode = REROLL_FULL;
+            pendIt->second.costGold = REROLL_COST_FULL_GOLD;
+            // Fall through to confirm (roll immediately)
+        }
+        [[fallthrough]];
         case LOTTO_ACTION_REROLL_CONFIRM:
         {
             auto pendIt = s_pendingRerolls.find(pg);
             if (pendIt == s_pendingRerolls.end()) return;
 
             uint32 itemGuid = pendIt->second.itemGuid;
+            RerollMode mode = pendIt->second.mode;
+            uint32 costGold = pendIt->second.costGold;
+            if (costGold == 0) costGold = GetRerollCostGold(mode);
+            pendIt->second.costGold = costGold;
 
-            // Re-find item in bags (safety: item may have been moved)
-            Item* item = nullptr;
-            for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
-            {
-                Item* it = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                if (it && it->GetGUID().GetCounter() == itemGuid)
-                { item = it; break; }
-            }
-            if (!item)
-            {
-                for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && !item; ++bag)
-                {
-                    Bag* pBag = player->GetBagByPos(bag);
-                    if (!pBag) continue;
-                    for (uint32 slot = 0; slot < pBag->GetBagSize(); ++slot)
-                    {
-                        Item* it = pBag->GetItemByPos(slot);
-                        if (it && it->GetGUID().GetCounter() == itemGuid)
-                        { item = it; break; }
-                    }
-                }
-            }
-
+            Item* item = FindItemInBags(player, itemGuid);
             if (!item)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffFF0000Item no longer in bags.|r");
@@ -1846,22 +2070,53 @@ static void HandleLotteryGossipSelect(Player* player, uint32 action)
             }
 
             // Check gold
-            uint32 costCopper = REROLL_COST_GOLD * 10000;
+            uint32 costCopper = costGold * 10000;
             if (player->GetMoney() < costCopper)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cffFF0000You need {}g. You have {}g.|r",
-                    REROLL_COST_GOLD, player->GetMoney() / 10000);
+                    costGold, player->GetMoney() / 10000);
                 s_pendingRerolls.erase(pg);
                 return;
             }
 
             // DEDUCT GOLD NOW (before showing results — prevents reopen abuse)
             player->ModifyMoney(-int32(costCopper));
-            ChatHandler(player->GetSession()).PSendSysMessage("|cffFFD700-{}g|r — Rolling...", REROLL_COST_GOLD);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cffFFD700-{}g|r — Rolling...", costGold);
 
-            // Roll enchants (NOT applied yet)
-            std::vector<uint32> rolled = RollNewEnchants(item, true);
+            // Roll enchants based on mode (NOT applied yet)
+            std::vector<uint32> rolled;
+            switch (mode)
+            {
+                case REROLL_FULL:
+                    rolled = RollNewEnchants(item, true);
+                    break;
+                case REROLL_ENCHANTS:
+                {
+                    uint32 currentCount = 0;
+                    {
+                        std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
+                        auto cIt = s_lotteryCache.find(itemGuid);
+                        if (cIt != s_lotteryCache.end())
+                            currentCount = cIt->second.size();
+                    }
+                    rolled = RollNewEnchantsKeepSlots(item, currentCount);
+                    break;
+                }
+                case REROLL_TARGETED:
+                {
+                    std::vector<uint32> currentEnchants;
+                    {
+                        std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
+                        auto cIt = s_lotteryCache.find(itemGuid);
+                        if (cIt != s_lotteryCache.end())
+                            currentEnchants = cIt->second;
+                    }
+                    rolled = RollSingleEnchant(item, currentEnchants, pendIt->second.targetedSlot);
+                    break;
+                }
+            }
+
             if (rolled.empty())
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffFF0000Roll failed — no enchants generated. Gold spent.|r");
@@ -1876,6 +2131,56 @@ static void HandleLotteryGossipSelect(Player* player, uint32 action)
             return;
         }
 
+        // === Reroll Enchants Only mode ===
+        case LOTTO_ACTION_REROLL_MODE_ENCHANTS:
+        {
+            auto pendIt = s_pendingRerolls.find(pg);
+            if (pendIt == s_pendingRerolls.end()) return;
+
+            // Verify item still has enchants
+            uint32 currentCount = 0;
+            {
+                std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
+                auto cIt = s_lotteryCache.find(pendIt->second.itemGuid);
+                if (cIt != s_lotteryCache.end())
+                    currentCount = cIt->second.size();
+            }
+            if (currentCount == 0)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffFF0000Item has no enchants to reroll.|r");
+                s_pendingRerolls.erase(pg);
+                return;
+            }
+
+            pendIt->second.mode = REROLL_ENCHANTS;
+            pendIt->second.costGold = REROLL_COST_ENCHANTS_GOLD;
+
+            // Roll immediately (same flow as confirm)
+            // Redirect to REROLL_CONFIRM handler
+            HandleLotteryGossipSelect(player, LOTTO_ACTION_REROLL_CONFIRM);
+            return;
+        }
+
+        // === Targeted Reroll mode — show slot picker ===
+        case LOTTO_ACTION_REROLL_MODE_TARGETED:
+        {
+            auto pendIt = s_pendingRerolls.find(pg);
+            if (pendIt == s_pendingRerolls.end()) return;
+            pendIt->second.mode = REROLL_TARGETED;
+            pendIt->second.costGold = REROLL_COST_TARGETED_GOLD;
+            ShowRerollSlotPicker(player);
+            return;
+        }
+
+        // === Back to options from slot picker ===
+        case LOTTO_ACTION_REROLL_BACK_TO_OPTIONS:
+        {
+            auto pendIt = s_pendingRerolls.find(pg);
+            if (pendIt == s_pendingRerolls.end()) return;
+            ShowRerollOptions(player, pendIt->second.itemGuid);
+            return;
+        }
+
         // === Take (apply rolled enchants) ===
         case LOTTO_ACTION_REROLL_TAKE:
         {
@@ -1886,29 +2191,7 @@ static void HandleLotteryGossipSelect(Player* player, uint32 action)
             auto enchants = pendIt->second.rolledEnchants;
             s_pendingRerolls.erase(pg);
 
-            // Re-find item
-            Item* item = nullptr;
-            for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
-            {
-                Item* it = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                if (it && it->GetGUID().GetCounter() == itemGuid)
-                { item = it; break; }
-            }
-            if (!item)
-            {
-                for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && !item; ++bag)
-                {
-                    Bag* pBag = player->GetBagByPos(bag);
-                    if (!pBag) continue;
-                    for (uint32 slot = 0; slot < pBag->GetBagSize(); ++slot)
-                    {
-                        Item* it = pBag->GetItemByPos(slot);
-                        if (it && it->GetGUID().GetCounter() == itemGuid)
-                        { item = it; break; }
-                    }
-                }
-            }
-
+            Item* item = FindItemInBags(player, itemGuid);
             if (!item)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffFF0000Item gone! Enchants lost.|r");
@@ -1983,7 +2266,23 @@ static void HandleLotteryGossipSelect(Player* player, uint32 action)
             return;
         }
 
-        ShowRerollConfirm(player, items[globalIdx].itemGuid);
+        ShowRerollOptions(player, items[globalIdx].itemGuid);
+        return;
+    }
+
+    // === Targeted reroll slot selection (action = LOTTO_ACTION_REROLL_SLOT_BASE + slot_index) ===
+    if (action >= LOTTO_ACTION_REROLL_SLOT_BASE && action <= LOTTO_ACTION_REROLL_SLOT_MAX)
+    {
+        auto pendIt = s_pendingRerolls.find(pg);
+        if (pendIt == s_pendingRerolls.end()) return;
+
+        uint8 slotIdx = static_cast<uint8>(action - LOTTO_ACTION_REROLL_SLOT_BASE);
+        pendIt->second.targetedSlot = slotIdx;
+        pendIt->second.mode = REROLL_TARGETED;
+        pendIt->second.costGold = REROLL_COST_TARGETED_GOLD;
+
+        // Roll immediately (redirect to confirm handler)
+        HandleLotteryGossipSelect(player, LOTTO_ACTION_REROLL_CONFIRM);
         return;
     }
 

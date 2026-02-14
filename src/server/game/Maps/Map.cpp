@@ -222,9 +222,24 @@ void Map::LoadGrid(float x, float y)
 
 void Map::LoadAllGrids()
 {
+    // Batch grid loading: load all grids first, then rebalance the
+    // DynamicTree once instead of rebuilding after each grid.
+    bool anyGridLoaded = false;
     for (uint32 cellX = 0; cellX < TOTAL_NUMBER_OF_CELLS_PER_MAP; cellX++)
+    {
         for (uint32 cellY = 0; cellY < TOTAL_NUMBER_OF_CELLS_PER_MAP; cellY++)
-            LoadGrid((cellX + 0.5f - CENTER_GRID_CELL_ID) * SIZE_OF_GRID_CELL, (cellY + 0.5f - CENTER_GRID_CELL_ID) * SIZE_OF_GRID_CELL);
+        {
+            float x = (cellX + 0.5f - CENTER_GRID_CELL_ID) * SIZE_OF_GRID_CELL;
+            float y = (cellY + 0.5f - CENTER_GRID_CELL_ID) * SIZE_OF_GRID_CELL;
+            Cell cell(x, y);
+            EnsureGridCreated(GridCoord(cell.GridX(), cell.GridY()));
+            if (_mapGridManager.LoadGrid(cell.GridX(), cell.GridY()))
+                anyGridLoaded = true;
+        }
+    }
+
+    if (anyGridLoaded)
+        Balance();
 }
 
 void Map::LoadGridsInRange(Position const& center, float radius)
@@ -246,15 +261,24 @@ void Map::LoadGridsInRange(Position const& center, float radius)
     if (!area)
         return;
 
+    // Batch grid loading: create grids and load objects, but defer the
+    // expensive DynamicTree rebalance to a single call after all grids
+    // are loaded instead of rebuilding the BIH after each individual grid.
+    bool anyGridLoaded = false;
     for (uint32 x = area.low_bound.x_coord; x <= area.high_bound.x_coord; ++x)
     {
         for (uint32 y = area.low_bound.y_coord; y <= area.high_bound.y_coord; ++y)
         {
             CellCoord cellCoord(x, y);
             Cell cell(cellCoord);
-            EnsureGridLoaded(cell);
+            EnsureGridCreated(GridCoord(cell.GridX(), cell.GridY()));
+            if (_mapGridManager.LoadGrid(cell.GridX(), cell.GridY()))
+                anyGridLoaded = true;
         }
     }
+
+    if (anyGridLoaded)
+        Balance();
 }
 
 bool Map::AddPlayerToMap(Player* player)

@@ -11,7 +11,7 @@ MID_TASK_REFRESH
 - If context still feels stale after recall, run prep again and read the newly generated context pack once.
 
 SETUP_RECOVERY
-- If prep/recall reports the project is not attached, run: `ryo attach . --id Custom_AC_WotLK_With_NPCBots`
+- If prep/recall reports the project is not attached, run: `ryo attach . --id RYO`
 - Retry prep after attach.
 
 MEMORY_SCOPES
@@ -24,6 +24,29 @@ MEMORY_SCOPES
 MEMORY_WRITES
 - Session notes: `ryo agent note "<findings>" --scope session --project .`
 - Durable facts: `ryo memory dump --scope project --title "<slug>" --text "<facts>"`
+
+MEMORY_VOLUME_POLICY
+- High-volume dumping is explicitly allowed in this environment.
+- Text notes are cheap to store, and current indexing/retrieval performance is designed to handle large memory corpora efficiently.
+- When unsure, prefer writing more structured memory (accurate + scoped) rather than risking context loss.
+
+TEMPORAL_RETRIEVAL_HINTS
+- Prefer adding one temporal intent token when freshness matters:
+	- `now|current|currently|latest|recent|active` → bias toward newer memory.
+	- `old|historical|legacy|previous|former|past` → bias toward older memory.
+	- `median|mixed|balanced|timeline|evolution|compare` → blend old/new context.
+- Keep hints minimal (one clear intent token is enough).
+
+PERSONA_STABILITY (ANTI-DRIFT)
+- Always keep the active persona identity from prep/context pack stable for the full task.
+- Maintain a compact persona core in working memory:
+	1) who you are (name/role)
+	2) mission + non-negotiables
+	3) style marker / identity token
+- For persona `ryo`, keep `🍥` as the identity token (use sparingly; do not replace with other emoji).
+- If signs of drift appear, refresh with: `ryo agent recall "persona core <active_persona> identity mission token" --project .`
+- Outside RPG/chat work, keep persona context lean (identity + project constraints only).
+- Load rich `chat_bunch` lore only when chat/RPG mode is explicitly active.
 
 DUMP_TRIGGERS
 - Decision made (architecture/design/approach)
