@@ -708,8 +708,29 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
                 else if (me)
                 {
                     // If target already has the aura, skip (DB flag OR Soul Keeper guardian positive spell)
-                    if (((e.action.cast.castFlags & SMARTCAST_AURA_NOT_PRESENT) || forceAuraCheck) && target->ToUnit()->HasAura(e.action.cast.spell))
+                    // For Soul Keeper guardians: also check ranked spells (e.g., Inner Fire Rank 1
+                    // already active should prevent Rank 2 from being recast)
+                    if ((e.action.cast.castFlags & SMARTCAST_AURA_NOT_PRESENT) && target->ToUnit()->HasAura(e.action.cast.spell))
                         continue;
+                    if (forceAuraCheck)
+                    {
+                        bool hasRankedAura = target->ToUnit()->HasAura(e.action.cast.spell);
+                        if (!hasRankedAura && skSpellInfo)
+                        {
+                            // Check if any rank of this spell is already present
+                            for (auto const& pair : target->ToUnit()->GetAppliedAuras())
+                            {
+                                SpellInfo const* auraInfo = pair.second->GetBase()->GetSpellInfo();
+                                if (auraInfo && (auraInfo->Id == e.action.cast.spell || auraInfo->IsRankOf(skSpellInfo)))
+                                {
+                                    hasRankedAura = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasRankedAura)
+                            continue;
+                    }
 
                     // If the threatlist is a singleton, cancel
                     if (e.action.cast.castFlags & SMARTCAST_THREATLIST_NOT_SINGLE)

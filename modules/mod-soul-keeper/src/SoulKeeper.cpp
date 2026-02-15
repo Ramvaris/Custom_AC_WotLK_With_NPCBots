@@ -2169,6 +2169,12 @@ private:
             if (!spellInfo->HasEffect(SPELL_EFFECT_HEAL) && 
                 !spellInfo->HasEffect(SPELL_EFFECT_HEAL_PCT) &&
                 !spellInfo->HasAura(SPELL_AURA_PERIODIC_HEAL)) continue;
+
+            // Self-only spells (like some self-heals) can't target others.
+            // IsSelfCast() detects spells where all effects target TARGET_UNIT_CASTER.
+            // If the intended target is someone else, skip — the spell would silently
+            // land on the caster anyway, wasting the AI cycle and preventing real heals.
+            if (target != caster && spellInfo->IsSelfCast()) continue;
             
             // Check cooldown
             if (caster->HasSpellCooldown(spellId)) continue;
@@ -2207,6 +2213,9 @@ private:
 
             // Must be a dispel spell
             if (!spellInfo->HasEffect(SPELL_EFFECT_DISPEL)) continue;
+            
+            // Self-only dispels can't target others
+            if (target != caster && spellInfo->IsSelfCast()) continue;
             
             // Check cooldown
             if (caster->HasSpellCooldown(spellId)) continue;
@@ -2251,6 +2260,12 @@ private:
             int32 duration = spellInfo->GetDuration();
             if (duration == 0 && !HasAnyAuraEffect(spellInfo))
                 continue;
+
+            // Self-only spells (like Inner Fire, Enrage) can't target others.
+            // IsSelfCast() detects spells where all effects target TARGET_UNIT_CASTER.
+            // Without this check, the spell "succeeds" but silently lands on the caster,
+            // wasting the AI cycle and preventing actual useful buffs/heals from running.
+            if (target != caster && spellInfo->IsSelfCast()) continue;
             
             // IMMUNITY BUFFS: Only cast on SELF when ACTUALLY taking damage!
             // Don't waste the 60s cooldown just because combat started (mob still running to us).
