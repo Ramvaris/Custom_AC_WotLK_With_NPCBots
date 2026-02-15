@@ -77,8 +77,9 @@ CustomRamvaris.LotteryEnchants.MaxSlots = 7
 #
 # CustomRamvaris.SmartWanderingBots.Enable
 #     Zone-aware dynamic bot spawning — the performance-friendly alternative to
-#     global wandering bots. Spawns MinAmount–MaxAmount bots ONLY in the player's
-#     current zone and despawns them on zone change.
+#     global wandering bots. Spawns MinAmount-MaxAmount bots per ZONE (shared).
+#     Multiple players in the same zone see the SAME bots (no doubling).
+#     Bots are despawned only when the LAST player leaves the zone.
 #     REQUIRES NpcBot.WanderingBots.Continents.Count = 0 in npcbots.conf!
 #     Without this, the normal global system runs alongside smart bots.
 #     Core patch: extends BotDataMgr with zone-specific spawn/despawn API.
@@ -90,19 +91,19 @@ CustomRamvaris.SmartWanderingBots.Enable = 0
 
 #
 # CustomRamvaris.SmartWanderingBots.MinAmount
-#     Minimum number of bots to spawn when entering a new zone.
+#     Minimum number of bots to spawn when the first player enters a zone.
 #     Actual count is randomized between MinAmount and MaxAmount.
 #     Some zones may have fewer WanderNodes than requested — spawns what fits.
-#     Default: 5
+#     Default: 1
 #
 
-CustomRamvaris.SmartWanderingBots.MinAmount = 0
+CustomRamvaris.SmartWanderingBots.MinAmount = 1
 
 #
 # CustomRamvaris.SmartWanderingBots.MaxAmount
-#     Maximum number of bots to spawn when entering a new zone.
-#     Keep this low for single-player servers — performance is king.
-#     Default: 15
+#     Maximum number of bots per zone (shared across all players in that zone).
+#     Keep this low for small servers — performance is king.
+#     Default: 2
 #
 
 CustomRamvaris.SmartWanderingBots.MaxAmount = 2
@@ -119,11 +120,12 @@ CustomRamvaris.SmartWanderingBots.ZoneChangeCooldown = 30
 
 #
 # CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable
-#     When ON, smart wandering bots try to maintain an even Alliance/Horde ratio.
-#     If the random spawn pool is 3 Alliance and 1 Horde, the system adds extra
-#     Horde bots to match. Neutral/hostile bots don't count toward the ratio.
+#     When ON, bots are spawned with an equal 3-way split: Alliance, Horde,
+#     and Neutral each get ~1/3 of the spawns via round-robin. Guarantees
+#     representation of all three factions even at very low counts (1-2 bots).
+#     When OFF, factions are whatever the spare pool produces naturally.
 #     [NO DB] — works with vanilla client
-#     Default: 0 (OFF)
+#     Default: 1 (ON)
 #
 
 CustomRamvaris.SmartWanderingBots.BalancedFaction.Enable = 1
