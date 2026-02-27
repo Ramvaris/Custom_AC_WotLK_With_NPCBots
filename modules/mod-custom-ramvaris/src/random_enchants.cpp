@@ -1211,9 +1211,16 @@ static void UnloadLotteryEnchantsForPlayer(Player* player)
 // Cleanup helper — deletes lottery enchants for a destroyed item from DB + cache.
 // Called by the orphan cleanup on server startup, and available for future item
 // destruction hooks if AzerothCore adds PLAYERHOOK_ON_ITEM_DESTROY.
-static void DeleteLotteryEnchantsForItem(uint32 itemGuid) __attribute__((unused));
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4505) // unreferenced local function
+#endif
+static void DeleteLotteryEnchantsForItem(uint32 itemGuid);
 static void DeleteLotteryEnchantsForItem(uint32 itemGuid)
 {
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
     {
         std::lock_guard<std::mutex> lock(s_lotteryCacheMutex);
         s_lotteryCache.erase(itemGuid);

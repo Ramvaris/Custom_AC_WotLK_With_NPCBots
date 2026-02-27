@@ -288,8 +288,8 @@ private:
         // classMask = 0x7FF).  We call learnSkillRewardedSpells after SetSkill
         // below so those passives fire their effects (SetCanParry, SetCanBlock,
         // SetCanDualWield) every login.
-        static const uint32 utilitySpells[] = {
-        };
+        static const uint32 utilitySpells[] = { 0 };
+        (void)utilitySpells; // suppress unused warning
 
         // ---------- Explicit skill lines ----------
         // LearnSpell usually grants these, but explicitly setting them avoids
