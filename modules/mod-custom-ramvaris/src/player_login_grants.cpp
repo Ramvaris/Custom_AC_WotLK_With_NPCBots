@@ -263,9 +263,6 @@ private:
         // NOTE: Auto Shot (75) is NOT here — it's auto-learned via
         // SkillLineAbility DBC (skill 163, patched to classMask 0x7FF).
         static const uint32 rangedAttackSpells[] = {
-            2480,  // Shoot Bow
-            7918,  // Shoot Gun
-            7919,  // Shoot Crossbow
             5019,  // Shoot (Wand)
             3018,  // Shoot
             2764,  // Throw
@@ -336,7 +333,7 @@ private:
             LearnIfMissing(player, spellId);
 
         for (uint32 spellId : utilitySpells)
-            LearnIfMissing(player, spellId);
+            if (spellId != 0) LearnIfMissing(player, spellId);
 
         // ------------------------------------------------------------------
         // Weapon skills: preserve existing values, init new ones at 1/max.
