@@ -36,11 +36,11 @@
 #include "Language.h"
 #include "MapMgr.h"
 #include "MiscPackets.h"
-#include "MMapFactory.h"
 #include "MovementGenerator.h"
 #include "ObjectAccessor.h"
 #include "Pet.h"
 #include "Player.h"
+#include "PoolMgr.h"
 #include "Realm.h"
 #include "ScriptMgr.h"
 #include "SpellAuras.h"
@@ -630,7 +630,7 @@ public:
 
         uint32 haveMap = GridTerrainLoader::ExistMap(object->GetMapId(), cell.GridX(), cell.GridY()) ? 1 : 0;
         uint32 haveVMap = GridTerrainLoader::ExistVMap(object->GetMapId(), cell.GridX(), cell.GridY()) ? 1 : 0;
-        uint32 haveMMAP = MMAP::MMapFactory::createOrGetMMapMgr()->GetNavMesh(handler->GetSession()->GetPlayer()->GetMapId()) ? 1 : 0;
+        uint32 haveMMAP = handler->GetSession()->GetPlayer()->GetMap()->GetMapCollisionData().GetMMapData().GetNavMesh() ? 1 : 0;
 
         if (haveVMap)
         {
@@ -2418,6 +2418,13 @@ public:
         // Output XX. LANG_PINFO_CHR_PLAYEDTIME
         handler->PSendSysMessage(LANG_PINFO_CHR_PLAYEDTIME, (secsToTimeString(totalPlayerTime, true)));
 
+        // Output XXI. LANG_PINFO_CHR_ONLINETIME (only for online players)
+        if (playerTarget)
+        {
+            uint32 onlineTime = uint32(GameTime::GetGameTime().count() - playerTarget->m_logintime);
+            handler->PSendSysMessage(LANG_PINFO_CHR_ONLINETIME, secsToTimeString(onlineTime, true));
+        }
+
         // Mail Data - an own query, because it may or may not be useful.
         // SQL: "SELECT SUM(CASE WHEN (checked & 1) THEN 1 ELSE 0 END) AS 'readmail', COUNT(*) AS 'totalmail' FROM mail WHERE `receiver` = ?"
         CharacterDatabasePreparedStatement* mailQuery = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PINFO_MAILS);
@@ -2468,9 +2475,51 @@ public:
     {
         Player* player = handler->GetSession()->GetPlayer();
 
+        // Phase 1: respawn creatures/GOs that still have corpses in the grid
         Acore::RespawnDo u_do;
         Acore::WorldObjectWorker<Acore::RespawnDo> worker(player, u_do);
         Cell::VisitObjects(player, worker, player->GetGridActivationRange());
+
+        // Phase 2: force-respawn creatures/GOs that were fully removed (non-compat mode)
+        // by setting their respawn times to now so ProcessRespawns() picks them up
+        Map* map = player->GetMap();
+        uint32 gridId = Acore::ComputeGridCoord(player->GetPositionX(), player->GetPositionY()).GetId();
+        time_t now = GameTime::GetGameTime().count();
+
+        std::vector<ObjectGuid::LowType> creaturesToRespawn;
+        for (auto const& pair : map->GetCreatureRespawnTimes())
+        {
+            CreatureData const* data = sObjectMgr->GetCreatureData(pair.first);
+            if (!data || Acore::ComputeGridCoord(data->posX, data->posY).GetId() != gridId)
+                continue;
+
+            // Skip pooled spawns — Phase 1 already triggered pool rotation via
+            // Creature::Respawn() -> PoolMgr::UpdatePool(). Forcing a respawn time
+            // here would cause ProcessRespawns() to call UpdatePool() again,
+            // spawning duplicates beyond the pool's max_limit.
+            if (sPoolMgr->IsPartOfAPool<Creature>(pair.first))
+                continue;
+
+            creaturesToRespawn.push_back(pair.first);
+        }
+        for (ObjectGuid::LowType spawnId : creaturesToRespawn)
+            map->SaveCreatureRespawnTime(spawnId, now);
+
+        std::vector<ObjectGuid::LowType> goesToRespawn;
+        for (auto const& pair : map->GetGORespawnTimes())
+        {
+            GameObjectData const* data = sObjectMgr->GetGameObjectData(pair.first);
+            if (!data || Acore::ComputeGridCoord(data->posX, data->posY).GetId() != gridId)
+                continue;
+
+            // Skip pooled spawns — same reason as creatures above.
+            if (sPoolMgr->IsPartOfAPool<GameObject>(pair.first))
+                continue;
+
+            goesToRespawn.push_back(pair.first);
+        }
+        for (ObjectGuid::LowType spawnId : goesToRespawn)
+            map->SaveGORespawnTime(spawnId, now);
 
         return true;
     }
@@ -2904,7 +2953,7 @@ public:
         }
 
         playerTarget->CombatStop();
-        playerTarget->getHostileRefMgr().deleteReferences();
+        playerTarget->GetThreatMgr().RemoveMeFromThreatLists();
         return true;
     }
 

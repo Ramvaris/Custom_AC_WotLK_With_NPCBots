@@ -103,8 +103,9 @@
 #include "GridNotifiersImpl.h"
 
 //npcbot
-#include "botmgr.h"
+#include "botconfig.h"
 #include "botdatamgr.h"
+#include "botmgr.h"
 //end npcbot
 
 enum CharacterFlags
@@ -159,7 +160,7 @@ static uint32 copseReclaimDelay[MAX_DEATH_COUNT] = { 30, 60, 120 };
 #ifdef _MSC_VER
 #pragma warning(disable:4355)
 #endif
-Player::Player(WorldSession* session): Unit(), m_mover(this)
+Player::Player(WorldSession* session): Unit(), m_mover(this), _cinematicMgr(*this)
 {
 #ifdef _MSC_VER
 #pragma warning(default:4355)
@@ -400,8 +401,6 @@ Player::Player(WorldSession* session): Unit(), m_mover(this)
 
     m_creationTime = 0s;
 
-    _cinematicMgr = new CinematicMgr(this);
-
     m_achievementMgr = new AchievementMgr(this);
     m_reputationMgr = new ReputationMgr(this);
 
@@ -471,7 +470,6 @@ Player::~Player()
     delete m_runes;
     delete m_achievementMgr;
     delete m_reputationMgr;
-    delete _cinematicMgr;
 
     //npcbot
     delete _botMgr;
@@ -785,7 +783,9 @@ bool Player::IsImmuneToEnvironmentalDamage()
 
 uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
 {
-    if (IsImmuneToEnvironmentalDamage())
+    // DAMAGE_FALL_TO_VOID bypasses all immunities (e.g. Divine Shield) to prevent
+    // players from being stuck infinitely falling below the map
+    if (type != DAMAGE_FALL_TO_VOID && IsImmuneToEnvironmentalDamage())
         return 0;
 
     // Absorb, resist some environmental damage type
@@ -2203,7 +2203,7 @@ void Player::SetInWater(bool apply)
     // remove auras that need water/land
     RemoveAurasWithInterruptFlags(apply ? AURA_INTERRUPT_FLAG_NOT_ABOVEWATER : AURA_INTERRUPT_FLAG_NOT_UNDERWATER);
 
-    getHostileRefMgr().updateThreatTables();
+    GetThreatMgr().EvaluateSuppressed();
 
     if (InstanceScript* instance = GetInstanceScript())
         instance->OnPlayerInWaterStateUpdate(this, apply);
@@ -2245,7 +2245,6 @@ void Player::SetGameMaster(bool on)
         {
             if (GetSession()->IsGMAccount())
                 pet->SetFaction(FACTION_FRIENDLY);
-            pet->getHostileRefMgr().setOnlineOfflineState(false);
         }
         if (HasByteFlag(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_FFA_PVP))
         {
@@ -2254,7 +2253,6 @@ void Player::SetGameMaster(bool on)
         }
         ResetContestedPvP();
 
-        getHostileRefMgr().setOnlineOfflineState(false);
         CombatStopWithPets();
 
         SetPhaseMask(uint32(PHASEMASK_ANYWHERE), false);    // see and visible in all phases
@@ -2276,10 +2274,7 @@ void Player::SetGameMaster(bool on)
         RemoveUnitFlag2(UNIT_FLAG2_ALLOW_CHEAT_SPELLS);
 
         if (Pet* pet = GetPet())
-        {
             pet->SetFaction(GetFaction());
-            pet->getHostileRefMgr().setOnlineOfflineState(true);
-        }
 
         // restore FFA PvP Server state
         if (sWorld->IsFFAPvPRealm())
@@ -2293,7 +2288,6 @@ void Player::SetGameMaster(bool on)
         // restore FFA PvP area state, remove not allowed for GM mounts
         UpdateArea(m_areaUpdateId);
 
-        getHostileRefMgr().setOnlineOfflineState(true);
         SetServerSideVisibilityDetect(SERVERSIDE_VISIBILITY_GM, SEC_PLAYER);
     }
 
@@ -2314,7 +2308,6 @@ void Player::SetGMVisible(bool on)
         m_ExtraFlags &= ~PLAYER_EXTRA_GM_INVISIBLE;
         SetServerSideVisibility(SERVERSIDE_VISIBILITY_GM, SEC_PLAYER);
 
-        getHostileRefMgr().setOnlineOfflineState(false);
         CombatStopWithPets();
     }
     else
@@ -2378,50 +2371,52 @@ void Player::RemoveFromGroup(Group* group, ObjectGuid guid, RemoveMethod method 
     if (group)
     {
         //npcbot - player is being removed from group - remove bots from that group
-        if (Player* player = ObjectAccessor::FindPlayer(guid))
+        if (guid.IsPlayer())
         {
-            if (player->HaveBot())
+            if (Player* player = ObjectAccessor::FindPlayer(guid))
             {
-                //remove npcbots and set up new group if needed
-                player->GetBotMgr()->RemoveAllBotsFromGroup();
-                group = player->GetGroup();
-                if (!group)
-                    return; //group has been disbanded
-            }
-        }
-        //npcbot - deleting player from db: remove bots
-        else if (guid.IsPlayer())
-        {
-            std::vector<ObjectGuid> botguids;
-            botguids.reserve(BotMgr::GetMaxNpcBots(DEFAULT_MAX_LEVEL) / 2 + 1);
-            BotDataMgr::GetNPCBotGuidsByOwner(botguids, guid, true);
-            for (std::vector<ObjectGuid>::const_iterator ci = botguids.begin(); ci != botguids.end(); ++ci)
-            {
-                if (group->IsMember(*ci))
+                if (player->HaveBot())
                 {
-                    if (!group->RemoveMember(*ci, method, kicker, reason))
-                        return;
+                    //remove npcbots and set up new group if needed
+                    player->GetBotMgr()->RemoveAllBotsFromGroup();
+                    if (group->isLFGGroup())
+                        player->GetBotMgr()->RemoveAllSummonedBots();
+                    group = player->GetGroup();
+                    if (!group)
+                        return; //group has been disbanded
                 }
+            }
+            //npcbot - deleting player from db: remove bots
+            else
+            {
+                std::vector<ObjectGuid> botguids;
+                botguids.reserve(static_cast<std::size_t>(BotCfg::GetMaxNpcBots(DEFAULT_MAX_LEVEL) / 2u) + 1u);
+                BotDataMgr::GetNPCBotGuidsByOwner(botguids, guid, true);
+                for (ObjectGuid botguid : botguids)
+                    if (group->IsMember(botguid))
+                        if (!group->RemoveMember(botguid, method, kicker, reason))
+                            return;
             }
         }
         //npcbot - bot is being removed from group - find master and remove bot through botmap
         else if (guid.IsCreature())
         {
-            for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+            for (GroupReference const* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
             {
-                if (Player* member = itr->GetSource())
+                if (Player const* member = itr->GetSource())
                 {
-                    if (!member->HaveBot())
-                        continue;
-
                     if (Creature* bot = member->GetBotMgr()->GetBot(guid))
                     {
+                        if (group->isLFGGroup() && bot->IsSummon())
+                            return;
+
                         member->GetBotMgr()->RemoveBotFromGroup(bot);
                         return;
                     }
                 }
             }
         }
+        //end npcbot
 
         group->RemoveMember(guid, method, kicker, reason);
         group = nullptr;
@@ -2473,6 +2468,7 @@ void Player::GiveXP(uint32 xp, Unit* victim, float group_rate, bool isLFGReward)
     }
 
     uint8 level = GetLevel();
+    sScriptMgr->OnPlayerBeforeGetLevelForXPGain(this, level);
 
     // Favored experience increase START
     uint32 zone = GetZoneId();
@@ -5476,7 +5472,10 @@ void Player::SetSkill(uint16 id, uint16 step, uint16 newVal, uint16 maxVal)
 
             // remove all spells that related to this skill
             for (SkillLineAbilityEntry const* pAbility : GetSkillLineAbilitiesBySkillLine(id))
+            {
                 removeSpell(sSpellMgr->GetFirstSpellInChain(pAbility->Spell), SPEC_MASK_ALL, false);
+                RemoveAurasDueToSpell(pAbility->Spell);
+            }
         }
     }
     else if (newVal)                                        //add
@@ -5802,10 +5801,6 @@ void Player::SendCinematicStart(uint32 CinematicSequenceId) const
     WorldPacket data(SMSG_TRIGGER_CINEMATIC, 4);
     data << uint32(CinematicSequenceId);
     SendDirectMessage(&data);
-    if (CinematicSequencesEntry const* sequence = sCinematicSequencesStore.LookupEntry(CinematicSequenceId))
-    {
-        _cinematicMgr->SetActiveCinematicCamera(sequence->cinematicCamera);
-    }
 }
 
 void Player::SendMovieStart(uint32 MovieId)
@@ -5894,17 +5889,20 @@ void Player::CheckAreaExploreAndOutdoor()
 
         if (areaEntry->area_level > 0)
         {
-            if (GetLevel() >= sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+            uint8 playerLevel = GetLevel();
+            sScriptMgr->OnPlayerBeforeGetLevelForXPGain(this, playerLevel);
+
+            if (playerLevel >= sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
             {
                 SendExplorationExperience(areaId, 0);
             }
             else
             {
-                int32 diff = int32(GetLevel()) - areaEntry->area_level;
+                int32 diff = int32(playerLevel) - areaEntry->area_level;
                 uint32 XP = 0;
                 if (diff < -5)
                 {
-                    XP = uint32(sObjectMgr->GetBaseXP(GetLevel() + 5) * sWorld->getRate(RATE_XP_EXPLORE));
+                    XP = uint32(sObjectMgr->GetBaseXP(playerLevel + 5) * sWorld->getRate(RATE_XP_EXPLORE));
                 }
                 else if (diff > 5)
                 {
@@ -6283,7 +6281,7 @@ bool Player::RewardHonor(Unit* uVictim, uint32 groupsize, int32 honor, bool awar
         {
             static const float WANDERING_BOT_HONOR_GAIN_MULT = 10.0f;
 
-            if (!BotMgr::IsBotHKEnabled())
+            if (!BotCfg::IsBotHKEnabled())
                 return false;
 
             Creature const* bot = uVictim->ToCreature();
@@ -6299,16 +6297,16 @@ bool Player::RewardHonor(Unit* uVictim, uint32 groupsize, int32 honor, bool awar
             if (v_level <= k_grey)
                 return false;
 
-            if (!BotMgr::IsBotHKMessageEnabled())
+            if (!BotCfg::IsBotHKMessageEnabled())
                 victim_guid.Clear(); // Don't show HK: <rank> message, only log.
 
             //TODO: honor gain rate
             honor_f = ceil(Acore::Honor::hk_honor_at_level_f(k_level) * (v_level - k_grey) / (k_level - k_grey));
-            honor_f *= BotMgr::GetBotHKHonorRate();
+            honor_f *= BotCfg::GetBotHKHonorRate();
             if (bot->IsWandererBot() && !bot->GetBotBG())
                 honor_f *= WANDERING_BOT_HONOR_GAIN_MULT;
 
-            if (BotMgr::IsBotHKAchievementsEnabled())
+            if (BotCfg::IsBotHKAchievementsEnabled())
             {
                 ApplyModUInt32Value(PLAYER_FIELD_KILLS, 1, true);
                 ApplyModUInt32Value(PLAYER_FIELD_LIFETIME_HONORABLE_KILLS, 1, true);
@@ -7630,6 +7628,10 @@ void Player::CastItemUseSpell(Item* item, SpellCastTargets const& targets, uint8
 
         if (HasSpellCooldown(spellInfo->Id))
         {
+            // Notify client so it can clean up the pending spell cast.
+            // Without this the client orphans the cast and blocks auto-attack.
+            Spell::SendCastResult(ToPlayer(), spellInfo, cast_count,
+                SPELL_FAILED_NOT_READY);
             continue;
         }
 
@@ -7676,7 +7678,11 @@ void Player::CastItemUseSpell(Item* item, SpellCastTargets const& targets, uint8
             }
 
             if (HasSpellCooldown(spellInfo->Id))
+            {
+                Spell::SendCastResult(ToPlayer(), spellInfo, cast_count,
+                    SPELL_FAILED_NOT_READY);
                 continue;
+            }
 
             Spell* spell = new Spell(this, spellInfo, (count > 0) ? TRIGGERED_FULL_MASK : TRIGGERED_NONE);
             spell->m_CastItem = item;
@@ -10169,14 +10175,6 @@ void Player::RemoveSpellMods(Spell* spell)
                         if (roll_chance_i(aurEff->GetAmount()))
                             continue; // don't consume charge
             }
-            // ROGUE MUTILATE WITH COLD BLOOD
-            if (spellInfo->Id == 5374)
-            {
-                SpellInfo const* sp = mod->ownerAura->GetSpellInfo();
-                if (sp->Id == 14177) // Cold Blood
-                    continue; // don't consume charge
-            }
-
             if (mod->ownerAura->DropCharge(AURA_REMOVE_BY_EXPIRE))
                 itr = m_spellMods[i].begin();
         }
@@ -10206,23 +10204,11 @@ bool Player::HasSpellModApplied(SpellModifier* mod, Spell* spell)
 
 void Player::SetSpellModTakingSpell(Spell* spell, bool apply)
 {
-    if (apply && m_spellModTakingSpell)
-    {
-        LOG_INFO("misc", "Player::SetSpellModTakingSpell (A1) - {}, {}", spell->m_spellInfo->Id, m_spellModTakingSpell->m_spellInfo->Id);
+    if (apply && m_spellModTakingSpell != nullptr)
         return;
-        //ASSERT(m_spellModTakingSpell == nullptr);
-    }
-    else if (!apply)
-    {
-        if (!m_spellModTakingSpell)
-            LOG_INFO("misc", "Player::SetSpellModTakingSpell (B1) - {}", spell->m_spellInfo->Id);
-        else if (m_spellModTakingSpell != spell)
-        {
-            LOG_INFO("misc", "Player::SetSpellModTakingSpell (C1) - {}, {}", spell->m_spellInfo->Id, m_spellModTakingSpell->m_spellInfo->Id);
-            return;
-        }
-        //ASSERT(m_spellModTakingSpell && m_spellModTakingSpell == spell);
-    }
+
+    if (!apply && (!m_spellModTakingSpell || m_spellModTakingSpell != spell))
+        return;
 
     m_spellModTakingSpell = apply ? spell : nullptr;
 }
@@ -10568,7 +10554,6 @@ void Player::CleanupAfterTaxiFlight()
     m_taxi.ClearTaxiDestinations();        // not destinations, clear source node
     Dismount();
     RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_TAXI_FLIGHT);
-    getHostileRefMgr().setOnlineOfflineState(true);
 }
 
 void Player::ContinueTaxiFlight()
@@ -10590,24 +10575,39 @@ void Player::ContinueTaxiFlight()
 
     TaxiPathNodeList const& nodeList = sTaxiPathNodesByPath[path];
 
-    float bestDist = SIZE_OF_GRIDS * SIZE_OF_GRIDS; // xinef: large value
-    float currDist = 0.0f;
+    // Use triangle inequality to find the segment the player is on.
+    // When distPrev + distNext < distNodes, the player projects between
+    // the two nodes of the segment. Resume from the end node (i).
+    float distPrev;
+    float distNext =
+        (nodeList[0]->x - GetPositionX()) * (nodeList[0]->x - GetPositionX()) +
+        (nodeList[0]->y - GetPositionY()) * (nodeList[0]->y - GetPositionY()) +
+        (nodeList[0]->z - GetPositionZ()) * (nodeList[0]->z - GetPositionZ());
 
-    // xinef: changed to -1, we dont want to catch last node
-    for (uint32 i = 0; i < nodeList.size() - 1; ++i)
+    for (uint32 i = 1; i < nodeList.size(); ++i)
     {
         TaxiPathNodeEntry const* node = nodeList[i];
-        TaxiPathNodeEntry const* nextNode = nodeList[i + 1];
+        TaxiPathNodeEntry const* prevNode = nodeList[i - 1];
 
-        // xinef: skip nodes at another map, get last valid node on current map
-        if (nextNode->mapid != GetMapId() || node->mapid != GetMapId())
+        // skip nodes at another map
+        if (node->mapid != GetMapId())
             continue;
 
-        currDist = (node->x - GetPositionX()) * (node->x - GetPositionX()) + (node->y - GetPositionY()) * (node->y - GetPositionY()) + (node->z - GetPositionZ()) * (node->z - GetPositionZ());
-        if (currDist < bestDist)
+        distPrev = distNext;
+        distNext =
+            (node->x - GetPositionX()) * (node->x - GetPositionX()) +
+            (node->y - GetPositionY()) * (node->y - GetPositionY()) +
+            (node->z - GetPositionZ()) * (node->z - GetPositionZ());
+
+        float distNodes =
+            (node->x - prevNode->x) * (node->x - prevNode->x) +
+            (node->y - prevNode->y) * (node->y - prevNode->y) +
+            (node->z - prevNode->z) * (node->z - prevNode->z);
+
+        if (distPrev + distNext < distNodes)
         {
             startNode = i;
-            bestDist = currDist;
+            break;
         }
     }
 
@@ -10644,7 +10644,7 @@ void Player::SendTaxiNodeStatusMultiple()
         if (!creature->HasNpcFlag(UNIT_NPC_FLAG_FLIGHTMASTER))
             return;
 
-        uint32 nearestNode = sObjectMgr->GetNearestTaxiNode(creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(), creature->GetMapId(), GetTeamId());
+        uint32 nearestNode = sObjectMgr->GetNearestTaxiNode(*creature, GetTeamId(true));
         if (!nearestNode)
             return;
 
@@ -11954,7 +11954,7 @@ void Player::ApplyEquipCooldown(Item* pItem)
                 continue;
 
             if (Aura* itemAura = GetAura(spellData.SpellId, GetGUID(), pItem->GetGUID()))
-                itemAura->AddProcCooldown(std::chrono::steady_clock::now() + std::chrono::seconds(30));
+                itemAura->AddProcCooldown(std::chrono::steady_clock::now() + procEntry->Cooldown);
             continue;
         }
 
@@ -12714,20 +12714,51 @@ bool Player::HasItemFitToSpellRequirements(SpellInfo const* spellInfo, Item cons
                     if (Item* item = GetUseableItemByPos(INVENTORY_SLOT_BAG_0, i))
                         if (item != ignoreItem && item->IsFitToSpellRequirements(spellInfo))
                             return true;
+
+                // Keep active non-passive auras (e.g. Bladestorm) when disarmed
+                if (!spellInfo->IsPassive())
+                {
+                    bool hasWeaponInSlot = false;
+                    for (uint8 i = EQUIPMENT_SLOT_MAINHAND; i < EQUIPMENT_SLOT_TABARD; ++i)
+                        if (Item* item = GetItemByPos(INVENTORY_SLOT_BAG_0, i))
+                            if (item != ignoreItem && item->IsFitToSpellRequirements(spellInfo))
+                            {
+                                hasWeaponInSlot = true;
+                                break;
+                            }
+
+                    if (!hasWeaponInSlot)
+                        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                            if (spellInfo->Effects[i].IsAura())
+                                return true;
+                }
+
                 break;
             }
         case ITEM_CLASS_ARMOR:
             {
+                // most used check: shield only
+                if (spellInfo->EquippedItemSubClassMask & (1 << ITEM_SUBCLASS_ARMOR_SHIELD))
+                {
+                    if (Item* item = GetUseableItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
+                        if (item != ignoreItem && item->IsFitToSpellRequirements(spellInfo))
+                            return true;
+
+                    // Keep active non-passive auras (e.g. Shield Wall) when disarmed
+                    Item* offhand = GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+                    if (!spellInfo->IsPassive() && offhand && offhand != ignoreItem)
+                    {
+                        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                            if (spellInfo->Effects[i].IsAura())
+                                return true;
+                    }
+                }
+
                 // tabard not have dependent spells
                 for (uint8 i = EQUIPMENT_SLOT_START; i < EQUIPMENT_SLOT_MAINHAND; ++i)
                     if (Item* item = GetUseableItemByPos(INVENTORY_SLOT_BAG_0, i))
                         if (item != ignoreItem && item->IsFitToSpellRequirements(spellInfo))
                             return true;
-
-                // shields can be equipped to offhand slot
-                if (Item* item = GetUseableItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
-                    if (item != ignoreItem && item->IsFitToSpellRequirements(spellInfo))
-                        return true;
 
                 // ranged slot can have some armor subclasses
                 if (Item* item = GetUseableItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
@@ -13225,7 +13256,7 @@ PartyResult Player::CanUninviteFromGroup(ObjectGuid targetPlayerGUID) const
         if (state == lfg::LFG_STATE_FINISHED_DUNGEON)
             return ERR_PARTY_LFG_BOOT_DUNGEON_COMPLETE;
 
-        if (grp->isRollLootActive())
+        if (grp->isRollLootActive() && ObjectAccessor::FindConnectedPlayer(targetPlayerGUID))
             return ERR_PARTY_LFG_BOOT_LOOT_ROLLS;
 
         /// @todo: Should also be sent when anyone has recently left combat, with an aprox ~5 seconds timer.
@@ -13410,6 +13441,14 @@ WorldObject* Player::GetViewpoint() const
     if (ObjectGuid guid = GetGuidValue(PLAYER_FARSIGHT))
         return static_cast<WorldObject*>(ObjectAccessor::GetObjectByTypeMask(*this, guid, TYPEMASK_SEER));
     return nullptr;
+}
+
+Position const& Player::GetSightPosition() const
+{
+    if (_cinematicMgr.IsOnCinematic())
+        return _cinematicMgr.GetRemoteSightPosition();
+
+    return *m_seer;
 }
 
 bool Player::CanUseBattlegroundObject(GameObject* gameobject) const
@@ -14172,6 +14211,9 @@ void Player::LearnTalent(uint32 talentId, uint32 talentRank, bool command /*= fa
     if (!talentInfo)
         return;
 
+    if (!sScriptMgr->OnPlayerCanLearnTalent(this, talentInfo, talentRank))
+        return;
+
     TalentTabEntry const* talentTabInfo = sTalentTabStore.LookupEntry(talentInfo->TalentTab);
     if (!talentTabInfo)
         return;
@@ -14506,6 +14548,13 @@ bool Player::CanSeeSpellClickOn(Creature const* c) const
     }
 
     return false;
+}
+
+bool Player::CanSeeObjectByVisibilityConditions(WorldObject const* object) const
+{
+    ConditionList conds = sConditionMgr->GetConditionsForObjectVisibility(object);
+    ConditionSourceInfo info = ConditionSourceInfo(const_cast<Player*>(this), const_cast<WorldObject*>(object));
+    return sConditionMgr->IsObjectMeetToConditions(info, conds);
 }
 
 /**
@@ -16489,7 +16538,10 @@ bool Player::IsWorldObjectOutOfSightRange(WorldObject const* target) const
     }
 
     // Check if out of range
-    return !m_seer->IsWithinDist(target, GetSightRange(target), false);
+    if (!target->IsWithinSightRange(GetSightPosition(), GetSightRange(target)))
+        return true;
+
+    return false;
 }
 
 std::string Player::GetPlayerName()

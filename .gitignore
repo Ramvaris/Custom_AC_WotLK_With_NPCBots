@@ -72,6 +72,11 @@ CMakeLists.txt.user
 *.LOCAL.*
 
 #
+# AI tools
+#
+.claude
+
+#
 # IDE & other software
 #
 /.settings/
@@ -107,6 +112,10 @@ local.properties
 .loadpath
 .project
 .cproject
+
+# vcpkg integration
+/vcpkg/
+/vcpkg-ports/
 
 
 # ==================

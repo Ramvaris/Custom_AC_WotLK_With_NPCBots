@@ -647,7 +647,7 @@ public:
         PLAYERHOOK_ON_PLAYER_RELEASED_GHOST
     }) { }
 
-    void OnPlayerResurrect(Player* player, float /*restore_percent*/, bool /*applySickness*/) override
+    void OnPlayerResurrect(Player* player, float /*restore_percent*/, bool& /*applySickness*/) override
     {
         sALE->OnResurrect(player);
     }
@@ -976,7 +976,7 @@ public:
         SERVERHOOK_CAN_PACKET_RECEIVE
     }) { }
 
-    bool CanPacketSend(WorldSession* session, WorldPacket& packet) override
+    bool CanPacketSend(WorldSession* session, WorldPacket const& packet) override
     {
         if (!sALE->OnPacketSend(session, packet))
             return false;
@@ -984,9 +984,13 @@ public:
         return true;
     }
 
-    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
+    bool CanPacketReceive(WorldSession* session, WorldPacket const& packet) override
     {
-        if (!sALE->OnPacketReceive(session, packet))
+        // Core now exposes this hook as const, but ALE historically allows Lua
+        // packet receive hooks to replace the packet. Keep that local behavior
+        // for compatibility with existing scripts.
+        WorldPacket& mutablePacket = const_cast<WorldPacket&>(packet);
+        if (!sALE->OnPacketReceive(session, mutablePacket))
             return false;
 
         return true;

@@ -649,18 +649,14 @@ namespace LuaCreature
         float dist = ALE::CHECKVAL<float>(L, 5, 0.0f);
         int32 aura = ALE::CHECKVAL<int32>(L, 6, 0);
 
-        auto const& threatlist = creature->GetThreatMgr().GetThreatList();
-
-        if (threatlist.empty())
-            return 1;
-        if (position >= threatlist.size())
+        if (creature->GetThreatMgr().IsThreatListEmpty())
             return 1;
 
         std::list<Unit*> targetList;
 
-        for (auto itr = threatlist.begin(); itr != threatlist.end(); ++itr)
+        for (ThreatReference const* ref : creature->GetThreatMgr().GetSortedThreatList())
         {
-            Unit* target = (*itr)->getTarget();
+            Unit* target = ref ? ref->GetVictim() : nullptr;
 
             if (!target)
                 continue;
@@ -730,14 +726,12 @@ namespace LuaCreature
      */
     int GetAITargets(lua_State* L, Creature* creature)
     {
-        auto const& threatlist = creature->GetThreatMgr().GetThreatList();
-
-        lua_createtable(L, threatlist.size(), 0);
+        lua_createtable(L, static_cast<int>(creature->GetThreatMgr().GetThreatListSize()), 0);
         int tbl = lua_gettop(L);
         uint32 i = 0;
-        for (auto itr = threatlist.begin(); itr != threatlist.end(); ++itr)
+        for (ThreatReference const* ref : creature->GetThreatMgr().GetSortedThreatList())
         {
-            Unit* target = (*itr)->getTarget();
+            Unit* target = ref ? ref->GetVictim() : nullptr;
 
             if (!target)
                 continue;

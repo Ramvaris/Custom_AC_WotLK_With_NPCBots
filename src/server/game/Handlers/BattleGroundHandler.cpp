@@ -35,6 +35,7 @@
 #include "WorldSession.h"
 
 //npcbot
+#include "botconfig.h"
 #include "botdatamgr.h"
 #include "botmgr.h"
 //end npcbot
@@ -52,9 +53,7 @@ void WorldSession::HandleBattlemasterHelloOpcode(WorldPacket& recvData)
     if (!unit->IsBattleMaster())                             // it's not battlemaster
         return;
 
-    // Stop the npc if moving
-    if (uint32 pause = unit->GetMovementTemplate().GetInteractionPauseTimer())
-        unit->PauseMovement(pause);
+    unit->PauseMovementForInteraction();
     unit->SetHomePosition(unit->GetPosition());
 
     BattlegroundTypeId bgTypeId = sBattlegroundMgr->GetBattleMasterBG(unit->GetEntry());
@@ -294,7 +293,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
 
         isPremade = (grp->GetMembersCount() >= bg->GetMinPlayersPerTeam() && bgTypeId != BATTLEGROUND_RB);
         //npcbot: check premade for bots
-        if (isPremade && !BotMgr::IsNpcBotsPremadeEnabled() && grp->GetFirstBotMember() != nullptr)
+        if (isPremade && !BotCfg::IsNpcBotsPremadeEnabled() && grp->GetFirstBotMember() != nullptr)
             isPremade = false;
         //end npcbot
         uint32 avgWaitTime = 0;

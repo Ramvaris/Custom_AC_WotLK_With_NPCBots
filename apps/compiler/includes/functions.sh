@@ -90,7 +90,40 @@ function comp_configure() {
         OSOPTIONS=" -DMYSQL_ADD_INCLUDE_PATH=/usr/local/include -DMYSQL_LIBRARY=/usr/local/lib/libmysqlclient.dylib -DREADLINE_INCLUDE_DIR=/usr/local/opt/readline/include -DREADLINE_LIBRARY=/usr/local/opt/readline/lib/libreadline.dylib -DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@3/include -DOPENSSL_SSL_LIBRARIES=/usr/local/opt/openssl@3/lib/libssl.dylib -DOPENSSL_CRYPTO_LIBRARIES=/usr/local/opt/openssl@3/lib/libcrypto.dylib "
         ;;
       msys*)
-        OSOPTIONS=" -DMYSQL_INCLUDE_DIR=C:\tools\mysql\current\include -DMYSQL_LIBRARY=C:\tools\mysql\current\lib\mysqlclient.lib "
+        local mysql_root="$SRCPATH/env/dist/mysql"
+        local mysql_client_root=""
+        local mysql_include_dir=""
+        local mysql_library=""
+
+        if [ -d "$mysql_root/mysql-8.0.45-winx64" ]; then
+          mysql_client_root="$mysql_root/mysql-8.0.45-winx64"
+        elif [ -d "$mysql_root" ]; then
+          mysql_client_root="$mysql_root"
+        fi
+
+        if [ -n "$mysql_client_root" ]; then
+          if [ -f "$mysql_client_root/include/mysql.h" ]; then
+            mysql_include_dir="$mysql_client_root/include"
+          elif [ -f "$mysql_client_root/include/mysql/mysql.h" ]; then
+            mysql_include_dir="$mysql_client_root/include/mysql"
+          fi
+
+          if [ -f "$mysql_client_root/lib/mysqlclient.lib" ]; then
+            mysql_library="$mysql_client_root/lib/mysqlclient.lib"
+          elif [ -f "$mysql_client_root/lib/libmysql.lib" ]; then
+            mysql_library="$mysql_client_root/lib/libmysql.lib"
+          elif [ -f "$mysql_client_root/lib/mariadbclient.lib" ]; then
+            mysql_library="$mysql_client_root/lib/mariadbclient.lib"
+          fi
+        fi
+
+        if [ -n "$mysql_include_dir" ] && [ -n "$mysql_library" ]; then
+          mysql_include_dir=$(cygpath -m "$mysql_include_dir")
+          mysql_library=$(cygpath -m "$mysql_library")
+          OSOPTIONS=" -DMYSQL_INCLUDE_DIR=$mysql_include_dir -DMYSQL_LIBRARY=$mysql_library "
+        else
+          OSOPTIONS=" -DMYSQL_INCLUDE_DIR=C:\tools\mysql\current\include -DMYSQL_LIBRARY=C:\tools\mysql\current\lib\mysqlclient.lib "
+        fi
         ;;
     esac
 
