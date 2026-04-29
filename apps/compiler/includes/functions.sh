@@ -166,6 +166,11 @@ function comp_compile() {
     msys*)
       cmake --install . --config $CTYPE
 
+      # Windows installs executables into env/dist, but our runtime layout
+      # expects the old Linux-style env/dist/bin location.
+      mkdir -p "$BINPATH/bin"
+      find "$BINPATH" -maxdepth 1 -type f -name "*.exe" -exec cp -f {} "$BINPATH/bin/" \;
+
       popd >> /dev/null || exit 1
 
       echo "Done"
